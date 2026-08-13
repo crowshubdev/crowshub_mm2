@@ -1,0 +1,698 @@
+-- Crows Hub | MM2 Farm & Combat (VER 1.2 FULL)
+-- Features added in 1.2:
+-- 1. Avoid Murderer (75 Studs distance check during farm + recalculate safe coin)
+-- 2. Floating "Shoot Murderer" Button on Screen (Equips Gun, Aims & Fires Remote)
+-- 3. Theme Switcher (Ocean Dark, Crimson Red, Dark Slate Grey, Classic Blue)
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Color Themes Presets
+local Themes = {
+    ["Ocean Dark"] = {
+        Background = Color3.fromRGB(15, 22, 32),
+        Stroke = Color3.fromRGB(0, 150, 200),
+        Title = Color3.fromRGB(100, 220, 255),
+        Button = Color3.fromRGB(24, 38, 55),
+        MiniBarBorder = Color3.fromRGB(0, 180, 235),
+        MiniBarTitle = Color3.fromRGB(120, 230, 255),
+        ShootBtnBg = Color3.fromRGB(20, 35, 50),
+        ShootBtnBorder = Color3.fromRGB(0, 160, 220)
+    },
+    ["Crimson Red"] = {
+        Background = Color3.fromRGB(28, 16, 18),
+        Stroke = Color3.fromRGB(180, 40, 55),
+        Title = Color3.fromRGB(255, 110, 120),
+        Button = Color3.fromRGB(48, 24, 28),
+        MiniBarBorder = Color3.fromRGB(220, 50, 65),
+        MiniBarTitle = Color3.fromRGB(255, 130, 140),
+        ShootBtnBg = Color3.fromRGB(45, 18, 22),
+        ShootBtnBorder = Color3.fromRGB(210, 45, 60)
+    },
+    ["Dark Slate"] = {
+        Background = Color3.fromRGB(22, 23, 26),
+        Stroke = Color3.fromRGB(80, 85, 95),
+        Title = Color3.fromRGB(210, 215, 225),
+        Button = Color3.fromRGB(36, 38, 44),
+        MiniBarBorder = Color3.fromRGB(100, 105, 115),
+        MiniBarTitle = Color3.fromRGB(200, 205, 215),
+        ShootBtnBg = Color3.fromRGB(32, 34, 40),
+        ShootBtnBorder = Color3.fromRGB(90, 95, 105)
+    },
+    ["Classic Blue"] = {
+        Background = Color3.fromRGB(22, 22, 28),
+        Stroke = Color3.fromRGB(50, 50, 75),
+        Title = Color3.fromRGB(180, 195, 255),
+        Button = Color3.fromRGB(38, 38, 50),
+        MiniBarBorder = Color3.fromRGB(80, 100, 220),
+        MiniBarTitle = Color3.fromRGB(150, 175, 255),
+        ShootBtnBg = Color3.fromRGB(30, 35, 55),
+        ShootBtnBorder = Color3.fromRGB(80, 100, 220)
+    }
+}
+
+-- Global Settings
+local Settings = {
+    AutoFarm = false,
+    CoinAura = false,
+    Underground = true,
+    SafeVoid = true,
+    AvoidMurderer = true, -- Avoid murderer if closer than 75 studs
+    AvoidDistance = 75,
+    AutoKill = false,
+    AntiFling = true,
+    AntiAFK = true,
+    ShowShootButton = true,
+    
+    ResetSheriff = false,
+    ResetMurder = false,
+    ResetInnocent = false,
+    
+    TweenSpeed = 25,
+    TweenDelay = 0,
+    MaxCoins = 40,
+    CurrentTheme = "Ocean Dark"
+}
+
+-- Stats State
+local Stats = {
+    StartTime = os.time(),
+    CoinsEarned = 0,
+    LastCoinsValue = 0
+}
+
+-- Safe Target Parent
+local TargetParent = gethui and gethui() or CoreGui
+
+if TargetParent:FindFirstChild("CrowsHubMM2Full") then
+    TargetParent.CrowsHubMM2Full:Destroy()
+end
+
+-- ScreenGui Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CrowsHubMM2Full"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = TargetParent
+
+-- Dragging Helper Function
+local function MakeDraggable(guiObject)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        guiObject.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+
+    guiObject.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObject.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    guiObject.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+----------------------------------------------------------------
+-- Dynamic Elements Storage for Theme Updates
+----------------------------------------------------------------
+local Themeable = {
+    MainFrameBg = {},
+    MainFrameStroke = {},
+    Titles = {},
+    Buttons = {},
+    MiniBarStroke = {},
+    MiniBarTitle = {},
+    ShootBtn = {},
+    ShootBtnStroke = {}
+}
+
+local function ApplyTheme(themeName)
+    local theme = Themes[themeName] or Themes["Ocean Dark"]
+    Settings.CurrentTheme = themeName
+
+    for _, obj in ipairs(Themeable.MainFrameBg) do obj.BackgroundColor3 = theme.Background end
+    for _, obj in ipairs(Themeable.MainFrameStroke) do obj.Color = theme.Stroke end
+    for _, obj in ipairs(Themeable.Titles) do obj.TextColor3 = theme.Title end
+    for _, obj in ipairs(Themeable.Buttons) do
+        if not obj:GetAttribute("IsToggleActive") then
+            obj.BackgroundColor3 = theme.Button
+        end
+    end
+    for _, obj in ipairs(Themeable.MiniBarStroke) do obj.Color = theme.MiniBarBorder end
+    for _, obj in ipairs(Themeable.MiniBarTitle) do obj.TextColor3 = theme.MiniBarTitle end
+    for _, obj in ipairs(Themeable.ShootBtn) do obj.BackgroundColor3 = theme.ShootBtnBg end
+    for _, obj in ipairs(Themeable.ShootBtnStroke) do obj.Color = theme.ShootBtnBorder end
+end
+
+----------------------------------------------------------------
+-- 1. FLOATING "SHOOT MURDERER" BUTTON
+----------------------------------------------------------------
+local ShootBtnFrame = Instance.new("Frame")
+ShootBtnFrame.Name = "ShootMurdererFrame"
+ShootBtnFrame.Size = UDim2.new(0, 170, 0, 48)
+ShootBtnFrame.Position = UDim2.new(0.68, 0, 0.38, 0)
+ShootBtnFrame.BackgroundColor3 = Themes["Ocean Dark"].ShootBtnBg
+ShootBtnFrame.BackgroundTransparency = 0.2
+ShootBtnFrame.BorderSizePixel = 0
+ShootBtnFrame.Visible = true
+ShootBtnFrame.Parent = ScreenGui
+
+local ShootBtnCorner = Instance.new("UICorner")
+ShootBtnCorner.CornerRadius = UDim.new(0, 10)
+ShootBtnCorner.Parent = ShootBtnFrame
+
+local ShootBtnStroke = Instance.new("UIStroke")
+ShootBtnStroke.Color = Themes["Ocean Dark"].ShootBtnBorder
+ShootBtnStroke.Thickness = 2
+ShootBtnStroke.Parent = ShootBtnFrame
+
+table.insert(Themeable.ShootBtn, ShootBtnFrame)
+table.insert(Themeable.ShootBtnStroke, ShootBtnStroke)
+
+local ShootBtn = Instance.new("TextButton")
+ShootBtn.Size = UDim2.new(1, 0, 1, 0)
+ShootBtn.BackgroundTransparency = 1
+ShootBtn.Text = "Shoot Murderer"
+ShootBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ShootBtn.Font = Enum.Font.SourceSansBold
+ShootBtn.TextSize = 16
+ShootBtn.Parent = ShootBtnFrame
+
+MakeDraggable(ShootBtnFrame)
+
+-- Murderer Helper Function
+local function GetMurderer()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local backpack = player:FindFirstChild("Backpack")
+            local char = player.Character
+            if (backpack and backpack:FindFirstChild("Knife")) or (char and char:FindFirstChild("Knife")) then
+                return player
+            end
+        end
+    end
+    return nil
+end
+
+-- Shoot Logic Function
+local function ShootMurderer()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local gun = (backpack and backpack:FindFirstChild("Gun")) or (character:FindFirstChild("Gun"))
+    
+    if not gun then
+        return
+    end
+
+    -- Equip gun if in backpack
+    if gun.Parent == backpack then
+        gun.Parent = character
+    end
+
+    local murderer = GetMurderer()
+    if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
+        local targetHrp = murderer.Character.HumanoidRootPart
+        local gunShootRemote = gun:FindFirstChild("Shoot") or gun:FindFirstChild("ShootRemote") or game:GetService("ReplicatedStorage"):FindFirstChild("Shoot", true)
+        
+        if gunShootRemote then
+            local targetPos = targetHrp.Position + (targetHrp.Velocity * 0.1)
+            if gunShootRemote:IsA("RemoteEvent") then
+                gunShootRemote:FireServer(CFrame.new(character.HumanoidRootPart.Position, targetPos), targetPos)
+            elseif gunShootRemote:IsA("RemoteFunction") then
+                gunShootRemote:InvokeServer(CFrame.new(character.HumanoidRootPart.Position, targetPos), targetPos)
+            end
+        end
+    end
+end
+
+ShootBtn.MouseButton1Click:Connect(ShootMurderer)
+
+----------------------------------------------------------------
+-- 2. MINIMIZED BAR (Horizontal Strip)
+----------------------------------------------------------------
+local MiniBar = Instance.new("Frame")
+MiniBar.Name = "MiniBar"
+MiniBar.Size = UDim2.new(0, 290, 0, 32)
+MiniBar.Position = UDim2.new(0.35, 0, 0.45, 0)
+MiniBar.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+MiniBar.BackgroundTransparency = 0.25
+MiniBar.BorderSizePixel = 0
+MiniBar.Visible = false
+MiniBar.Parent = ScreenGui
+
+local MiniCorner = Instance.new("UICorner")
+MiniCorner.CornerRadius = UDim.new(0, 16)
+MiniCorner.Parent = MiniBar
+
+local MiniStroke = Instance.new("UIStroke")
+MiniStroke.Color = Themes["Ocean Dark"].MiniBarBorder
+MiniStroke.Thickness = 1.5
+MiniStroke.Parent = MiniBar
+
+table.insert(Themeable.MiniBarStroke, MiniStroke)
+
+local MiniTitle = Instance.new("TextLabel")
+MiniTitle.Size = UDim2.new(0.75, 0, 1, 0)
+MiniTitle.Position = UDim2.new(0.05, 0, 0, 0)
+MiniTitle.BackgroundTransparency = 1
+MiniTitle.Text = "Crows Hub ver 1.2 FULL"
+MiniTitle.TextColor3 = Themes["Ocean Dark"].MiniBarTitle
+MiniTitle.Font = Enum.Font.SourceSansBold
+MiniTitle.TextSize = 14
+MiniTitle.TextXAlignment = Enum.TextXAlignment.Left
+MiniTitle.Parent = MiniBar
+
+table.insert(Themeable.MiniBarTitle, MiniTitle)
+
+local PlusBtn = Instance.new("TextButton")
+PlusBtn.Size = UDim2.new(0, 32, 1, 0)
+PlusBtn.Position = UDim2.new(1, -34, 0, 0)
+PlusBtn.BackgroundTransparency = 1
+PlusBtn.Text = "+"
+PlusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+PlusBtn.Font = Enum.Font.SourceSansBold
+PlusBtn.TextSize = 20
+PlusBtn.Parent = MiniBar
+
+MakeDraggable(MiniBar)
+
+----------------------------------------------------------------
+-- 3. MAIN HUB FRAME
+----------------------------------------------------------------
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0.38, 0, 0.68, 0)
+MainFrame.Position = UDim2.new(0.31, 0, 0.16, 0)
+MainFrame.BackgroundColor3 = Themes["Ocean Dark"].Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Parent = ScreenGui
+
+table.insert(Themeable.MainFrameBg, MainFrame)
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Themes["Ocean Dark"].Stroke
+UIStroke.Thickness = 1.5
+UIStroke.Parent = MainFrame
+
+table.insert(Themeable.MainFrameStroke, UIStroke)
+
+local AspectRatio = Instance.new("UIAspectRatioConstraint")
+AspectRatio.AspectRatio = 1.12
+AspectRatio.Parent = MainFrame
+
+MakeDraggable(MainFrame)
+
+-- Title Bar inside Main Frame
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0.8, 0, 0.1, 0)
+Title.Position = UDim2.new(0.04, 0, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Crows Hub ver 1.2 FULL"
+Title.TextColor3 = Themes["Ocean Dark"].Title
+Title.TextScaled = true
+Title.Font = Enum.Font.SourceSansBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = MainFrame
+
+table.insert(Themeable.Titles, Title)
+
+local MinusBtn = Instance.new("TextButton")
+MinusBtn.Size = UDim2.new(0.1, 0, 0.08, 0)
+MinusBtn.Position = UDim2.new(0.87, 0, 0.01, 0)
+MinusBtn.BackgroundTransparency = 1
+MinusBtn.Text = "-"
+MinusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+MinusBtn.TextScaled = true
+MinusBtn.Font = Enum.Font.SourceSansBold
+MinusBtn.Parent = MainFrame
+
+MinusBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    MiniBar.Visible = true
+end)
+
+PlusBtn.MouseButton1Click:Connect(function()
+    MiniBar.Visible = false
+    MainFrame.Visible = true
+end)
+
+-- Scroll Container
+local Container = Instance.new("ScrollingFrame")
+Container.Size = UDim2.new(0.92, 0, 0.86, 0)
+Container.Position = UDim2.new(0.04, 0, 0.11, 0)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 4
+Container.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout")
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+UIList.Padding = UDim.new(0, 6)
+UIList.Parent = Container
+
+-- STATS DISPLAY FRAME
+local StatsFrame = Instance.new("Frame")
+StatsFrame.Size = UDim2.new(1, -8, 0, 115)
+StatsFrame.BackgroundColor3 = Color3.fromRGB(12, 16, 22)
+StatsFrame.Parent = Container
+
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 6)
+StatsCorner.Parent = StatsFrame
+
+local StatsList = Instance.new("UIListLayout")
+StatsList.Padding = UDim.new(0, 2)
+StatsList.SortOrder = Enum.SortOrder.LayoutOrder
+StatsList.Parent = StatsFrame
+
+local StatsPadding = Instance.new("UIPadding")
+StatsPadding.PaddingLeft = UDim.new(0, 8)
+StatsPadding.PaddingTop = UDim.new(0, 4)
+StatsPadding.Parent = StatsFrame
+
+local function CreateStatLabel(defaultText)
+    local Lbl = Instance.new("TextLabel")
+    Lbl.Size = UDim2.new(1, 0, 0, 18)
+    Lbl.BackgroundTransparency = 1
+    Lbl.Text = defaultText
+    Lbl.TextColor3 = Color3.fromRGB(190, 190, 200)
+    Lbl.Font = Enum.Font.SourceSans
+    Lbl.TextSize = 13
+    Lbl.TextXAlignment = Enum.TextXAlignment.Left
+    Lbl.Parent = StatsFrame
+    return Lbl
+end
+
+local ElapsedHeaderLbl = CreateStatLabel("Elapsed:")
+local DaysLbl = CreateStatLabel("  Days: 0")
+local HoursLbl = CreateStatLabel("  Hours: 0")
+local MinutesLbl = CreateStatLabel("  Minutes: 0")
+local SecondsLbl = CreateStatLabel("  Seconds: 0")
+local EarnedLbl = CreateStatLabel("Total Earned: 0 Coins / 0 Per Hour")
+EarnedLbl.TextColor3 = Color3.fromRGB(120, 230, 140)
+
+-- Helper to Add Toggles
+local function CreateToggle(text, settingName, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, -8, 0, 30)
+    Btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(35, 130, 55) or Themes[Settings.CurrentTheme].Button
+    Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.SourceSans
+    Btn.TextSize = 14
+    Btn.Parent = Container
+
+    Btn:SetAttribute("IsToggleActive", Settings[settingName])
+    table.insert(Themeable.Buttons, Btn)
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Btn
+
+    Btn.MouseButton1Click:Connect(function()
+        Settings[settingName] = not Settings[settingName]
+        Btn:SetAttribute("IsToggleActive", Settings[settingName])
+        
+        if Settings[settingName] then
+            Btn.BackgroundColor3 = Color3.fromRGB(35, 130, 55)
+        else
+            Btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
+        end
+        
+        Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
+        if callback then callback(Settings[settingName]) end
+    end)
+    return Btn
+end
+
+-- Helper to Add Dropdowns
+local function CreateDropdown(titleText, options, settingName, callback)
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(1, -8, 0, 32)
+    Frame.BackgroundColor3 = Color3.fromRGB(25, 30, 40)
+    Frame.Parent = Container
+
+    local FCorner = Instance.new("UICorner")
+    FCorner.CornerRadius = UDim.new(0, 5)
+    FCorner.Parent = Frame
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.55, 0, 1, 0)
+    Label.Position = UDim2.new(0.04, 0, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = titleText
+    Label.TextColor3 = Color3.fromRGB(210, 210, 220)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Font = Enum.Font.SourceSans
+    Label.TextSize = 13
+    Label.Parent = Frame
+
+    local DropBtn = Instance.new("TextButton")
+    DropBtn.Size = UDim2.new(0.38, 0, 0.75, 0)
+    DropBtn.Position = UDim2.new(0.58, 0, 0.12, 0)
+    DropBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
+    DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
+    DropBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DropBtn.Font = Enum.Font.SourceSansBold
+    DropBtn.TextSize = 12
+    DropBtn.Parent = Frame
+
+    local DCorner = Instance.new("UICorner")
+    DCorner.CornerRadius = UDim.new(0, 4)
+    DCorner.Parent = DropBtn
+
+    local currentIndex = 1
+    for i, v in ipairs(options) do
+        if v == Settings[settingName] then currentIndex = i break end
+    end
+
+    DropBtn.MouseButton1Click:Connect(function()
+        currentIndex = (currentIndex % #options) + 1
+        Settings[settingName] = options[currentIndex]
+        DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
+        if callback then callback(Settings[settingName]) end
+    end)
+end
+
+-- Controls List
+CreateToggle("Auto Farm", "AutoFarm")
+CreateToggle("Avoid Murderer (75 Studs)", "AvoidMurderer")
+CreateToggle("Coin Aura (Safe)", "CoinAura")
+CreateToggle("Farm Under Floor", "Underground")
+CreateToggle("Teleport to Void when Full", "SafeVoid")
+CreateToggle("Auto Kill (If Murderer & Full)", "AutoKill")
+CreateToggle("Show Shoot Button", "ShowShootButton", function(state)
+    ShootBtnFrame.Visible = state
+end)
+
+CreateDropdown("UI Theme", {"Ocean Dark", "Crimson Red", "Dark Slate", "Classic Blue"}, "CurrentTheme", function(newTheme)
+    ApplyTheme(newTheme)
+end)
+
+CreateDropdown("Tween Speed", {21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33}, "TweenSpeed")
+CreateDropdown("Tween Delay (sec)", {0, 1, 2, 3, 4, 5}, "TweenDelay")
+
+CreateToggle("Anti-Fling", "AntiFling")
+CreateToggle("Anti-AFK", "AntiAFK")
+CreateToggle("Auto Reset (Sheriff)", "ResetSheriff")
+CreateToggle("Auto Reset (Murderer)", "ResetMurder")
+CreateToggle("Auto Reset (Innocent)", "ResetInnocent")
+
+Container.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 30)
+
+-- Apply Initial Theme
+ApplyTheme("Ocean Dark")
+
+----------------------------------------------------------------
+-- Stats Live Update Loop
+----------------------------------------------------------------
+task.spawn(function()
+    while task.wait(1) do
+        local now = os.time()
+        local diff = now - Stats.StartTime
+
+        local days = math.floor(diff / 86400)
+        local hours = math.floor((diff % 86400) / 3600)
+        local minutes = math.floor((diff % 3600) / 60)
+        local seconds = diff % 60
+
+        DaysLbl.Text = "  Days: " .. tostring(days)
+        HoursLbl.Text = "  Hours: " .. tostring(hours)
+        MinutesLbl.Text = "  Minutes: " .. tostring(minutes)
+        SecondsLbl.Text = "  Seconds: " .. tostring(seconds)
+
+        local coinData = LocalPlayer:FindFirstChild("CoinData") or LocalPlayer:FindFirstChild("leaderstats")
+        local currentCoins = coinData and coinData:FindFirstChild("Coins") and coinData.Coins.Value or 0
+
+        if Stats.LastCoinsValue == 0 then
+            Stats.LastCoinsValue = currentCoins
+        elseif currentCoins > Stats.LastCoinsValue then
+            Stats.CoinsEarned = Stats.CoinsEarned + (currentCoins - Stats.LastCoinsValue)
+            Stats.LastCoinsValue = currentCoins
+        elseif currentCoins < Stats.LastCoinsValue then
+            Stats.LastCoinsValue = currentCoins
+        end
+
+        local coinsPerHour = 0
+        if diff > 0 then
+            coinsPerHour = math.floor((Stats.CoinsEarned / diff) * 3600)
+        end
+
+        EarnedLbl.Text = "Total Earned: " .. tostring(Stats.CoinsEarned) .. " Coins / " .. tostring(coinsPerHour) .. " Per Hour"
+    end
+end)
+
+----------------------------------------------------------------
+-- Anti-AFK & Anti-Fling
+----------------------------------------------------------------
+local VirtualUser = game:GetService("VirtualUser")
+LocalPlayer.Idled:Connect(function()
+    if Settings.AntiAFK then
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end
+end)
+
+RunService.Stepped:Connect(function()
+    if Settings.AntiFling and LocalPlayer.Character then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                for _, part in pairs(player.Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end
+end)
+
+----------------------------------------------------------------
+-- Smart Auto Farm Core Logic (With 75 Studs Avoidance)
+----------------------------------------------------------------
+task.spawn(function()
+    while task.wait(0.2) do
+        if Settings.AutoFarm and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            local coinContainer = workspace:FindFirstChild("CoinContainer", true)
+            
+            local coinData = LocalPlayer:FindFirstChild("CoinData") or LocalPlayer:FindFirstChild("leaderstats")
+            local currentCoins = coinData and coinData:FindFirstChild("Coins") and coinData.Coins.Value or 0
+            
+            -- Check Murderer Proximity
+            local murderer = GetMurderer()
+            local isMurdererNear = false
+            if Settings.AvoidMurderer and murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
+                local mHrp = murderer.Character.HumanoidRootPart
+                if (hrp.Position - mHrp.Position).Magnitude <= Settings.AvoidDistance then
+                    isMurdererNear = true
+                end
+            end
+
+            if isMurdererNear then
+                -- Drop below floor dynamically to avoid getting killed
+                hrp.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 12, hrp.Position.Z)
+                task.wait(0.5)
+            elseif currentCoins >= Settings.MaxCoins then
+                local hasKnife = LocalPlayer.Backpack:FindFirstChild("Knife") or LocalPlayer.Character:FindFirstChild("Knife")
+                if hasKnife and Settings.AutoKill then
+                    for _, v in pairs(Players:GetPlayers()) do
+                        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                            hrp.CFrame = v.Character.HumanoidRootPart.CFrame
+                            task.wait(0.2)
+                        end
+                    end
+                elseif Settings.SafeVoid then
+                    hrp.CFrame = CFrame.new(0, -300, 0)
+                end
+            elseif coinContainer then
+                -- Find coin furthest from murderer if murderer exists
+                local bestCoin = nil
+                local maxDistFromMurderer = -1
+                
+                local coinsList = coinContainer:GetChildren()
+                for _, coin in pairs(coinsList) do
+                    if coin:IsA("BasePart") and coin.Name == "Coin" then
+                        if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
+                            local distToM = (coin.Position - murderer.Character.HumanoidRootPart.Position).Magnitude
+                            if distToM > maxDistFromMurderer then
+                                maxDistFromMurderer = distToM
+                                bestCoin = coin
+                            end
+                        else
+                            bestCoin = coin
+                            break
+                        end
+                    end
+                end
+
+                if bestCoin then
+                    local targetPos = bestCoin.Position
+                    if Settings.Underground then
+                        targetPos = targetPos - Vector3.new(0, 7, 0)
+                    end
+                    
+                    local dist = (hrp.Position - targetPos).Magnitude
+                    local tween = TweenService:Create(hrp, TweenInfo.new(dist / Settings.TweenSpeed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+                    tween:Play()
+                    
+                    -- Dynamic cancel if murderer gets too close during tween
+                    while tween.PlaybackState == Enum.PlaybackState.Playing do
+                        if Settings.AvoidMurderer and murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
+                            if (hrp.Position - murderer.Character.HumanoidRootPart.Position).Magnitude <= Settings.AvoidDistance then
+                                tween:Cancel()
+                                break
+                            end
+                        end
+                        task.wait(0.05)
+                    end
+                    
+                    if Settings.CoinAura then
+                        firetouchinterest(hrp, bestCoin, 0)
+                        task.wait()
+                        firetouchinterest(hrp, bestCoin, 1)
+                    end
+                    
+                    if Settings.TweenDelay > 0 then task.wait(Settings.TweenDelay) end
+                end
+            end
+        end
+    end
+end)
+
