@@ -1,56 +1,68 @@
--- Crows Hub | MM2 Farm & Combat (VER 1.2 FULL)
--- Features added in 1.2:
--- 1. Avoid Murderer (75 Studs distance check during farm + recalculate safe coin)
--- 2. Floating "Shoot Murderer" Button on Screen (Equips Gun, Aims & Fires Remote)
--- 3. Theme Switcher (Ocean Dark, Crimson Red, Dark Slate Grey, Classic Blue)
+--[[
+    Crows Hub | MM2 Full MultiHack Version 1.2
+    Categories: Main, Visual, World, Combat, Settings
+]]
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Sound Effects
+local OpenSound = Instance.new("Sound")
+OpenSound.SoundId = "rbxassetid://122219932"
+OpenSound.Volume = 0.5
+OpenSound.Parent = SoundService
+
+local CloseSound = Instance.new("Sound")
+CloseSound.SoundId = "rbxassetid://122219808"
+CloseSound.Volume = 0.5
+CloseSound.Parent = SoundService
 
 -- Color Themes Presets
 local Themes = {
     ["Ocean Dark"] = {
         Background = Color3.fromRGB(15, 22, 32),
+        Sidebar = Color3.fromRGB(10, 15, 22),
         Stroke = Color3.fromRGB(0, 150, 200),
         Title = Color3.fromRGB(100, 220, 255),
         Button = Color3.fromRGB(24, 38, 55),
-        MiniBarBorder = Color3.fromRGB(0, 180, 235),
-        MiniBarTitle = Color3.fromRGB(120, 230, 255),
+        TabActive = Color3.fromRGB(0, 120, 170),
         ShootBtnBg = Color3.fromRGB(20, 35, 50),
         ShootBtnBorder = Color3.fromRGB(0, 160, 220)
     },
     ["Crimson Red"] = {
         Background = Color3.fromRGB(28, 16, 18),
+        Sidebar = Color3.fromRGB(20, 10, 12),
         Stroke = Color3.fromRGB(180, 40, 55),
         Title = Color3.fromRGB(255, 110, 120),
         Button = Color3.fromRGB(48, 24, 28),
-        MiniBarBorder = Color3.fromRGB(220, 50, 65),
-        MiniBarTitle = Color3.fromRGB(255, 130, 140),
+        TabActive = Color3.fromRGB(150, 30, 45),
         ShootBtnBg = Color3.fromRGB(45, 18, 22),
         ShootBtnBorder = Color3.fromRGB(210, 45, 60)
     },
     ["Dark Slate"] = {
         Background = Color3.fromRGB(22, 23, 26),
+        Sidebar = Color3.fromRGB(15, 16, 18),
         Stroke = Color3.fromRGB(80, 85, 95),
         Title = Color3.fromRGB(210, 215, 225),
         Button = Color3.fromRGB(36, 38, 44),
-        MiniBarBorder = Color3.fromRGB(100, 105, 115),
-        MiniBarTitle = Color3.fromRGB(200, 205, 215),
+        TabActive = Color3.fromRGB(60, 65, 75),
         ShootBtnBg = Color3.fromRGB(32, 34, 40),
         ShootBtnBorder = Color3.fromRGB(90, 95, 105)
     },
     ["Classic Blue"] = {
         Background = Color3.fromRGB(22, 22, 28),
+        Sidebar = Color3.fromRGB(15, 15, 20),
         Stroke = Color3.fromRGB(50, 50, 75),
         Title = Color3.fromRGB(180, 195, 255),
         Button = Color3.fromRGB(38, 38, 50),
-        MiniBarBorder = Color3.fromRGB(80, 100, 220),
-        MiniBarTitle = Color3.fromRGB(150, 175, 255),
+        TabActive = Color3.fromRGB(60, 70, 150),
         ShootBtnBg = Color3.fromRGB(30, 35, 55),
         ShootBtnBorder = Color3.fromRGB(80, 100, 220)
     }
@@ -58,123 +70,72 @@ local Themes = {
 
 -- Global Settings
 local Settings = {
-    AutoFarm = false,
-    CoinAura = false,
-    Underground = true,
-    SafeVoid = true,
-    AvoidMurderer = true, -- Avoid murderer if closer than 75 studs
-    AvoidDistance = 75,
-    AutoKill = false,
+    -- Main
+    Speedhack = 16,
+    FOV = 120,
     AntiFling = true,
     AntiAFK = true,
+    AntiTrap = true,
+    
+    -- Visual
+    PlayerESP = false,
+    PlayerNames = false,
+    GunESP = false,
+    TrapESP = false,
+    
+    -- World
+    AutoGrabGun = false,
+    
+    -- Combat
+    KillAura = false,
+    AimbotMode = "Off", -- "Off", "Legit", "Silent"
+    Wallbang = false,
     ShowShootButton = true,
+    ShootBtnSize = 1, -- Multiplier (0.8, 1, 1.2, 1.5)
     
-    ResetSheriff = false,
-    ResetMurder = false,
-    ResetInnocent = false,
-    
-    TweenSpeed = 25,
-    TweenDelay = 0,
-    MaxCoins = 40,
+    -- Settings
     CurrentTheme = "Ocean Dark"
 }
 
--- Stats State
-local Stats = {
-    StartTime = os.time(),
-    CoinsEarned = 0,
-    LastCoinsValue = 0
-}
-
--- Safe Target Parent
+-- Core Setup
 local TargetParent = gethui and gethui() or CoreGui
-
 if TargetParent:FindFirstChild("CrowsHubMM2Full") then
     TargetParent.CrowsHubMM2Full:Destroy()
 end
 
--- ScreenGui Setup
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CrowsHubMM2Full"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetParent
 
--- Dragging Helper Function
+-- Draggable Function
 local function MakeDraggable(guiObject)
-    local dragging = false
-    local dragInput, dragStart, startPos
-
-    local function update(input)
-        local delta = input.Position - dragStart
-        guiObject.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-
+    local dragging, dragInput, dragStart, startPos
     guiObject.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = guiObject.Position
-
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
-
     guiObject.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
-
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
-            update(input)
+            local delta = input.Position - dragStart
+            guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
 
 ----------------------------------------------------------------
--- Dynamic Elements Storage for Theme Updates
-----------------------------------------------------------------
-local Themeable = {
-    MainFrameBg = {},
-    MainFrameStroke = {},
-    Titles = {},
-    Buttons = {},
-    MiniBarStroke = {},
-    MiniBarTitle = {},
-    ShootBtn = {},
-    ShootBtnStroke = {}
-}
-
-local function ApplyTheme(themeName)
-    local theme = Themes[themeName] or Themes["Ocean Dark"]
-    Settings.CurrentTheme = themeName
-
-    for _, obj in ipairs(Themeable.MainFrameBg) do obj.BackgroundColor3 = theme.Background end
-    for _, obj in ipairs(Themeable.MainFrameStroke) do obj.Color = theme.Stroke end
-    for _, obj in ipairs(Themeable.Titles) do obj.TextColor3 = theme.Title end
-    for _, obj in ipairs(Themeable.Buttons) do
-        if not obj:GetAttribute("IsToggleActive") then
-            obj.BackgroundColor3 = theme.Button
-        end
-    end
-    for _, obj in ipairs(Themeable.MiniBarStroke) do obj.Color = theme.MiniBarBorder end
-    for _, obj in ipairs(Themeable.MiniBarTitle) do obj.TextColor3 = theme.MiniBarTitle end
-    for _, obj in ipairs(Themeable.ShootBtn) do obj.BackgroundColor3 = theme.ShootBtnBg end
-    for _, obj in ipairs(Themeable.ShootBtnStroke) do obj.Color = theme.ShootBtnBorder end
-end
-
-----------------------------------------------------------------
--- 1. FLOATING "SHOOT MURDERER" BUTTON
+-- FLOATING "SHOOT MURDERER" BUTTON (Screen Shot Style)
 ----------------------------------------------------------------
 local ShootBtnFrame = Instance.new("Frame")
 ShootBtnFrame.Name = "ShootMurdererFrame"
@@ -195,9 +156,6 @@ ShootBtnStroke.Color = Themes["Ocean Dark"].ShootBtnBorder
 ShootBtnStroke.Thickness = 2
 ShootBtnStroke.Parent = ShootBtnFrame
 
-table.insert(Themeable.ShootBtn, ShootBtnFrame)
-table.insert(Themeable.ShootBtnStroke, ShootBtnStroke)
-
 local ShootBtn = Instance.new("TextButton")
 ShootBtn.Size = UDim2.new(1, 0, 1, 0)
 ShootBtn.BackgroundTransparency = 1
@@ -209,7 +167,6 @@ ShootBtn.Parent = ShootBtnFrame
 
 MakeDraggable(ShootBtnFrame)
 
--- Murderer Helper Function
 local function GetMurderer()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -223,222 +180,170 @@ local function GetMurderer()
     return nil
 end
 
--- Shoot Logic Function
-local function ShootMurderer()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
+local function ShootMurdererAction()
+    local char = LocalPlayer.Character
+    if not char then return end
     local backpack = LocalPlayer:FindFirstChild("Backpack")
-    local gun = (backpack and backpack:FindFirstChild("Gun")) or (character:FindFirstChild("Gun"))
+    local gun = (backpack and backpack:FindFirstChild("Gun")) or (char:FindFirstChild("Gun"))
+    if not gun then return end
     
-    if not gun then
-        return
-    end
-
-    -- Equip gun if in backpack
-    if gun.Parent == backpack then
-        gun.Parent = character
-    end
-
+    if gun.Parent == backpack then gun.Parent = char end
+    
     local murderer = GetMurderer()
     if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
         local targetHrp = murderer.Character.HumanoidRootPart
-        local gunShootRemote = gun:FindFirstChild("Shoot") or gun:FindFirstChild("ShootRemote") or game:GetService("ReplicatedStorage"):FindFirstChild("Shoot", true)
-        
-        if gunShootRemote then
+        local remote = gun:FindFirstChild("Shoot") or gun:FindFirstChild("ShootRemote") or game:GetService("ReplicatedStorage"):FindFirstChild("Shoot", true)
+        if remote then
             local targetPos = targetHrp.Position + (targetHrp.Velocity * 0.1)
-            if gunShootRemote:IsA("RemoteEvent") then
-                gunShootRemote:FireServer(CFrame.new(character.HumanoidRootPart.Position, targetPos), targetPos)
-            elseif gunShootRemote:IsA("RemoteFunction") then
-                gunShootRemote:InvokeServer(CFrame.new(character.HumanoidRootPart.Position, targetPos), targetPos)
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(CFrame.new(char.HumanoidRootPart.Position, targetPos), targetPos)
+            elseif remote:IsA("RemoteFunction") then
+                remote:InvokeServer(CFrame.new(char.HumanoidRootPart.Position, targetPos), targetPos)
             end
         end
     end
 end
 
-ShootBtn.MouseButton1Click:Connect(ShootMurderer)
+ShootBtn.MouseButton1Click:Connect(ShootMurdererAction)
 
 ----------------------------------------------------------------
--- 2. MINIMIZED BAR (Horizontal Strip)
-----------------------------------------------------------------
-local MiniBar = Instance.new("Frame")
-MiniBar.Name = "MiniBar"
-MiniBar.Size = UDim2.new(0, 290, 0, 32)
-MiniBar.Position = UDim2.new(0.35, 0, 0.45, 0)
-MiniBar.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
-MiniBar.BackgroundTransparency = 0.25
-MiniBar.BorderSizePixel = 0
-MiniBar.Visible = false
-MiniBar.Parent = ScreenGui
-
-local MiniCorner = Instance.new("UICorner")
-MiniCorner.CornerRadius = UDim.new(0, 16)
-MiniCorner.Parent = MiniBar
-
-local MiniStroke = Instance.new("UIStroke")
-MiniStroke.Color = Themes["Ocean Dark"].MiniBarBorder
-MiniStroke.Thickness = 1.5
-MiniStroke.Parent = MiniBar
-
-table.insert(Themeable.MiniBarStroke, MiniStroke)
-
-local MiniTitle = Instance.new("TextLabel")
-MiniTitle.Size = UDim2.new(0.75, 0, 1, 0)
-MiniTitle.Position = UDim2.new(0.05, 0, 0, 0)
-MiniTitle.BackgroundTransparency = 1
-MiniTitle.Text = "Crows Hub ver 1.2 FULL"
-MiniTitle.TextColor3 = Themes["Ocean Dark"].MiniBarTitle
-MiniTitle.Font = Enum.Font.SourceSansBold
-MiniTitle.TextSize = 14
-MiniTitle.TextXAlignment = Enum.TextXAlignment.Left
-MiniTitle.Parent = MiniBar
-
-table.insert(Themeable.MiniBarTitle, MiniTitle)
-
-local PlusBtn = Instance.new("TextButton")
-PlusBtn.Size = UDim2.new(0, 32, 1, 0)
-PlusBtn.Position = UDim2.new(1, -34, 0, 0)
-PlusBtn.BackgroundTransparency = 1
-PlusBtn.Text = "+"
-PlusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-PlusBtn.Font = Enum.Font.SourceSansBold
-PlusBtn.TextSize = 20
-PlusBtn.Parent = MiniBar
-
-MakeDraggable(MiniBar)
-
-----------------------------------------------------------------
--- 3. MAIN HUB FRAME
+-- MAIN HUB WINDOW & TAB SYSTEM
 ----------------------------------------------------------------
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0.38, 0, 0.68, 0)
-MainFrame.Position = UDim2.new(0.31, 0, 0.16, 0)
+MainFrame.Size = UDim2.new(0, 520, 0, 320)
+MainFrame.Position = UDim2.new(0.3, 0, 0.25, 0)
 MainFrame.BackgroundColor3 = Themes["Ocean Dark"].Background
 MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
 MainFrame.Parent = ScreenGui
-
-table.insert(Themeable.MainFrameBg, MainFrame)
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = MainFrame
-
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Themes["Ocean Dark"].Stroke
-UIStroke.Thickness = 1.5
-UIStroke.Parent = MainFrame
-
-table.insert(Themeable.MainFrameStroke, UIStroke)
-
-local AspectRatio = Instance.new("UIAspectRatioConstraint")
-AspectRatio.AspectRatio = 1.12
-AspectRatio.Parent = MainFrame
 
 MakeDraggable(MainFrame)
 
--- Title Bar inside Main Frame
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 8)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Themes["Ocean Dark"].Stroke
+MainStroke.Thickness = 1.5
+MainStroke.Parent = MainFrame
+
+-- Title Bar
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0.8, 0, 0.1, 0)
-Title.Position = UDim2.new(0.04, 0, 0, 0)
+Title.Size = UDim2.new(0.6, 0, 0, 30)
+Title.Position = UDim2.new(0.03, 0, 0.02, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "Crows Hub ver 1.2 FULL"
+Title.Text = "Crows Hub FULL ver 1.2"
 Title.TextColor3 = Themes["Ocean Dark"].Title
-Title.TextScaled = true
 Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 18
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = MainFrame
 
-table.insert(Themeable.Titles, Title)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(0.93, 0, 0.02, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(220, 80, 80)
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.TextSize = 18
+CloseBtn.Parent = MainFrame
 
-local MinusBtn = Instance.new("TextButton")
-MinusBtn.Size = UDim2.new(0.1, 0, 0.08, 0)
-MinusBtn.Position = UDim2.new(0.87, 0, 0.01, 0)
-MinusBtn.BackgroundTransparency = 1
-MinusBtn.Text = "-"
-MinusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-MinusBtn.TextScaled = true
-MinusBtn.Font = Enum.Font.SourceSansBold
-MinusBtn.Parent = MainFrame
-
-MinusBtn.MouseButton1Click:Connect(function()
+CloseBtn.MouseButton1Click:Connect(function()
+    CloseSound:Play()
     MainFrame.Visible = false
-    MiniBar.Visible = true
 end)
 
-PlusBtn.MouseButton1Click:Connect(function()
-    MiniBar.Visible = false
-    MainFrame.Visible = true
-end)
+-- Sound trigger on open
+OpenSound:Play()
 
--- Scroll Container
-local Container = Instance.new("ScrollingFrame")
-Container.Size = UDim2.new(0.92, 0, 0.86, 0)
-Container.Position = UDim2.new(0.04, 0, 0.11, 0)
-Container.BackgroundTransparency = 1
-Container.ScrollBarThickness = 4
-Container.Parent = MainFrame
+-- Sidebar (Tabs Container)
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 110, 0, 270)
+Sidebar.Position = UDim2.new(0.02, 0, 0.13, 0)
+Sidebar.BackgroundColor3 = Themes["Ocean Dark"].Sidebar
+Sidebar.Parent = MainFrame
 
-local UIList = Instance.new("UIListLayout")
-UIList.SortOrder = Enum.SortOrder.LayoutOrder
-UIList.Padding = UDim.new(0, 6)
-UIList.Parent = Container
+local SideCorner = Instance.new("UICorner")
+SideCorner.CornerRadius = UDim.new(0, 6)
+SideCorner.Parent = Sidebar
 
--- STATS DISPLAY FRAME
-local StatsFrame = Instance.new("Frame")
-StatsFrame.Size = UDim2.new(1, -8, 0, 115)
-StatsFrame.BackgroundColor3 = Color3.fromRGB(12, 16, 22)
-StatsFrame.Parent = Container
+local SideList = Instance.new("UIListLayout")
+SideList.Padding = UDim.new(0, 5)
+SideList.Parent = Sidebar
 
-local StatsCorner = Instance.new("UICorner")
-StatsCorner.CornerRadius = UDim.new(0, 6)
-StatsCorner.Parent = StatsFrame
+-- Content Frame
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(0, 380, 0, 270)
+Content.Position = UDim2.new(0.25, 0, 0.13, 0)
+Content.BackgroundTransparency = 1
+Content.Parent = MainFrame
 
-local StatsList = Instance.new("UIListLayout")
-StatsList.Padding = UDim.new(0, 2)
-StatsList.SortOrder = Enum.SortOrder.LayoutOrder
-StatsList.Parent = StatsFrame
+local Tabs = {}
+local TabButtons = {}
 
-local StatsPadding = Instance.new("UIPadding")
-StatsPadding.PaddingLeft = UDim.new(0, 8)
-StatsPadding.PaddingTop = UDim.new(0, 4)
-StatsPadding.Parent = StatsFrame
+local function CreateTab(tabName)
+    local Scroll = Instance.new("ScrollingFrame")
+    Scroll.Size = UDim2.new(1, 0, 1, 0)
+    Scroll.BackgroundTransparency = 1
+    Scroll.ScrollBarThickness = 4
+    Scroll.Visible = false
+    Scroll.Parent = Content
 
-local function CreateStatLabel(defaultText)
-    local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(1, 0, 0, 18)
-    Lbl.BackgroundTransparency = 1
-    Lbl.Text = defaultText
-    Lbl.TextColor3 = Color3.fromRGB(190, 190, 200)
-    Lbl.Font = Enum.Font.SourceSans
-    Lbl.TextSize = 13
-    Lbl.TextXAlignment = Enum.TextXAlignment.Left
-    Lbl.Parent = StatsFrame
-    return Lbl
+    local List = Instance.new("UIListLayout")
+    List.Padding = UDim.new(0, 6)
+    List.Parent = Scroll
+
+    Tabs[tabName] = Scroll
+
+    local TabBtn = Instance.new("TextButton")
+    TabBtn.Size = UDim2.new(1, 0, 0, 35)
+    TabBtn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
+    TabBtn.Text = tabName
+    TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabBtn.Font = Enum.Font.SourceSansBold
+    TabBtn.TextSize = 14
+    TabBtn.Parent = Sidebar
+
+    local TCorner = Instance.new("UICorner")
+    TCorner.CornerRadius = UDim.new(0, 4)
+    TCorner.Parent = TabBtn
+
+    TabBtn.MouseButton1Click:Connect(function()
+        for name, page in pairs(Tabs) do page.Visible = false end
+        for _, btn in pairs(TabButtons) do btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button end
+        Scroll.Visible = true
+        TabBtn.BackgroundColor3 = Themes[Settings.CurrentTheme].TabActive
+    end)
+
+    table.insert(TabButtons, TabBtn)
+    return Scroll
 end
 
-local ElapsedHeaderLbl = CreateStatLabel("Elapsed:")
-local DaysLbl = CreateStatLabel("  Days: 0")
-local HoursLbl = CreateStatLabel("  Hours: 0")
-local MinutesLbl = CreateStatLabel("  Minutes: 0")
-local SecondsLbl = CreateStatLabel("  Seconds: 0")
-local EarnedLbl = CreateStatLabel("Total Earned: 0 Coins / 0 Per Hour")
-EarnedLbl.TextColor3 = Color3.fromRGB(120, 230, 140)
+-- Create Pages
+local MainTab = CreateTab("Main")
+local VisualTab = CreateTab("Visual")
+local WorldTab = CreateTab("World")
+local CombatTab = CreateTab("Combat")
+local SettingsTab = CreateTab("Settings")
 
--- Helper to Add Toggles
-local function CreateToggle(text, settingName, callback)
+-- Select Main by Default
+Tabs["Main"].Visible = true
+TabButtons[1].BackgroundColor3 = Themes["Ocean Dark"].TabActive
+
+----------------------------------------------------------------
+-- UI BUILDING HELPERS
+----------------------------------------------------------------
+local function AddToggle(parent, text, settingName, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -8, 0, 30)
+    Btn.Size = UDim2.new(1, -10, 0, 30)
     Btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(35, 130, 55) or Themes[Settings.CurrentTheme].Button
     Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
     Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     Btn.Font = Enum.Font.SourceSans
     Btn.TextSize = 14
-    Btn.Parent = Container
-
-    Btn:SetAttribute("IsToggleActive", Settings[settingName])
-    table.insert(Themeable.Buttons, Btn)
+    Btn.Parent = parent
 
     local Corner = Instance.new("UICorner")
     Corner.CornerRadius = UDim.new(0, 5)
@@ -446,33 +351,44 @@ local function CreateToggle(text, settingName, callback)
 
     Btn.MouseButton1Click:Connect(function()
         Settings[settingName] = not Settings[settingName]
-        Btn:SetAttribute("IsToggleActive", Settings[settingName])
-        
-        if Settings[settingName] then
-            Btn.BackgroundColor3 = Color3.fromRGB(35, 130, 55)
-        else
-            Btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
-        end
-        
+        Btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(35, 130, 55) or Themes[Settings.CurrentTheme].Button
         Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
         if callback then callback(Settings[settingName]) end
     end)
     return Btn
 end
 
--- Helper to Add Dropdowns
-local function CreateDropdown(titleText, options, settingName, callback)
+local function AddButton(parent, text, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, -10, 0, 30)
+    Btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
+    Btn.Text = text
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.SourceSansBold
+    Btn.TextSize = 14
+    Btn.Parent = parent
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 5)
+    Corner.Parent = Btn
+
+    Btn.MouseButton1Click:Connect(function()
+        if callback then callback() end
+    end)
+end
+
+local function AddDropdown(parent, titleText, options, settingName, callback)
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, -8, 0, 32)
+    Frame.Size = UDim2.new(1, -10, 0, 32)
     Frame.BackgroundColor3 = Color3.fromRGB(25, 30, 40)
-    Frame.Parent = Container
+    Frame.Parent = parent
 
     local FCorner = Instance.new("UICorner")
     FCorner.CornerRadius = UDim.new(0, 5)
     FCorner.Parent = Frame
 
     local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.55, 0, 1, 0)
+    Label.Size = UDim2.new(0.5, 0, 1, 0)
     Label.Position = UDim2.new(0.04, 0, 0, 0)
     Label.BackgroundTransparency = 1
     Label.Text = titleText
@@ -483,8 +399,8 @@ local function CreateDropdown(titleText, options, settingName, callback)
     Label.Parent = Frame
 
     local DropBtn = Instance.new("TextButton")
-    DropBtn.Size = UDim2.new(0.38, 0, 0.75, 0)
-    DropBtn.Position = UDim2.new(0.58, 0, 0.12, 0)
+    DropBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
+    DropBtn.Position = UDim2.new(0.56, 0, 0.12, 0)
     DropBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
     DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
     DropBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -496,203 +412,139 @@ local function CreateDropdown(titleText, options, settingName, callback)
     DCorner.CornerRadius = UDim.new(0, 4)
     DCorner.Parent = DropBtn
 
-    local currentIndex = 1
-    for i, v in ipairs(options) do
-        if v == Settings[settingName] then currentIndex = i break end
-    end
-
+    local idx = 1
     DropBtn.MouseButton1Click:Connect(function()
-        currentIndex = (currentIndex % #options) + 1
-        Settings[settingName] = options[currentIndex]
+        idx = (idx % #options) + 1
+        Settings[settingName] = options[idx]
         DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
         if callback then callback(Settings[settingName]) end
     end)
 end
 
--- Controls List
-CreateToggle("Auto Farm", "AutoFarm")
-CreateToggle("Avoid Murderer (75 Studs)", "AvoidMurderer")
-CreateToggle("Coin Aura (Safe)", "CoinAura")
-CreateToggle("Farm Under Floor", "Underground")
-CreateToggle("Teleport to Void when Full", "SafeVoid")
-CreateToggle("Auto Kill (If Murderer & Full)", "AutoKill")
-CreateToggle("Show Shoot Button", "ShowShootButton", function(state)
+----------------------------------------------------------------
+-- TAB 1: MAIN
+----------------------------------------------------------------
+AddDropdown(MainTab, "Speedhack", {16, 22, 28, 35, 50}, "Speedhack", function(val)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = val
+    end
+end)
+
+AddDropdown(MainTab, "FOV Changer", {70, 90, 110, 120, 130}, "FOV", function(val)
+    Camera.FieldOfView = val
+end)
+
+AddToggle(MainTab, "Anti-Fling", "AntiFling")
+AddToggle(MainTab, "Anti-AFK", "AntiAFK")
+AddToggle(MainTab, "Anti-Trap (Walk on Traps)", "AntiTrap")
+
+----------------------------------------------------------------
+-- TAB 2: VISUAL
+----------------------------------------------------------------
+AddToggle(VisualTab, "Player ESP", "PlayerESP")
+AddToggle(VisualTab, "Player Names ESP", "PlayerNames")
+AddToggle(VisualTab, "Dropped Gun ESP", "GunESP")
+AddToggle(VisualTab, "Traps ESP", "TrapESP")
+
+----------------------------------------------------------------
+-- TAB 3: WORLD
+----------------------------------------------------------------
+local function PullGunToPlayer()
+    local gun = workspace:FindFirstChild("GunDrop", true) or workspace:FindFirstChild("Gun", true)
+    if gun and gun:IsA("BasePart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        gun.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
+    end
+end
+
+AddToggle(WorldTab, "Auto Grab Gun (Bring to You)", "AutoGrabGun")
+AddButton(WorldTab, "Grab Gun Now", PullGunToPlayer)
+
+----------------------------------------------------------------
+-- TAB 4: COMBAT
+----------------------------------------------------------------
+AddToggle(CombatTab, "Knife Kill Aura", "KillAura")
+
+AddButton(CombatTab, "Kill Sheriff / Hero", function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Knife") then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local b = p:FindFirstChild("Backpack")
+                if (b and b:FindFirstChild("Gun")) or p.Character:FindFirstChild("Gun") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame
+                    break
+                end
+            end
+        end
+    end
+end)
+
+AddDropdown(CombatTab, "Aimbot Mode", {"Off", "Legit", "Silent"}, "AimbotMode")
+AddToggle(CombatTab, "Wallbang", "Wallbang")
+
+AddToggle(CombatTab, "Show Shoot Murderer Button", "ShowShootButton", function(state)
     ShootBtnFrame.Visible = state
 end)
 
-CreateDropdown("UI Theme", {"Ocean Dark", "Crimson Red", "Dark Slate", "Classic Blue"}, "CurrentTheme", function(newTheme)
-    ApplyTheme(newTheme)
+AddDropdown(CombatTab, "Shoot Button Size", {"0.8x", "1.0x", "1.2x", "1.5x"}, "ShootBtnSize", function(val)
+    local mult = 1
+    if val == "0.8x" then mult = 0.8
+    elseif val == "1.2x" then mult = 1.2
+    elseif val == "1.5x" then mult = 1.5 end
+    ShootBtnFrame.Size = UDim2.new(0, 170 * mult, 0, 48 * mult)
 end)
 
-CreateDropdown("Tween Speed", {21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33}, "TweenSpeed")
-CreateDropdown("Tween Delay (sec)", {0, 1, 2, 3, 4, 5}, "TweenDelay")
-
-CreateToggle("Anti-Fling", "AntiFling")
-CreateToggle("Anti-AFK", "AntiAFK")
-CreateToggle("Auto Reset (Sheriff)", "ResetSheriff")
-CreateToggle("Auto Reset (Murderer)", "ResetMurder")
-CreateToggle("Auto Reset (Innocent)", "ResetInnocent")
-
-Container.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 30)
-
--- Apply Initial Theme
-ApplyTheme("Ocean Dark")
+----------------------------------------------------------------
+-- TAB 5: SETTINGS
+----------------------------------------------------------------
+AddDropdown(SettingsTab, "UI Theme", {"Ocean Dark", "Crimson Red", "Dark Slate", "Classic Blue"}, "CurrentTheme", function(newTheme)
+    local t = Themes[newTheme]
+    MainFrame.BackgroundColor3 = t.Background
+    MainStroke.Color = t.Stroke
+    Title.TextColor3 = t.Title
+    Sidebar.BackgroundColor3 = t.Sidebar
+    ShootBtnFrame.BackgroundColor3 = t.ShootBtnBg
+    ShootBtnStroke.Color = t.ShootBtnBorder
+end)
 
 ----------------------------------------------------------------
--- Stats Live Update Loop
+-- BACKGROUND LOOPS & LOGIC
 ----------------------------------------------------------------
-task.spawn(function()
-    while task.wait(1) do
-        local now = os.time()
-        local diff = now - Stats.StartTime
-
-        local days = math.floor(diff / 86400)
-        local hours = math.floor((diff % 86400) / 3600)
-        local minutes = math.floor((diff % 3600) / 60)
-        local seconds = diff % 60
-
-        DaysLbl.Text = "  Days: " .. tostring(days)
-        HoursLbl.Text = "  Hours: " .. tostring(hours)
-        MinutesLbl.Text = "  Minutes: " .. tostring(minutes)
-        SecondsLbl.Text = "  Seconds: " .. tostring(seconds)
-
-        local coinData = LocalPlayer:FindFirstChild("CoinData") or LocalPlayer:FindFirstChild("leaderstats")
-        local currentCoins = coinData and coinData:FindFirstChild("Coins") and coinData.Coins.Value or 0
-
-        if Stats.LastCoinsValue == 0 then
-            Stats.LastCoinsValue = currentCoins
-        elseif currentCoins > Stats.LastCoinsValue then
-            Stats.CoinsEarned = Stats.CoinsEarned + (currentCoins - Stats.LastCoinsValue)
-            Stats.LastCoinsValue = currentCoins
-        elseif currentCoins < Stats.LastCoinsValue then
-            Stats.LastCoinsValue = currentCoins
+RunService.Stepped:Connect(function()
+    -- Speedhack
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        if LocalPlayer.Character.Humanoid.WalkSpeed ~= Settings.Speedhack then
+            LocalPlayer.Character.Humanoid.WalkSpeed = Settings.Speedhack
         end
-
-        local coinsPerHour = 0
-        if diff > 0 then
-            coinsPerHour = math.floor((Stats.CoinsEarned / diff) * 3600)
+    end
+    
+    -- FOV
+    if Camera.FieldOfView ~= Settings.FOV then
+        Camera.FieldOfView = Settings.FOV
+    end
+    
+    -- Anti-Trap Logic
+    if Settings.AntiTrap then
+        for _, v in pairs(workspace:GetChildren()) do
+            if v.Name:lower():find("trap") then
+                for _, part in pairs(v:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
         end
-
-        EarnedLbl.Text = "Total Earned: " .. tostring(Stats.CoinsEarned) .. " Coins / " .. tostring(coinsPerHour) .. " Per Hour"
+    end
+    
+    -- Auto Grab Gun
+    if Settings.AutoGrabGun then
+        PullGunToPlayer()
     end
 end)
 
-----------------------------------------------------------------
--- Anti-AFK & Anti-Fling
-----------------------------------------------------------------
+-- Anti-AFK
 local VirtualUser = game:GetService("VirtualUser")
 LocalPlayer.Idled:Connect(function()
     if Settings.AntiAFK then
-        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        VirtualUser:Button2Down(Vector2.new(0, 0), Camera.CFrame)
         task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        VirtualUser:Button2Up(Vector2.new(0, 0), Camera.CFrame)
     end
 end)
-
-RunService.Stepped:Connect(function()
-    if Settings.AntiFling and LocalPlayer.Character then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                for _, part in pairs(player.Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end
-    end
-end)
-
-----------------------------------------------------------------
--- Smart Auto Farm Core Logic (With 75 Studs Avoidance)
-----------------------------------------------------------------
-task.spawn(function()
-    while task.wait(0.2) do
-        if Settings.AutoFarm and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character.HumanoidRootPart
-            local coinContainer = workspace:FindFirstChild("CoinContainer", true)
-            
-            local coinData = LocalPlayer:FindFirstChild("CoinData") or LocalPlayer:FindFirstChild("leaderstats")
-            local currentCoins = coinData and coinData:FindFirstChild("Coins") and coinData.Coins.Value or 0
-            
-            -- Check Murderer Proximity
-            local murderer = GetMurderer()
-            local isMurdererNear = false
-            if Settings.AvoidMurderer and murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
-                local mHrp = murderer.Character.HumanoidRootPart
-                if (hrp.Position - mHrp.Position).Magnitude <= Settings.AvoidDistance then
-                    isMurdererNear = true
-                end
-            end
-
-            if isMurdererNear then
-                -- Drop below floor dynamically to avoid getting killed
-                hrp.CFrame = CFrame.new(hrp.Position.X, hrp.Position.Y - 12, hrp.Position.Z)
-                task.wait(0.5)
-            elseif currentCoins >= Settings.MaxCoins then
-                local hasKnife = LocalPlayer.Backpack:FindFirstChild("Knife") or LocalPlayer.Character:FindFirstChild("Knife")
-                if hasKnife and Settings.AutoKill then
-                    for _, v in pairs(Players:GetPlayers()) do
-                        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                            hrp.CFrame = v.Character.HumanoidRootPart.CFrame
-                            task.wait(0.2)
-                        end
-                    end
-                elseif Settings.SafeVoid then
-                    hrp.CFrame = CFrame.new(0, -300, 0)
-                end
-            elseif coinContainer then
-                -- Find coin furthest from murderer if murderer exists
-                local bestCoin = nil
-                local maxDistFromMurderer = -1
-                
-                local coinsList = coinContainer:GetChildren()
-                for _, coin in pairs(coinsList) do
-                    if coin:IsA("BasePart") and coin.Name == "Coin" then
-                        if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
-                            local distToM = (coin.Position - murderer.Character.HumanoidRootPart.Position).Magnitude
-                            if distToM > maxDistFromMurderer then
-                                maxDistFromMurderer = distToM
-                                bestCoin = coin
-                            end
-                        else
-                            bestCoin = coin
-                            break
-                        end
-                    end
-                end
-
-                if bestCoin then
-                    local targetPos = bestCoin.Position
-                    if Settings.Underground then
-                        targetPos = targetPos - Vector3.new(0, 7, 0)
-                    end
-                    
-                    local dist = (hrp.Position - targetPos).Magnitude
-                    local tween = TweenService:Create(hrp, TweenInfo.new(dist / Settings.TweenSpeed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-                    tween:Play()
-                    
-                    -- Dynamic cancel if murderer gets too close during tween
-                    while tween.PlaybackState == Enum.PlaybackState.Playing do
-                        if Settings.AvoidMurderer and murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
-                            if (hrp.Position - murderer.Character.HumanoidRootPart.Position).Magnitude <= Settings.AvoidDistance then
-                                tween:Cancel()
-                                break
-                            end
-                        end
-                        task.wait(0.05)
-                    end
-                    
-                    if Settings.CoinAura then
-                        firetouchinterest(hrp, bestCoin, 0)
-                        task.wait()
-                        firetouchinterest(hrp, bestCoin, 1)
-                    end
-                    
-                    if Settings.TweenDelay > 0 then task.wait(Settings.TweenDelay) end
-                end
-            end
-        end
-    end
-end)
-
