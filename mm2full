@@ -1,6 +1,8 @@
 --[[
-    Crows Hub | FULL v4.0 (Fluent UI Edition)
+    Crows Hub | FULL v5.0 (Fluent UI Edition)
     Game: Murder Mystery 2 (MM2)
+    Features: ESP (Highlight/Chams), Noclip, Auto Roles, Shoot Button, Custom Cursor, Sounds,
+              Wallbang, Teleports, Infinite Jump, Grab Gun Button, Auto Farm, Fling, Anti Fling
 ]]
 
 -- Load Fluent UI
@@ -15,6 +17,8 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 
 local function Notify(Title, Content, SubContent, Duration)
     Fluent:Notify({
@@ -72,10 +76,20 @@ local function GetSheriff()
     return nil
 end
 
+local function GetCoins()
+    local coins = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("coin") or obj.Name:lower():find("collectible")) then
+            table.insert(coins, obj)
+        end
+    end
+    return coins
+end
+
 -- WINDOW
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v4.0 MM2",
+    SubTitle = "v5.0 MM2",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -88,6 +102,7 @@ local Tabs = {
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     World = Window:AddTab({ Title = "World", Icon = "globe" }),
     Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
+    Farm = Window:AddTab({ Title = "Auto Farm", Icon = "coins" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
@@ -188,7 +203,7 @@ GrabBtn.MouseButton1Click:Connect(function()
         gun.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
         Notify("Grab Gun", "Gun teleported TO you!", nil, 3)
     else
-        Notify("Grab Gun", "No gun found on map!", nil, 3)
+        Notify("Grab Gun", "No gun found!", nil, 3)
     end
 end)
 
@@ -266,7 +281,6 @@ SmoothFOVToggle:OnChanged(function(Value) SmoothFOV = Value end)
 
 Tabs.Main:AddSlider("FOVSlider", {
     Title = "FOV Value",
-    Description = "Adjust your field of view",
     Default = 120,
     Min = 30,
     Max = 140,
@@ -363,7 +377,7 @@ local ESP = {
     Names = false,
     Distance = false,
     Health = false,
-    MaxDistance = 2000
+    Mode = "Highlight"
 }
 
 local ESPObjects = {}
@@ -407,8 +421,13 @@ local function CreatePlayerESP(player)
     local hl = Instance.new("Highlight")
     hl.Name = "CrowsESP_HL"
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.FillTransparency = 0.6
-    hl.OutlineTransparency = 0.2
+    if ESP.Mode == "Chams" then
+        hl.FillTransparency = 0.1
+        hl.OutlineTransparency = 0
+    else
+        hl.FillTransparency = 0.6
+        hl.OutlineTransparency = 0.2
+    end
     hl.OutlineColor = Color3.fromRGB(255, 255, 255)
     hl.Parent = char
     data.Highlight = hl
@@ -462,6 +481,13 @@ local function UpdatePlayerESP(player)
     if data.Highlight then
         data.Highlight.FillColor = roleColor
         data.Highlight.Enabled = ESP.Players
+        if ESP.Mode == "Chams" then
+            data.Highlight.FillTransparency = 0.1
+            data.Highlight.OutlineTransparency = 0
+        else
+            data.Highlight.FillTransparency = 0.6
+            data.Highlight.OutlineTransparency = 0.2
+        end
     end
     if data.NameTag and data.NameLabel then
         data.NameTag.Enabled = ESP.Names or ESP.Distance
@@ -522,6 +548,28 @@ local function UpdateGunESP()
     end
 end
 
+Tabs.Visuals:AddSection("ESP Mode")
+
+Tabs.Visuals:AddDropdown("ESPMode", {
+    Title = "ESP Style",
+    Values = {"Highlight", "Chams"},
+    Default = "Highlight",
+    Callback = function(Value)
+        ESP.Mode = Value
+        for plr, data in pairs(ESPObjects) do
+            if data.Highlight then
+                if Value == "Chams" then
+                    data.Highlight.FillTransparency = 0.1
+                    data.Highlight.OutlineTransparency = 0
+                else
+                    data.Highlight.FillTransparency = 0.6
+                    data.Highlight.OutlineTransparency = 0.2
+                end
+            end
+        end
+    end
+})
+
 Tabs.Visuals:AddSection("Player ESP")
 
 local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles)", Default = false })
@@ -553,7 +601,7 @@ GunESPToggle:OnChanged(function(Value)
         if GunESPObject.NameTag then GunESPObject.NameTag:Destroy() end
         GunESPObject = nil
     end
-end) 
+end)
 -- TAB 3: WORLD
 local FullBrightEnabled = false
 local NoFogEnabled = false
@@ -574,7 +622,7 @@ Tabs.World:AddButton({
             gun.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
             Notify("World Action", "Gun teleported TO you!", nil, 4)
         else
-            Notify("World Action", "No gun found on map!", nil, 3)
+            Notify("World Action", "No gun found!", nil, 3)
         end
     end
 })
@@ -582,7 +630,7 @@ Tabs.World:AddButton({
 local AutoGrabToggle = Tabs.World:AddToggle("AutoGrabGun", { Title = "Auto Grab Gun", Default = false })
 AutoGrabToggle:OnChanged(function(Value)
     AutoGrabGun = Value
-    if Value then Notify("Auto Grab", "When gun drops, it teleports TO you automatically!", nil, 5) end
+    if Value then Notify("Auto Grab", "Gun will teleport TO you when dropped!", nil, 5) end
 end)
 
 Tabs.World:AddSection("Teleports")
@@ -611,7 +659,6 @@ Tabs.World:AddButton({
                 hrp.CFrame = CFrame.new(0, 100, 0)
             end
             Notify("Teleport", "Teleported to Lobby!", nil, 3)
-
         elseif TeleportTarget == "Map Spawn" then
             local spawns = {}
             for _, obj in pairs(workspace:GetDescendants()) do
@@ -623,7 +670,6 @@ Tabs.World:AddButton({
             else
                 Notify("Teleport", "No spawn locations found!", nil, 3)
             end
-
         elseif TeleportTarget == "Murderer" then
             local m = GetMurderer()
             local mHRP = m and SafeGetHRP(SafeGetCharacter(m))
@@ -633,7 +679,6 @@ Tabs.World:AddButton({
             else
                 Notify("Teleport", "No murderer found!", nil, 3)
             end
-
         elseif TeleportTarget == "Sheriff" then
             local s = GetSheriff()
             local sHRP = s and SafeGetHRP(SafeGetCharacter(s))
@@ -643,7 +688,6 @@ Tabs.World:AddButton({
             else
                 Notify("Teleport", "No sheriff found!", nil, 3)
             end
-
         elseif TeleportTarget == "Random Player" then
             local others = {}
             for _, p in pairs(Players:GetPlayers()) do
@@ -692,13 +736,13 @@ end)
 workspace.ChildAdded:Connect(function(child)
     if child.Name:lower():find("gun") and child.Name:lower():find("drop") then
         GunDropSound:Play()
-        Notify("🔫 Gun Dropped!", "The Sheriff died! Gun is on the map!", "Hurry up and grab it!", 8)
+        Notify("🔫 Gun Dropped!", "Sheriff died! Gun is on the map!", "Hurry up and grab it!", 8)
         if AutoGrabGun then
             task.wait(0.3)
             local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
             if child:IsA("BasePart") and hrp then
                 child.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
-                Notify("Auto Grab", "Gun automatically teleported TO you!", nil, 4)
+                Notify("Auto Grab", "Gun auto-teleported TO you!", nil, 4)
             end
         end
     end
@@ -738,9 +782,10 @@ Tabs.Combat:AddSection("Wallbang")
 local WallbangToggle = Tabs.Combat:AddToggle("Wallbang", { Title = "Wallbang (Shoot Through Walls)", Default = false })
 WallbangToggle:OnChanged(function(Value)
     WallbangEnabled = Value
-    if Value then Notify("Combat", "Wallbang enabled!", "Bullets pass through walls to hit Murderer.", 4) end
+    if Value then Notify("Combat", "Wallbang enabled!", "Bullets pass through walls.", 4) end
 end)
 
+-- Wallbang via metatable hook
 local mt = getrawmetatable(game)
 if mt then
     local oldNamecall = mt.__namecall
@@ -749,7 +794,7 @@ if mt then
         local method = getnamecallmethod()
         if WallbangEnabled and method == "FireServer" and self:IsA("RemoteEvent") then
             local name = self.Name:lower()
-            if name:find("gun") or name:find("shoot") or name:find("fire") or name:find("bullet") or name:find("hit") then
+            if name:find("gun") or name:find("shoot") or name:find("fire") or name:find("bullet") or name:find("hit") or name:find("shootgun") then
                 local murderer = GetMurderer()
                 if murderer then
                     local mChar = SafeGetCharacter(murderer)
@@ -763,6 +808,8 @@ if mt then
                                 args[1] = mHead.CFrame
                             elseif typeof(args[1]) == "table" and args[1].Position then
                                 args[1].Position = mHead.Position
+                            elseif typeof(args[1]) == "Instance" and args[1]:IsA("BasePart") then
+                                args[1] = mHead
                             end
                         end
                         return oldNamecall(self, unpack(args))
@@ -774,6 +821,47 @@ if mt then
     end)
     setreadonly(mt, true)
 end
+
+-- Silent Aim Input Hook
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if SilentAimEnabled and not gameProcessed then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            local char = SafeGetCharacter(LocalPlayer)
+            local hasGun = char and char:FindFirstChild("Gun")
+            if not hasGun then
+                local bp = LocalPlayer:FindFirstChild("Backpack")
+                hasGun = bp and bp:FindFirstChild("Gun")
+            end
+            if hasGun then
+                local target = nil
+                if SilentAimTarget == "Murderer" then target = GetMurderer()
+                elseif SilentAimTarget == "Sheriff" then target = GetSheriff()
+                elseif SilentAimTarget == "Closest" then
+                    local closest = nil
+                    local minDist = math.huge
+                    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer then
+                            local pHRP = SafeGetHRP(SafeGetCharacter(p))
+                            if pHRP and myHRP then
+                                local d = (pHRP.Position - myHRP.Position).Magnitude
+                                if d < minDist then minDist = d closest = p end
+                            end
+                        end
+                    end
+                    target = closest
+                else
+                    target = GetMurderer()
+                end
+                local tChar = target and SafeGetCharacter(target)
+                local tHead = tChar and tChar:FindFirstChild("Head")
+                if tHead then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHead.Position)
+                end
+            end
+        end
+    end
+end)
 
 Tabs.Combat:AddSection("Shoot Murderer Button")
 
@@ -827,37 +915,47 @@ ShootBtn.MouseLeave:Connect(function()
     TweenService:Create(ShootStroke, TweenInfo.new(0.15), {Thickness = 1.5}):Play()
 end)
 
-ShootBtn.MouseButton1Click:Connect(function()
+local function ShootAtMurderer()
     local murderer = GetMurderer()
-    if not murderer then Notify("Combat", "No murderer found!", nil, 3) return end
+    if not murderer then
+        Notify("Combat", "No murderer found!", nil, 3)
+        return
+    end
     local char = SafeGetCharacter(LocalPlayer)
     local hrp = SafeGetHRP(char)
     local mChar = SafeGetCharacter(murderer)
-    local mHRP = SafeGetHRP(mChar)
-    if not hrp or not mHRP then Notify("Combat", "Target not available!", nil, 3) return end
+    local mHead = mChar and mChar:FindFirstChild("Head")
+    if not hrp or not mHead then
+        Notify("Combat", "Target not available!", nil, 3)
+        return
+    end
 
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHRP.Position)
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHead.Position)
+
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local charGun = char and char:FindFirstChild("Gun")
     local packGun = backpack and backpack:FindFirstChild("Gun")
 
     if charGun then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
+        task.wait(0.05)
+        pcall(function() charGun:Activate() end)
         Notify("Combat", "Firing at " .. murderer.Name .. "!", nil, 3)
     elseif packGun then
         local hum = SafeGetHumanoid(char)
         if hum then
             hum:EquipTool(packGun)
-            task.wait(0.25)
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
-            Notify("Combat", "Equipped gun and fired at " .. murderer.Name .. "!", nil, 3)
+            task.wait(0.3)
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHead.Position)
+            task.wait(0.05)
+            pcall(function() packGun:Activate() end)
+            Notify("Combat", "Equipped and fired at " .. murderer.Name .. "!", nil, 3)
         end
     else
-        Notify("Combat", "You don't have a gun!", "Wait for sheriff to die and grab it.", 4)
+        Notify("Combat", "You don't have a gun!", "Wait for sheriff to die.", 4)
     end
-end)
+end
+
+ShootBtn.MouseButton1Click:Connect(ShootAtMurderer)
 
 local ShootBtnEnabled = false
 local ShootBtnToggle = Tabs.Combat:AddToggle("ShootBtnToggle", { Title = "Show Shoot Button", Default = false })
@@ -887,7 +985,285 @@ Tabs.Combat:AddSlider("ShootBtnHeight", {
         ShootBtn.Size = UDim2.new(0, ShootBtn.Size.X.Offset, 0, Value)
     end
 })
--- TAB 5: SETTINGS
+
+-- FLING SYSTEM
+local FlingData = {
+    Murderer = false,
+    Sheriff = false,
+    Player = nil,
+    Anti = false
+}
+
+local function DoFling(targetPlayer)
+    if not targetPlayer then return end
+    local char = SafeGetCharacter(targetPlayer)
+    local hrp = SafeGetHRP(char)
+    if not hrp then return end
+
+    local bv = Instance.new("BodyAngularVelocity")
+    bv.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bv.AngularVelocity = Vector3.new(0, 9e9, 0)
+    bv.Parent = hrp
+
+    local bvel = Instance.new("BodyVelocity")
+    bvel.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bvel.Velocity = Vector3.new(0, 500, 0)
+    bvel.Parent = hrp
+
+    task.wait(0.4)
+    bv:Destroy()
+    bvel:Destroy()
+end
+
+Tabs.Combat:AddSection("Fling")
+
+local FlingMurderToggle = Tabs.Combat:AddToggle("FlingMurder", { Title = "Fling Murderer", Default = false })
+FlingMurderToggle:OnChanged(function(Value) FlingData.Murderer = Value end)
+
+local FlingSheriffToggle = Tabs.Combat:AddToggle("FlingSheriff", { Title = "Fling Sheriff", Default = false })
+FlingSheriffToggle:OnChanged(function(Value) FlingData.Sheriff = Value end)
+
+local SelectedFlingPlayer = nil
+Tabs.Combat:AddDropdown("FlingPlayerSelect", {
+    Title = "Fling Player",
+    Values = (function()
+        local names = {"None"}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then table.insert(names, p.Name) end
+        end
+        return names
+    end)(),
+    Default = "None",
+    Callback = function(Value)
+        if Value == "None" then
+            SelectedFlingPlayer = nil
+        else
+            SelectedFlingPlayer = Players:FindFirstChild(Value)
+        end
+    end
+})
+
+local FlingPlayerToggle = Tabs.Combat:AddToggle("FlingPlayer", { Title = "Fling Selected Player", Default = false })
+FlingPlayerToggle:OnChanged(function(Value) FlingData.Player = Value end)
+
+local AntiFlingToggle = Tabs.Combat:AddToggle("AntiFling", { Title = "Anti Fling", Default = false })
+AntiFlingToggle:OnChanged(function(Value) FlingData.Anti = Value end)
+
+-- Fling Loop
+task.spawn(function()
+    while true do
+        if FlingData.Murderer then
+            local m = GetMurderer()
+            if m then DoFling(m) end
+        end
+        if FlingData.Sheriff then
+            local s = GetSheriff()
+            if s then DoFling(s) end
+        end
+        if FlingData.Player and SelectedFlingPlayer then
+            DoFling(SelectedFlingPlayer)
+        end
+        task.wait(1.5)
+    end
+end)
+
+-- Anti Fling Loop
+RunService.Heartbeat:Connect(function()
+    if FlingData.Anti then
+        local char = SafeGetCharacter(LocalPlayer)
+        if char then
+            for _, obj in pairs(char:GetDescendants()) do
+                if obj:IsA("BodyAngularVelocity") or obj:IsA("BodyVelocity") or obj:IsA("BodyThrust") or obj:IsA("BodyGyro") then
+                    obj:Destroy()
+                end
+            end
+        end
+    end
+end)
+-- TAB 5: AUTO FARM
+local AutoFarm = {
+    Enabled = false,
+    Mode = "Normal",
+    Speed = 25,
+    Delay = 0,
+    CoinAura = false,
+    AuraRange = 15,
+    AvoidMurder = true,
+    AvoidRange = 30,
+    MaxCoins = 40,
+    AfterTeleport = "Void",
+    UnderMapY = -4,
+    CollectedCoins = 0,
+    Farming = false
+}
+
+Tabs.Farm:AddSection("Auto Farm Settings")
+
+local FarmToggle = Tabs.Farm:AddToggle("AutoFarm", { Title = "Enable Auto Farm", Default = false })
+FarmToggle:OnChanged(function(Value)
+    AutoFarm.Enabled = Value
+    AutoFarm.CollectedCoins = 0
+    if Value then
+        Notify("Auto Farm", "Farming started!", "Mode: " .. AutoFarm.Mode, 3)
+    end
+end)
+
+Tabs.Farm:AddDropdown("FarmMode", {
+    Title = "Farm Mode",
+    Values = {"Normal", "UnderMap"},
+    Default = "Normal",
+    Callback = function(Value)
+        AutoFarm.Mode = Value
+        Notify("Auto Farm", "Mode changed to: " .. Value, nil, 2)
+    end
+})
+
+Tabs.Farm:AddSlider("FarmSpeed", {
+    Title = "Speed Twin",
+    Default = 25,
+    Min = 15,
+    Max = 35,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.Speed = Value end
+})
+
+Tabs.Farm:AddSlider("FarmDelay", {
+    Title = "Twin Delay (sec)",
+    Default = 0,
+    Min = 0,
+    Max = 25,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.Delay = Value end
+})
+
+Tabs.Farm:AddSlider("UnderMapDepth", {
+    Title = "Under Map Depth (Y)",
+    Default = -4,
+    Min = -6,
+    Max = -3,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.UnderMapY = Value end
+})
+
+local AuraToggle = Tabs.Farm:AddToggle("CoinAura", { Title = "Coin Aura", Default = false })
+AuraToggle:OnChanged(function(Value) AutoFarm.CoinAura = Value end)
+
+Tabs.Farm:AddSlider("AuraRange", {
+    Title = "Aura Range",
+    Default = 15,
+    Min = 5,
+    Max = 50,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.AuraRange = Value end
+})
+
+local AvoidToggle = Tabs.Farm:AddToggle("AvoidMurder", { Title = "Avoid Murderer", Default = true })
+AvoidToggle:OnChanged(function(Value) AutoFarm.AvoidMurder = Value end)
+
+Tabs.Farm:AddSlider("AvoidRange", {
+    Title = "Avoid Range",
+    Default = 30,
+    Min = 10,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.AvoidRange = Value end
+})
+
+Tabs.Farm:AddSlider("MaxCoins", {
+    Title = "Max Coins Per Round",
+    Default = 40,
+    Min = 10,
+    Max = 40,
+    Rounding = 0,
+    Callback = function(Value) AutoFarm.MaxCoins = Value end
+})
+
+Tabs.Farm:AddDropdown("AfterTeleport", {
+    Title = "After Max Coins Teleport",
+    Values = {"Void", "Lobby", "Map"},
+    Default = "Void",
+    Callback = function(Value) AutoFarm.AfterTeleport = Value end
+})
+
+-- Auto Farm Loop
+task.spawn(function()
+    while true do
+        if AutoFarm.Enabled then
+            local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if hrp then
+                if AutoFarm.CollectedCoins >= AutoFarm.MaxCoins then
+                    if AutoFarm.AfterTeleport == "Void" then
+                        hrp.CFrame = CFrame.new(0, -500, 0)
+                    elseif AutoFarm.AfterTeleport == "Lobby" then
+                        local lobby = workspace:FindFirstChild("Lobby") or workspace:FindFirstChild("lobby")
+                        if lobby and lobby:IsA("BasePart") then
+                            hrp.CFrame = lobby.CFrame + Vector3.new(0, 5, 0)
+                        else
+                            hrp.CFrame = CFrame.new(0, 100, 0)
+                        end
+                    elseif AutoFarm.AfterTeleport == "Map" then
+                        local spawns = {}
+                        for _, obj in pairs(workspace:GetDescendants()) do
+                            if obj:IsA("SpawnLocation") then table.insert(spawns, obj) end
+                        end
+                        if #spawns > 0 then
+                            hrp.CFrame = spawns[math.random(1, #spawns)].CFrame + Vector3.new(0, 5, 0)
+                        end
+                    end
+                    AutoFarm.Enabled = false
+                    Notify("Auto Farm", "Max coins reached! (" .. AutoFarm.MaxCoins .. ")", "Teleported to " .. AutoFarm.AfterTeleport, 5)
+                else
+                    local coins = GetCoins()
+                    local murderer = GetMurderer()
+                    local mHRP = murderer and SafeGetHRP(SafeGetCharacter(murderer))
+                    local bestCoin = nil
+                    local bestDist = math.huge
+
+                    for _, coin in pairs(coins) do
+                        if coin and coin.Parent then
+                            local coinPos = coin.Position
+                            local dist = (hrp.Position - coinPos).Magnitude
+
+                            if AutoFarm.AvoidMurder and mHRP then
+                                local murderDist = (mHRP.Position - coinPos).Magnitude
+                                if murderDist < AutoFarm.AvoidRange then
+                                    continue
+                                end
+                            end
+
+                            if dist < bestDist then
+                                bestDist = dist
+                                bestCoin = coin
+                            end
+                        end
+                    end
+
+                    if bestCoin then
+                        if AutoFarm.CoinAura and bestDist <= AutoFarm.AuraRange then
+                            hrp.CFrame = CFrame.new(bestCoin.Position.X, hrp.Position.Y, bestCoin.Position.Z)
+                            AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
+                            if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
+                        else
+                            local targetPos = bestCoin.Position
+                            if AutoFarm.Mode == "UnderMap" then
+                                targetPos = Vector3.new(bestCoin.Position.X, AutoFarm.UnderMapY, bestCoin.Position.Z)
+                            end
+                            local direction = (targetPos - hrp.Position).Unit
+                            hrp.CFrame = hrp.CFrame + direction * AutoFarm.Speed * 0.03
+
+                            if (hrp.Position - bestCoin.Position).Magnitude < 5 then
+                                AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
+                                if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.03)
+    end
+end)
+-- TAB 6: SETTINGS
 Tabs.Settings:AddSection("UI Settings")
 
 Tabs.Settings:AddDropdown("ThemeSelector", {
@@ -905,7 +1281,6 @@ Tabs.Settings:AddDropdown("ThemeSelector", {
 Tabs.Settings:AddSection("Custom Cursor")
 
 local CustomCursorEnabled = false
-local CursorType = "Heart"
 
 local CursorGui = Instance.new("ScreenGui")
 CursorGui.Name = "CWH_Cursor"
@@ -941,7 +1316,6 @@ Tabs.Settings:AddDropdown("CursorType", {
     Values = {"Heart", "Diamond", "Star", "Target", "Crosshair"},
     Default = "Heart",
     Callback = function(Value)
-        CursorType = Value
         local icons = {
             Heart = "❤️",
             Diamond = "💎",
@@ -972,14 +1346,13 @@ Tabs.Settings:AddButton({
     Title = "Rejoin Server",
     Description = "Rejoin current server",
     Callback = function()
-        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end
 })
 
 -- ═══════════════════════════════════════════════════════════════
 -- MAIN LOOPS
 -- ═══════════════════════════════════════════════════════════════
-
 RunService.RenderStepped:Connect(function()
     if FOVEnabled then
         if SmoothFOV then
@@ -1047,6 +1420,7 @@ end)
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     ResetRoleNotifications()
+    AutoFarm.CollectedCoins = 0
     local hum = SafeGetHumanoid(char)
     if hum then
         if WalkSpeedEnabled then hum.WalkSpeed = TargetWalkSpeed end
@@ -1093,4 +1467,4 @@ for _, player in pairs(Players:GetPlayers()) do
     end
 end
 
-Notify("Crows Hub v4.0", "Loaded successfully!", "Sound: Fixed | Wallbang: Ready | Teleports: Active", 6)
+Notify("Crows Hub v5.0", "Loaded!", "Silent Aim: Fixed | Farm: Active | Fling: Ready", 6)
