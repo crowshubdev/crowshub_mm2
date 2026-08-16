@@ -1,54 +1,119 @@
 --[[
-    Crows Hub | FULL v1.3 (Fluent UI Edition)
-    Categories: Main, Visuals, World, Settings
+    Crows Hub | FULL v2.0 (Fluent UI Edition)
+    Game: Murder Mystery 2 (MM2)
+    Categories: Main, Visuals, World, Combat, Settings
 ]]
 
 -- Load Fluent UI
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
+-- Services
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- 1. WINDOW CREATION
+-- ═══════════════════════════════════════════════════════════════
+-- UTILITY FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════
+local function Notify(Title, Content, SubContent, Duration)
+    Fluent:Notify({
+        Title = Title or "Crows Hub",
+        Content = Content or "",
+        SubContent = SubContent or "",
+        Duration = Duration or 4
+    })
+end
+
+local function SafeGetCharacter(player)
+    return player and player.Character
+end
+
+local function SafeGetHumanoid(char)
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function SafeGetHRP(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function IsAlive(player)
+    local char = SafeGetCharacter(player)
+    local hum = SafeGetHumanoid(char)
+    return hum and hum.Health > 0
+end
+
+local function GetRole(player)
+    local char = SafeGetCharacter(player)
+    if not char then return "Unknown" end
+    
+    local backpack = player:FindFirstChild("Backpack")
+    local hasKnife = (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife")
+    local hasGun = (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun")
+    
+    if hasKnife then return "Murderer" end
+    if hasGun then return "Sheriff" end
+    return "Innocent"
+end
+
+local function GetRoleColor(role)
+    local colors = {
+        Murderer = Color3.fromRGB(255, 50, 50),
+        Sheriff = Color3.fromRGB(50, 100, 255),
+        Innocent = Color3.fromRGB(50, 255, 50),
+        Unknown = Color3.fromRGB(150, 150, 150)
+    }
+    return colors[role] or colors.Unknown
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WINDOW CREATION
+-- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v1.3 MM2",
+    SubTitle = "v2.0 MM2",
     TabWidth = 140,
-    Size = UDim2.fromOffset(540, 380),
-    Acrylic = false,
+    Size = UDim2.fromOffset(560, 400),
+    Acrylic = true,
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftShift
 })
 
--- 2. TABS
 local Tabs = {
     Main = Window:AddTab({ Title = "Main", Icon = "user" }),
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     World = Window:AddTab({ Title = "World", Icon = "globe" }),
+    Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
-----------------------------------------------------------------
--- MOBILE "CWH" BUTTON (Toggle Menu)
-----------------------------------------------------------------
+-- ═══════════════════════════════════════════════════════════════
+-- MOBILE TOGGLE BUTTON
+-- ═══════════════════════════════════════════════════════════════
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CWH_MobileUI"
 ScreenGui.Parent = gethui and gethui() or CoreGui
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Name = "CWHButton"
 ToggleBtn.Parent = ScreenGui
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
 ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
 ToggleBtn.Text = "CWH"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Font = Enum.Font.SourceSansBold
+ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.TextSize = 16
 ToggleBtn.Active = true
+ToggleBtn.AutoButtonColor = true
+ToggleBtn.Draggable = true
 
 local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(1, 0)
@@ -56,19 +121,44 @@ BtnCorner.Parent = ToggleBtn
 
 local BtnStroke = Instance.new("UIStroke")
 BtnStroke.Color = Color3.fromRGB(0, 150, 200)
-BtnStroke.Thickness = 2
+BtnStroke.Thickness = 2.5
 BtnStroke.Parent = ToggleBtn
+
+local BtnGradient = Instance.new("UIGradient")
+BtnGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 150, 200)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 50, 200))
+})
+BtnGradient.Rotation = 45
+BtnGradient.Parent = ToggleBtn
 
 ToggleBtn.MouseButton1Click:Connect(function()
     Window:Minimize()
 end)
 
-----------------------------------------------------------------
--- TAB 1: MAIN (FOV & Movement)
-----------------------------------------------------------------
+-- Button hover effect
+ToggleBtn.MouseEnter:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {Size = UDim2.new(0, 60, 0, 60)}):Play()
+end)
+ToggleBtn.MouseLeave:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {Size = UDim2.new(0, 55, 0, 55)}):Play()
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 1: MAIN (FOV, Speed, Jump, Anti-AFK)
+-- ═══════════════════════════════════════════════════════════════
 local DefaultFOV = Camera.FieldOfView
 local TargetFOV = 120
 local FOVEnabled = false
+local SmoothFOV = false
+local WalkSpeedEnabled = false
+local TargetWalkSpeed = 16
+local JumpPowerEnabled = false
+local TargetJumpPower = 50
+local AntiAFKEnabled = false
+
+-- FOV Section
+Tabs.Main:AddSection("Field of View")
 
 local FOVToggle = Tabs.Main:AddToggle("FOVToggle", { Title = "Enable FOV Changer", Default = false })
 FOVToggle:OnChanged(function(Value)
@@ -76,146 +166,560 @@ FOVToggle:OnChanged(function(Value)
     if not Value then Camera.FieldOfView = DefaultFOV end
 end)
 
-Tabs.Main:AddInput("FOVInput", {
+local SmoothFOVToggle = Tabs.Main:AddToggle("SmoothFOV", { Title = "Smooth FOV Transition", Default = true })
+SmoothFOVToggle:OnChanged(function(Value)
+    SmoothFOV = Value
+end)
+
+Tabs.Main:AddSlider("FOVSlider", {
     Title = "FOV Value",
-    Default = "120",
-    Numeric = true,
-    Finished = true,
+    Description = "Adjust your field of view",
+    Default = 120,
+    Min = 30,
+    Max = 140,
+    Rounding = 0,
     Callback = function(Value)
-        local Num = tonumber(Value)
-        if Num and Num >= 30 and Num <= 140 then
-            TargetFOV = Num
-            if FOVEnabled then Camera.FieldOfView = TargetFOV end
+        TargetFOV = Value
+        if FOVEnabled and not SmoothFOV then
+            Camera.FieldOfView = TargetFOV
         end
     end
 })
 
-RunService.RenderStepped:Connect(function()
-    if FOVEnabled and Camera.FieldOfView ~= TargetFOV then
-        Camera.FieldOfView = TargetFOV
+-- Movement Section
+Tabs.Main:AddSection("Movement")
+
+local SpeedToggle = Tabs.Main:AddToggle("SpeedToggle", { Title = "Enable WalkSpeed", Default = false })
+SpeedToggle:OnChanged(function(Value)
+    WalkSpeedEnabled = Value
+    local char = SafeGetCharacter(LocalPlayer)
+    local hum = SafeGetHumanoid(char)
+    if hum then
+        hum.WalkSpeed = Value and TargetWalkSpeed or 16
     end
 end)
 
-----------------------------------------------------------------
--- TAB 2: VISUALS (ESP Player, Gun, Traps)
-----------------------------------------------------------------
-local ESP_Players = false
-local ESP_Gun = false
-local ESP_Traps = false
+Tabs.Main:AddSlider("SpeedSlider", {
+    Title = "WalkSpeed",
+    Default = 25,
+    Min = 16,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(Value)
+        TargetWalkSpeed = Value
+        if WalkSpeedEnabled then
+            local char = SafeGetCharacter(LocalPlayer)
+            local hum = SafeGetHumanoid(char)
+            if hum then hum.WalkSpeed = Value end
+        end
+    end
+})
 
-local Highlights = {}
+local JumpToggle = Tabs.Main:AddToggle("JumpToggle", { Title = "Enable JumpPower", Default = false })
+JumpToggle:OnChanged(function(Value)
+    JumpPowerEnabled = Value
+    local char = SafeGetCharacter(LocalPlayer)
+    local hum = SafeGetHumanoid(char)
+    if hum then
+        hum.JumpPower = Value and TargetJumpPower or 50
+        hum.UseJumpPower = true
+    end
+end)
 
-local function CreateHighlight(plr)
-    if plr == LocalPlayer or not plr.Character then return end
+Tabs.Main:AddSlider("JumpSlider", {
+    Title = "JumpPower",
+    Default = 60,
+    Min = 50,
+    Max = 150,
+    Rounding = 0,
+    Callback = function(Value)
+        TargetJumpPower = Value
+        if JumpPowerEnabled then
+            local char = SafeGetCharacter(LocalPlayer)
+            local hum = SafeGetHumanoid(char)
+            if hum then hum.JumpPower = Value end
+        end
+    end
+})
+
+-- Anti-AFK
+Tabs.Main:AddSection("Anti-AFK")
+
+local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
+AntiAFKToggle:OnChanged(function(Value)
+    AntiAFKEnabled = Value
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 2: VISUALS (ESP System)
+-- ═══════════════════════════════════════════════════════════════
+local ESP = {
+    Players = false,
+    Gun = false,
+    Traps = false,
+    Names = false,
+    Distance = false,
+    Health = false,
+    Boxes = false,
+    Tracers = false,
+    TeamCheck = false,
+    MaxDistance = 1000
+}
+
+local ESPObjects = {}
+local GunESPObject = nil
+
+-- Cleanup function
+local function ClearAllESP()
+    for _, obj in pairs(ESPObjects) do
+        if obj.Highlight then obj.Highlight:Destroy() end
+        if obj.NameTag then obj.NameTag:Destroy() end
+        if obj.Box then obj.Box:Destroy() end
+        if obj.Tracer then obj.Tracer:Destroy() end
+        if obj.HealthBar then obj.HealthBar:Destroy() end
+    end
+    ESPObjects = {}
     
-    local char = plr.Character
-    if not char:FindFirstChild("CrowsHighlight") then
+    if GunESPObject then
+        if GunESPObject.Highlight then GunESPObject.Highlight:Destroy() end
+        if GunESPObject.NameTag then GunESPObject.NameTag:Destroy() end
+        GunESPObject = nil
+    end
+end
+
+-- Create Billboard GUI for name/distance/health
+local function CreateBillboard(parent, size)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = size or UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = parent
+    return billboard
+end
+
+local function CreatePlayerESP(player)
+    if player == LocalPlayer then return end
+    if ESPObjects[player] then return end
+    
+    local char = SafeGetCharacter(player)
+    if not char then return end
+    
+    local espData = {}
+    
+    -- Highlight
+    local hl = Instance.new("Highlight")
+    hl.Name = "CrowsESP_Highlight"
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.FillTransparency = 0.6
+    hl.OutlineTransparency = 0.2
+    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hl.Parent = char
+    espData.Highlight = hl
+    
+    -- Name Tag
+    local nameBillboard = CreateBillboard(char, UDim2.new(0, 200, 0, 30))
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 1, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextStrokeTransparency = 0.5
+    nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.Parent = nameBillboard
+    espData.NameTag = nameBillboard
+    espData.NameLabel = nameLabel
+    
+    -- Health Bar
+    local healthBillboard = CreateBillboard(char, UDim2.new(0, 100, 0, 6))
+    healthBillboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    local healthBg = Instance.new("Frame")
+    healthBg.Size = UDim2.new(1, 0, 1, 0)
+    healthBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    healthBg.BorderSizePixel = 0
+    healthBg.Parent = healthBillboard
+    local healthFill = Instance.new("Frame")
+    healthFill.Size = UDim2.new(1, 0, 1, 0)
+    healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    healthFill.BorderSizePixel = 0
+    healthFill.Parent = healthBg
+    espData.HealthBar = healthBillboard
+    espData.HealthFill = healthFill
+    
+    ESPObjects[player] = espData
+end
+
+local function UpdatePlayerESP(player)
+    local espData = ESPObjects[player]
+    if not espData then return end
+    
+    local char = SafeGetCharacter(player)
+    if not char then
+        if espData.Highlight then espData.Highlight:Destroy() end
+        if espData.NameTag then espData.NameTag:Destroy() end
+        if espData.HealthBar then espData.HealthBar:Destroy() end
+        ESPObjects[player] = nil
+        return
+    end
+    
+    local role = GetRole(player)
+    local roleColor = GetRoleColor(role)
+    local hum = SafeGetHumanoid(char)
+    local hrp = SafeGetHRP(char)
+    local localHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    
+    -- Update highlight
+    if espData.Highlight then
+        espData.Highlight.FillColor = roleColor
+        espData.Highlight.Enabled = ESP.Players
+    end
+    
+    -- Update name tag
+    if espData.NameTag and espData.NameLabel then
+        espData.NameTag.Enabled = ESP.Names or ESP.Distance
+        local text = ""
+        if ESP.Names then
+            text = player.Name .. " [" .. role .. "]"
+        end
+        if ESP.Distance and localHRP and hrp then
+            local dist = math.floor((localHRP.Position - hrp.Position).Magnitude)
+            text = text .. "\n" .. dist .. " studs"
+        end
+        espData.NameLabel.Text = text
+        espData.NameLabel.TextColor3 = roleColor
+    end
+    
+    -- Update health bar
+    if espData.HealthBar and espData.HealthFill then
+        espData.HealthBar.Enabled = ESP.Health and hum ~= nil
+        if hum then
+            local healthPercent = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            espData.HealthFill.Size = UDim2.new(healthPercent, 0, 1, 0)
+            espData.HealthFill.BackgroundColor3 = Color3.fromRGB(
+                255 * (1 - healthPercent),
+                255 * healthPercent,
+                0
+            )
+        end
+    end
+end
+
+-- Gun ESP
+local function UpdateGunESP()
+    local gun = workspace:FindFirstChild("GunDrop", true)
+    
+    if not gun or not ESP.Gun then
+        if GunESPObject then
+            if GunESPObject.Highlight then GunESPObject.Highlight:Destroy() end
+            if GunESPObject.NameTag then GunESPObject.NameTag:Destroy() end
+            GunESPObject = nil
+        end
+        return
+    end
+    
+    if not GunESPObject then
+        GunESPObject = {}
+        
         local hl = Instance.new("Highlight")
-        hl.Name = "CrowsHighlight"
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.FillTransparency = 0.5
+        hl.Name = "CrowsESP_Gun"
+        hl.FillColor = Color3.fromRGB(255, 215, 0)
+        hl.OutlineColor = Color3.fromRGB(255, 255, 0)
+        hl.FillTransparency = 0.3
         hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = gun
+        GunESPObject.Highlight = hl
         
-        -- Роли в MM2
-        local backpack = plr:FindFirstChild("Backpack")
-        if (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife") then
-            hl.FillColor = Color3.fromRGB(255, 50, 50) -- Murderer (Красный)
-        elseif (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun") then
-            hl.FillColor = Color3.fromRGB(50, 100, 255) -- Sheriff (Синий)
-        else
-            hl.FillColor = Color3.fromRGB(50, 255, 50) -- Innocent (Зеленый)
-        end
-        
-        hl.Parent = char
+        local billboard = CreateBillboard(gun, UDim2.new(0, 150, 0, 25))
+        billboard.StudsOffset = Vector3.new(0, 1, 0)
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "🔫 GUN DROP"
+        label.TextColor3 = Color3.fromRGB(255, 215, 0)
+        label.TextStrokeTransparency = 0.3
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 16
+        label.Parent = billboard
+        GunESPObject.NameTag = billboard
     end
 end
 
-local function ClearHighlights()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr.Character and plr.Character:FindFirstChild("CrowsHighlight") then
-            plr.Character.CrowsHighlight:Destroy()
-        end
-    end
-end
+-- Visuals Tab UI
+Tabs.Visuals:AddSection("Player ESP")
 
-local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles Highlight)", Default = false })
+local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles)", Default = false })
 PlayerESPToggle:OnChanged(function(Value)
-    ESP_Players = Value
-    if not Value then ClearHighlights() end
+    ESP.Players = Value
+    if not Value then
+        for player, data in pairs(ESPObjects) do
+            if data.Highlight then data.Highlight.Enabled = false end
+        end
+    end
 end)
+
+local NameESPToggle = Tabs.Visuals:AddToggle("NameESP", { Title = "Show Names & Roles", Default = false })
+NameESPToggle:OnChanged(function(Value)
+    ESP.Names = Value
+end)
+
+local DistESPToggle = Tabs.Visuals:AddToggle("DistESP", { Title = "Show Distance", Default = false })
+DistESPToggle:OnChanged(function(Value)
+    ESP.Distance = Value
+end)
+
+local HealthESPToggle = Tabs.Visuals:AddToggle("HealthESP", { Title = "Show Health Bar", Default = false })
+HealthESPToggle:OnChanged(function(Value)
+    ESP.Health = Value
+end)
+
+Tabs.Visuals:AddSection("Item ESP")
 
 local GunESPToggle = Tabs.Visuals:AddToggle("GunESP", { Title = "Dropped Gun ESP", Default = false })
 GunESPToggle:OnChanged(function(Value)
-    ESP_Gun = Value
-end)
-
--- Loop ESP Updates
-RunService.Stepped:Connect(function()
-    if ESP_Players then
-        for _, plr in pairs(Players:GetPlayers()) do
-            CreateHighlight(plr)
-        end
-    end
-    
-    -- Gun ESP & Traps ESP
-    if ESP_Gun then
-        local gun = workspace:FindFirstChild("GunDrop", true)
-        if gun and not gun:FindFirstChild("GunHighlight") then
-            local hl = Instance.new("Highlight")
-            hl.Name = "GunHighlight"
-            hl.FillColor = Color3.fromRGB(255, 215, 0) -- Золотой цвет
-            hl.Parent = gun
-        end
+    ESP.Gun = Value
+    if not Value and GunESPObject then
+        if GunESPObject.Highlight then GunESPObject.Highlight:Destroy() end
+        if GunESPObject.NameTag then GunESPObject.NameTag:Destroy() end
+        GunESPObject = nil
     end
 end)
 
-----------------------------------------------------------------
--- TAB 3: WORLD & GAME NOTIFICATIONS
-----------------------------------------------------------------
-local function PullGunToPlayer()
-    local gun = workspace:FindFirstChild("GunDrop", true) or workspace:FindFirstChild("Gun", true)
-    if gun and gun:IsA("BasePart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        gun.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
-        Fluent:Notify({
-            Title = "World Action",
-            Content = "Attempted to bring Gun to you!",
-            Duration = 4
-        })
-    end
-end
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 3: WORLD
+-- ═══════════════════════════════════════════════════════════════
+local FullBrightEnabled = false
+local NoFogEnabled = false
+local AutoGrabGun = false
+local originalBrightness = Lighting.Brightness
+local originalFogStart = Lighting.FogStart
+local originalFogEnd = Lighting.FogEnd
+
+Tabs.World:AddSection("Gun Actions")
 
 Tabs.World:AddButton({
     Title = "Grab Gun Now",
     Description = "Teleports dropped gun to your position",
-    Callback = PullGunToPlayer
+    Callback = function()
+        local gun = workspace:FindFirstChild("GunDrop", true)
+        local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        if gun and gun:IsA("BasePart") and hrp then
+            gun.CFrame = hrp.CFrame
+            Notify("World Action", "Gun teleported to you!", nil, 4)
+        else
+            Notify("World Action", "No gun found on map!", nil, 3)
+        end
+    end
 })
 
--- Отслеживание выпадения пистолета и уведомление на 6 секунд
-workspace.ChildAdded:Connect(function(child)
-    if child.Name:lower():find("gun") then
-        Fluent:Notify({
-            Title = "MM2 Event",
-            Content = "Gun dropped on the map!",
-            SubContent = "Pick it up quickly!",
-            Duration = 6
-        })
+local AutoGrabToggle = Tabs.World:AddToggle("AutoGrabGun", { Title = "Auto Grab Gun", Default = false })
+AutoGrabToggle:OnChanged(function(Value)
+    AutoGrabGun = Value
+    if Value then
+        Notify("Auto Grab", "Will automatically teleport gun to you when dropped!", nil, 4)
     end
 end)
 
-----------------------------------------------------------------
--- TAB 4: SETTINGS
-----------------------------------------------------------------
+Tabs.World:AddSection("Environment")
+
+local FullBrightToggle = Tabs.World:AddToggle("FullBright", { Title = "Full Bright", Default = false })
+FullBrightToggle:OnChanged(function(Value)
+    FullBrightEnabled = Value
+    if Value then
+        Lighting.Brightness = 10
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness = originalBrightness
+        Lighting.GlobalShadows = true
+    end
+end)
+
+local NoFogToggle = Tabs.World:AddToggle("NoFog", { Title = "No Fog", Default = false })
+NoFogToggle:OnChanged(function(Value)
+    NoFogEnabled = Value
+    if Value then
+        Lighting.FogStart = 0
+        Lighting.FogEnd = 999999
+    else
+        Lighting.FogStart = originalFogStart
+        Lighting.FogEnd = originalFogEnd
+    end
+end)
+
+-- Gun Drop Notifications
+workspace.ChildAdded:Connect(function(child)
+    if child.Name:lower():find("gun") then
+        Notify("MM2 Event", "Gun dropped on the map!", "Pick it up quickly!", 6)
+        
+        if AutoGrabGun then
+            task.wait(0.5)
+            local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if child:IsA("BasePart") and hrp then
+                child.CFrame = hrp.CFrame
+                Notify("Auto Grab", "Gun automatically collected!", nil, 3)
+            end
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 4: COMBAT
+-- ═══════════════════════════════════════════════════════════════
+local SilentAimEnabled = false
+local SilentAimFOV = 150
+local SilentAimTarget = "Murderer"
+
+Tabs.Combat:AddSection("Silent Aim")
+
+local SilentAimToggle = Tabs.Combat:AddToggle("SilentAim", { Title = "Silent Aim (Gun)", Default = false })
+SilentAimToggle:OnChanged(function(Value)
+    SilentAimEnabled = Value
+    if Value then
+        Notify("Combat", "Silent Aim enabled! Aim near target to auto-hit.", nil, 4)
+    end
+end)
+
+Tabs.Combat:AddDropdown("SilentAimTarget", {
+    Title = "Target Priority",
+    Values = {"Murderer", "Sheriff", "Closest", "All"},
+    Default = "Murderer",
+    Callback = function(Value)
+        SilentAimTarget = Value
+    end
+})
+
+Tabs.Combat:AddSlider("SilentAimFOV", {
+    Title = "Aim FOV",
+    Default = 150,
+    Min = 50,
+    Max = 500,
+    Rounding = 0,
+    Callback = function(Value)
+        SilentAimFOV = Value
+    end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 5: SETTINGS
+-- ═══════════════════════════════════════════════════════════════
+Tabs.Settings:AddSection("UI Settings")
+
 Tabs.Settings:AddDropdown("ThemeSelector", {
     Title = "UI Theme",
-    Values = {"Dark", "Light", "Darker", "Midnight"},
+    Values = {"Dark", "Light", "Darker", "Midnight", "Amethyst", "Rose"},
     Default = "Dark",
     Callback = function(Value)
         Fluent:SetTheme(Value)
     end
 })
 
-Fluent:Notify({
-    Title = "Crows Hub FULL Loaded",
-    Content = "Press CWH button on screen to toggle UI.",
-    Duration = 5
+Tabs.Settings:AddButton({
+    Title = "Destroy UI",
+    Description = "Close Crows Hub completely",
+    Callback = function()
+        ClearAllESP()
+        ScreenGui:Destroy()
+        Window:Destroy()
+    end
 })
+
+Tabs.Settings:AddButton({
+    Title = "Rejoin Server",
+    Description = "Rejoin current server",
+    Callback = function()
+        local ts = game:GetService("TeleportService")
+        ts:Teleport(game.PlaceId, LocalPlayer)
+    end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- MAIN LOOPS
+-- ═══════════════════════════════════════════════════════════════
+
+-- FOV Loop
+RunService.RenderStepped:Connect(function()
+    if FOVEnabled then
+        if SmoothFOV then
+            Camera.FieldOfView = Camera.FieldOfView + (TargetFOV - Camera.FieldOfView) * 0.1
+        else
+            Camera.FieldOfView = TargetFOV
+        end
+    end
+end)
+
+-- Movement Loop
+RunService.Heartbeat:Connect(function()
+    local char = SafeGetCharacter(LocalPlayer)
+    local hum = SafeGetHumanoid(char)
+    if not hum then return end
+    
+    if WalkSpeedEnabled then
+        hum.WalkSpeed = TargetWalkSpeed
+    end
+    if JumpPowerEnabled then
+        hum.JumpPower = TargetJumpPower
+        hum.UseJumpPower = true
+    end
+end)
+
+-- ESP Loop
+RunService.Heartbeat:Connect(function()
+    if ESP.Players or ESP.Names or ESP.Distance or ESP.Health then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                CreatePlayerESP(player)
+                UpdatePlayerESP(player)
+            end
+        end
+    end
+    
+    if ESP.Gun then
+        UpdateGunESP()
+    end
+end)
+
+-- Anti-AFK
+LocalPlayer.Idled:Connect(function()
+    if AntiAFKEnabled then
+        local VirtualUser = game:GetService("VirtualUser")
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+        Notify("Anti-AFK", "Prevented idle kick!", nil, 2)
+    end
+end)
+
+-- Character respawn handler
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    local hum = SafeGetHumanoid(char)
+    if hum then
+        if WalkSpeedEnabled then hum.WalkSpeed = TargetWalkSpeed end
+        if JumpPowerEnabled then 
+            hum.JumpPower = TargetJumpPower 
+            hum.UseJumpPower = true
+        end
+    end
+    
+    if ESP.Players then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                CreatePlayerESP(player)
+            end
+        end
+    end
+end)
+
+-- Player leaving cleanup
+Players.PlayerRemoving:Connect(function(player)
+    if ESPObjects[player] then
+        local data = ESPObjects[player]
+        if data.Highlight then data.Highlight:Destroy() end
+        if data.NameTag then data.NameTag:Destroy() end
+        if data.HealthBar then data.HealthBar:Destroy() end
+        ESPObjects[player] = nil
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- INIT
+-- ═══════════════════════════════════════════════════════════════
+Notify("Crows Hub v2.0", "Successfully loaded!", "Press CWH button or LeftShift to toggle UI.", 5)
