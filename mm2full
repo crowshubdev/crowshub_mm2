@@ -1,15 +1,11 @@
 --[[
-    Crows Hub | FULL v3.0 (Fluent UI Edition)
+    Crows Hub | FULL v4.0 (Fluent UI Edition)
     Game: Murder Mystery 2 (MM2)
-    Features: ESP, Noclip, Auto Roles, Shoot Button, Custom Cursor, Sounds
 ]]
 
 -- Load Fluent UI
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
--- ═══════════════════════════════════════════════════════════════
--- SERVICES
--- ═══════════════════════════════════════════════════════════════
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,13 +14,8 @@ local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
-local HttpService = game:GetService("HttpService")
 
--- ═══════════════════════════════════════════════════════════════
--- UTILITIES
--- ═══════════════════════════════════════════════════════════════
 local function Notify(Title, Content, SubContent, Duration)
     Fluent:Notify({
         Title = Title or "Crows Hub",
@@ -44,12 +35,6 @@ end
 
 local function SafeGetHRP(char)
     return char and char:FindFirstChild("HumanoidRootPart")
-end
-
-local function IsAlive(player)
-    local char = SafeGetCharacter(player)
-    local hum = SafeGetHumanoid(char)
-    return hum and hum.Health > 0
 end
 
 local function GetRole(player)
@@ -87,17 +72,15 @@ local function GetSheriff()
     return nil
 end
 
--- ═══════════════════════════════════════════════════════════════
 -- WINDOW
--- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v3.0 MM2",
+    SubTitle = "v4.0 MM2",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
     Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.LeftShift
+    MinimizeKey = nil
 })
 
 local Tabs = {
@@ -108,43 +91,35 @@ local Tabs = {
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
--- ═══════════════════════════════════════════════════════════════
 -- SOUNDS
--- ═══════════════════════════════════════════════════════════════
 local SoundGui = Instance.new("ScreenGui")
 SoundGui.Name = "CWH_Sounds"
 SoundGui.Parent = gethui and gethui() or CoreGui
 SoundGui.ResetOnSpawn = false
 
 local OpenSound = Instance.new("Sound")
-OpenSound.Name = "MenuOpen"
 OpenSound.SoundId = "rbxassetid://9113083740"
 OpenSound.Volume = 0.5
 OpenSound.Parent = SoundGui
 
 local CloseSound = Instance.new("Sound")
-CloseSound.Name = "MenuClose"
 CloseSound.SoundId = "rbxassetid://9113083740"
 CloseSound.Volume = 0.3
 CloseSound.PlaybackSpeed = 0.8
 CloseSound.Parent = SoundGui
 
 local GunDropSound = Instance.new("Sound")
-GunDropSound.Name = "GunDropAlert"
 GunDropSound.SoundId = "rbxassetid://5206469441"
 GunDropSound.Volume = 0.6
 GunDropSound.Parent = SoundGui
 
 local RoleDetectSound = Instance.new("Sound")
-RoleDetectSound.Name = "RoleDetect"
 RoleDetectSound.SoundId = "rbxassetid://5206469441"
 RoleDetectSound.Volume = 0.4
 RoleDetectSound.PlaybackSpeed = 1.2
 RoleDetectSound.Parent = SoundGui
 
--- ═══════════════════════════════════════════════════════════════
--- MOBILE TOGGLE BUTTON
--- ═══════════════════════════════════════════════════════════════
+-- MOBILE BUTTONS
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CWH_MobileUI"
 ScreenGui.Parent = gethui and gethui() or CoreGui
@@ -182,16 +157,50 @@ BtnGradient.Color = ColorSequence.new({
 BtnGradient.Rotation = 45
 BtnGradient.Parent = ToggleBtn
 
-local MenuOpen = false
-ToggleBtn.MouseButton1Click:Connect(function()
-    MenuOpen = not MenuOpen
-    Window:Minimize()
-    if MenuOpen then
-        OpenSound:Play()
+-- Grab Gun Button
+local GrabBtn = Instance.new("TextButton")
+GrabBtn.Name = "GrabGunBtn"
+GrabBtn.Parent = ScreenGui
+GrabBtn.Size = UDim2.new(0, 45, 0, 45)
+GrabBtn.Position = UDim2.new(0.05, 0, 0.2, 65)
+GrabBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+GrabBtn.Text = "🔫"
+GrabBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
+GrabBtn.Font = Enum.Font.GothamBold
+GrabBtn.TextSize = 20
+GrabBtn.Active = true
+GrabBtn.AutoButtonColor = true
+GrabBtn.Draggable = true
+
+local GrabCorner = Instance.new("UICorner")
+GrabCorner.CornerRadius = UDim.new(0, 10)
+GrabCorner.Parent = GrabBtn
+
+local GrabStroke = Instance.new("UIStroke")
+GrabStroke.Color = Color3.fromRGB(255, 215, 0)
+GrabStroke.Thickness = 2
+GrabStroke.Parent = GrabBtn
+
+GrabBtn.MouseButton1Click:Connect(function()
+    local gun = workspace:FindFirstChild("GunDrop", true)
+    local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if gun and gun:IsA("BasePart") and hrp then
+        gun.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
+        Notify("Grab Gun", "Gun teleported TO you!", nil, 3)
     else
-        CloseSound:Play()
+        Notify("Grab Gun", "No gun found on map!", nil, 3)
     end
 end)
+
+-- WINDOW TOGGLE WITH SOUND
+local IsMinimized = false
+local function ToggleWindow()
+    Window:Minimize()
+    IsMinimized = not IsMinimized
+    if IsMinimized then CloseSound:Play() else OpenSound:Play() end
+end
+
+ToggleBtn.MouseButton1Click:Connect(ToggleWindow)
 
 ToggleBtn.MouseEnter:Connect(function()
     TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {Size = UDim2.new(0, 60, 0, 60)}):Play()
@@ -200,9 +209,13 @@ ToggleBtn.MouseLeave:Connect(function()
     TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {Size = UDim2.new(0, 55, 0, 55)}):Play()
 end)
 
--- ═══════════════════════════════════════════════════════════════
--- ROLE DETECTION SYSTEM
--- ═══════════════════════════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.LeftShift then
+        ToggleWindow()
+    end
+end)
+
+-- ROLE DETECTION
 local NotifiedRoles = {}
 local RoleDetectEnabled = true
 
@@ -227,9 +240,7 @@ local function DetectRoles()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════
 -- TAB 1: MAIN
--- ═══════════════════════════════════════════════════════════════
 local DefaultFOV = Camera.FieldOfView
 local TargetFOV = 120
 local FOVEnabled = false
@@ -240,6 +251,7 @@ local JumpPowerEnabled = false
 local TargetJumpPower = 50
 local AntiAFKEnabled = false
 local NoclipEnabled = false
+local InfiniteJumpEnabled = false
 
 Tabs.Main:AddSection("Field of View")
 
@@ -250,9 +262,7 @@ FOVToggle:OnChanged(function(Value)
 end)
 
 local SmoothFOVToggle = Tabs.Main:AddToggle("SmoothFOV", { Title = "Smooth FOV Transition", Default = true })
-SmoothFOVToggle:OnChanged(function(Value)
-    SmoothFOV = Value
-end)
+SmoothFOVToggle:OnChanged(function(Value) SmoothFOV = Value end)
 
 Tabs.Main:AddSlider("FOVSlider", {
     Title = "FOV Value",
@@ -316,12 +326,21 @@ Tabs.Main:AddSlider("JumpSlider", {
     end
 })
 
+-- Infinite Jump
+local InfJumpToggle = Tabs.Main:AddToggle("InfJump", { Title = "Infinite Jump", Default = false })
+InfJumpToggle:OnChanged(function(Value) InfiniteJumpEnabled = Value end)
+
+UserInputService.JumpRequest:Connect(function()
+    if InfiniteJumpEnabled then
+        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
 Tabs.Main:AddSection("Misc")
 
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
-AntiAFKToggle:OnChanged(function(Value)
-    AntiAFKEnabled = Value
-end)
+AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
 
 local NoclipToggle = Tabs.Main:AddToggle("Noclip", { Title = "Enable Noclip", Default = false })
 NoclipToggle:OnChanged(function(Value)
@@ -336,11 +355,8 @@ NoclipToggle:OnChanged(function(Value)
             end
         end
     end
-end)
-
--- ═══════════════════════════════════════════════════════════════
--- TAB 2: VISUALS (ESP)
--- ═══════════════════════════════════════════════════════════════
+end) 
+-- TAB 2: VISUALS
 local ESP = {
     Players = false,
     Gun = false,
@@ -363,9 +379,7 @@ local function ClearPlayerESP(player)
 end
 
 local function ClearAllESP()
-    for player, _ in pairs(ESPObjects) do
-        ClearPlayerESP(player)
-    end
+    for player, _ in pairs(ESPObjects) do ClearPlayerESP(player) end
     ESPObjects = {}
     if GunESPObject then
         if GunESPObject.Highlight and GunESPObject.Highlight.Parent then GunESPObject.Highlight:Destroy() end
@@ -386,12 +400,10 @@ end
 local function CreatePlayerESP(player)
     if player == LocalPlayer then return end
     if ESPObjects[player] then return end
-    
     local char = SafeGetCharacter(player)
     if not char then return end
-    
     local data = {}
-    
+
     local hl = Instance.new("Highlight")
     hl.Name = "CrowsESP_HL"
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -400,7 +412,7 @@ local function CreatePlayerESP(player)
     hl.OutlineColor = Color3.fromRGB(255, 255, 255)
     hl.Parent = char
     data.Highlight = hl
-    
+
     local nameBillboard = CreateBillboard(char, UDim2.new(0, 200, 0, 35), Vector3.new(0, 3.5, 0))
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -412,7 +424,7 @@ local function CreatePlayerESP(player)
     nameLabel.Parent = nameBillboard
     data.NameTag = nameBillboard
     data.NameLabel = nameLabel
-    
+
     local healthBillboard = CreateBillboard(char, UDim2.new(0, 100, 0, 6), Vector3.new(0, 2.8, 0))
     local healthBg = Instance.new("Frame")
     healthBg.Size = UDim2.new(1, 0, 1, 0)
@@ -432,31 +444,25 @@ local function CreatePlayerESP(player)
     fillCorner.Parent = healthFill
     data.HealthBar = healthBillboard
     data.HealthFill = healthFill
-    
+
     ESPObjects[player] = data
 end
 
 local function UpdatePlayerESP(player)
     local data = ESPObjects[player]
     if not data then return end
-    
     local char = SafeGetCharacter(player)
-    if not char then
-        ClearPlayerESP(player)
-        return
-    end
-    
+    if not char then ClearPlayerESP(player) return end
     local role = GetRole(player)
     local roleColor = GetRoleColor(role)
     local hum = SafeGetHumanoid(char)
     local hrp = SafeGetHRP(char)
     local localHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-    
+
     if data.Highlight then
         data.Highlight.FillColor = roleColor
         data.Highlight.Enabled = ESP.Players
     end
-    
     if data.NameTag and data.NameLabel then
         data.NameTag.Enabled = ESP.Names or ESP.Distance
         local text = ""
@@ -471,7 +477,6 @@ local function UpdatePlayerESP(player)
         data.NameLabel.Text = text
         data.NameLabel.TextColor3 = roleColor
     end
-    
     if data.HealthBar and data.HealthFill then
         data.HealthBar.Enabled = ESP.Health and hum ~= nil
         if hum then
@@ -492,7 +497,6 @@ local function UpdateGunESP()
         end
         return
     end
-    
     if not GunESPObject then
         GunESPObject = {}
         local hl = Instance.new("Highlight")
@@ -504,7 +508,6 @@ local function UpdateGunESP()
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Parent = gun
         GunESPObject.Highlight = hl
-        
         local billboard = CreateBillboard(gun, UDim2.new(0, 160, 0, 30), Vector3.new(0, 1.5, 0))
         local label = Instance.new("TextLabel")
         label.Size = UDim2.new(1, 0, 1, 0)
@@ -519,7 +522,6 @@ local function UpdateGunESP()
     end
 end
 
--- Visuals UI
 Tabs.Visuals:AddSection("Player ESP")
 
 local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles)", Default = false })
@@ -551,11 +553,8 @@ GunESPToggle:OnChanged(function(Value)
         if GunESPObject.NameTag then GunESPObject.NameTag:Destroy() end
         GunESPObject = nil
     end
-end)
-
--- ═══════════════════════════════════════════════════════════════
+end) 
 -- TAB 3: WORLD
--- ═══════════════════════════════════════════════════════════════
 local FullBrightEnabled = false
 local NoFogEnabled = false
 local AutoGrabGun = false
@@ -573,7 +572,7 @@ Tabs.World:AddButton({
         local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
         if gun and gun:IsA("BasePart") and hrp then
             gun.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
-            Notify("World Action", "Gun teleported TO you!", "The gun was moved to your location.", 4)
+            Notify("World Action", "Gun teleported TO you!", nil, 4)
         else
             Notify("World Action", "No gun found on map!", nil, 3)
         end
@@ -583,10 +582,86 @@ Tabs.World:AddButton({
 local AutoGrabToggle = Tabs.World:AddToggle("AutoGrabGun", { Title = "Auto Grab Gun", Default = false })
 AutoGrabToggle:OnChanged(function(Value)
     AutoGrabGun = Value
-    if Value then
-        Notify("Auto Grab", "When gun drops, it will teleport TO you automatically!", nil, 5)
-    end
+    if Value then Notify("Auto Grab", "When gun drops, it teleports TO you automatically!", nil, 5) end
 end)
+
+Tabs.World:AddSection("Teleports")
+
+local TeleportTarget = "Lobby"
+
+Tabs.World:AddDropdown("TeleportTarget", {
+    Title = "Teleport Target",
+    Values = {"Lobby", "Map Spawn", "Murderer", "Sheriff", "Random Player"},
+    Default = "Lobby",
+    Callback = function(Value) TeleportTarget = Value end
+})
+
+Tabs.World:AddButton({
+    Title = "Teleport Now",
+    Description = "Teleport to selected target instantly",
+    Callback = function()
+        local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        if not hrp then Notify("Teleport", "Character not loaded!", nil, 3) return end
+
+        if TeleportTarget == "Lobby" then
+            local lobby = workspace:FindFirstChild("Lobby") or workspace:FindFirstChild("lobby")
+            if lobby and lobby:IsA("BasePart") then
+                hrp.CFrame = lobby.CFrame + Vector3.new(0, 5, 0)
+            else
+                hrp.CFrame = CFrame.new(0, 100, 0)
+            end
+            Notify("Teleport", "Teleported to Lobby!", nil, 3)
+
+        elseif TeleportTarget == "Map Spawn" then
+            local spawns = {}
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("SpawnLocation") then table.insert(spawns, obj) end
+            end
+            if #spawns > 0 then
+                hrp.CFrame = spawns[math.random(1, #spawns)].CFrame + Vector3.new(0, 5, 0)
+                Notify("Teleport", "Teleported to Map Spawn!", nil, 3)
+            else
+                Notify("Teleport", "No spawn locations found!", nil, 3)
+            end
+
+        elseif TeleportTarget == "Murderer" then
+            local m = GetMurderer()
+            local mHRP = m and SafeGetHRP(SafeGetCharacter(m))
+            if mHRP then
+                hrp.CFrame = mHRP.CFrame + Vector3.new(0, 3, 0)
+                Notify("Teleport", "Teleported to Murderer: " .. m.Name, nil, 3)
+            else
+                Notify("Teleport", "No murderer found!", nil, 3)
+            end
+
+        elseif TeleportTarget == "Sheriff" then
+            local s = GetSheriff()
+            local sHRP = s and SafeGetHRP(SafeGetCharacter(s))
+            if sHRP then
+                hrp.CFrame = sHRP.CFrame + Vector3.new(0, 3, 0)
+                Notify("Teleport", "Teleported to Sheriff: " .. s.Name, nil, 3)
+            else
+                Notify("Teleport", "No sheriff found!", nil, 3)
+            end
+
+        elseif TeleportTarget == "Random Player" then
+            local others = {}
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then table.insert(others, p) end
+            end
+            if #others > 0 then
+                local target = others[math.random(1, #others)]
+                local tHRP = SafeGetHRP(SafeGetCharacter(target))
+                if tHRP then
+                    hrp.CFrame = tHRP.CFrame + Vector3.new(0, 3, 0)
+                    Notify("Teleport", "Teleported to: " .. target.Name, nil, 3)
+                end
+            else
+                Notify("Teleport", "No other players!", nil, 3)
+            end
+        end
+    end
+})
 
 Tabs.World:AddSection("Environment")
 
@@ -614,12 +689,10 @@ NoFogToggle:OnChanged(function(Value)
     end
 end)
 
--- Gun Drop Detection
 workspace.ChildAdded:Connect(function(child)
     if child.Name:lower():find("gun") and child.Name:lower():find("drop") then
         GunDropSound:Play()
         Notify("🔫 Gun Dropped!", "The Sheriff died! Gun is on the map!", "Hurry up and grab it!", 8)
-        
         if AutoGrabGun then
             task.wait(0.3)
             local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
@@ -630,13 +703,11 @@ workspace.ChildAdded:Connect(function(child)
         end
     end
 end)
-
--- ═══════════════════════════════════════════════════════════════
 -- TAB 4: COMBAT
--- ═══════════════════════════════════════════════════════════════
 local SilentAimEnabled = false
 local SilentAimFOV = 150
 local SilentAimTarget = "Murderer"
+local WallbangEnabled = false
 
 Tabs.Combat:AddSection("Silent Aim")
 
@@ -662,7 +733,58 @@ Tabs.Combat:AddSlider("SilentAimFOV", {
     Callback = function(Value) SilentAimFOV = Value end
 })
 
+Tabs.Combat:AddSection("Wallbang")
+
+local WallbangToggle = Tabs.Combat:AddToggle("Wallbang", { Title = "Wallbang (Shoot Through Walls)", Default = false })
+WallbangToggle:OnChanged(function(Value)
+    WallbangEnabled = Value
+    if Value then Notify("Combat", "Wallbang enabled!", "Bullets pass through walls to hit Murderer.", 4) end
+end)
+
+local mt = getrawmetatable(game)
+if mt then
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if WallbangEnabled and method == "FireServer" and self:IsA("RemoteEvent") then
+            local name = self.Name:lower()
+            if name:find("gun") or name:find("shoot") or name:find("fire") or name:find("bullet") or name:find("hit") then
+                local murderer = GetMurderer()
+                if murderer then
+                    local mChar = SafeGetCharacter(murderer)
+                    local mHead = mChar and mChar:FindFirstChild("Head")
+                    if mHead then
+                        local args = {...}
+                        if #args > 0 then
+                            if typeof(args[1]) == "Vector3" then
+                                args[1] = mHead.Position
+                            elseif typeof(args[1]) == "CFrame" then
+                                args[1] = mHead.CFrame
+                            elseif typeof(args[1]) == "table" and args[1].Position then
+                                args[1].Position = mHead.Position
+                            end
+                        end
+                        return oldNamecall(self, unpack(args))
+                    end
+                end
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
 Tabs.Combat:AddSection("Shoot Murderer Button")
+
+local ThemeStrokeColors = {
+    Dark = Color3.fromRGB(100, 100, 255),
+    Light = Color3.fromRGB(0, 120, 200),
+    Darker = Color3.fromRGB(120, 80, 255),
+    Midnight = Color3.fromRGB(80, 60, 200),
+    Amethyst = Color3.fromRGB(150, 80, 200),
+    Rose = Color3.fromRGB(200, 80, 120)
+}
 
 local ShootBtnGui = Instance.new("ScreenGui")
 ShootBtnGui.Name = "CWH_ShootBtn"
@@ -673,60 +795,52 @@ ShootBtnGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 local ShootBtn = Instance.new("TextButton")
 ShootBtn.Name = "ShootMurdererBtn"
 ShootBtn.Parent = ShootBtnGui
-ShootBtn.Size = UDim2.new(0, 140, 0, 55)
+ShootBtn.Size = UDim2.new(0, 140, 0, 45)
 ShootBtn.Position = UDim2.new(0.75, 0, 0.6, 0)
-ShootBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-ShootBtn.Text = "SHOOT\nMURDERER"
+ShootBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+ShootBtn.BackgroundTransparency = 0.2
+ShootBtn.Text = "Shoot Murderer"
 ShootBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ShootBtn.Font = Enum.Font.GothamBold
 ShootBtn.TextSize = 14
-ShootBtn.TextWrapped = true
+ShootBtn.TextWrapped = false
 ShootBtn.Active = true
 ShootBtn.AutoButtonColor = true
 ShootBtn.Draggable = true
 ShootBtn.Visible = false
 
 local ShootCorner = Instance.new("UICorner")
-ShootCorner.CornerRadius = UDim.new(0, 8)
+ShootCorner.CornerRadius = UDim.new(0, 6)
 ShootCorner.Parent = ShootBtn
 
 local ShootStroke = Instance.new("UIStroke")
-ShootStroke.Color = Color3.fromRGB(255, 100, 100)
-ShootStroke.Thickness = 2
+ShootStroke.Color = ThemeStrokeColors["Dark"]
+ShootStroke.Thickness = 1.5
 ShootStroke.Parent = ShootBtn
 
-local ShootGradient = Instance.new("UIGradient")
-ShootGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 40, 40)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 20, 20))
-})
-ShootGradient.Rotation = 90
-ShootGradient.Parent = ShootBtn
+ShootBtn.MouseEnter:Connect(function()
+    TweenService:Create(ShootBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+    TweenService:Create(ShootStroke, TweenInfo.new(0.15), {Thickness = 2}):Play()
+end)
+ShootBtn.MouseLeave:Connect(function()
+    TweenService:Create(ShootBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.2}):Play()
+    TweenService:Create(ShootStroke, TweenInfo.new(0.15), {Thickness = 1.5}):Play()
+end)
 
 ShootBtn.MouseButton1Click:Connect(function()
     local murderer = GetMurderer()
-    if not murderer then
-        Notify("Combat", "No murderer found!", nil, 3)
-        return
-    end
-    
+    if not murderer then Notify("Combat", "No murderer found!", nil, 3) return end
     local char = SafeGetCharacter(LocalPlayer)
     local hrp = SafeGetHRP(char)
     local mChar = SafeGetCharacter(murderer)
     local mHRP = SafeGetHRP(mChar)
-    
-    if not hrp or not mHRP then
-        Notify("Combat", "Target not available!", nil, 3)
-        return
-    end
-    
-    -- Aim at murderer
+    if not hrp or not mHRP then Notify("Combat", "Target not available!", nil, 3) return end
+
     Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHRP.Position)
-    
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local charGun = char and char:FindFirstChild("Gun")
     local packGun = backpack and backpack:FindFirstChild("Gun")
-    
+
     if charGun then
         VirtualUser:CaptureController()
         VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
@@ -746,7 +860,6 @@ ShootBtn.MouseButton1Click:Connect(function()
 end)
 
 local ShootBtnEnabled = false
-
 local ShootBtnToggle = Tabs.Combat:AddToggle("ShootBtnToggle", { Title = "Show Shoot Button", Default = false })
 ShootBtnToggle:OnChanged(function(Value)
     ShootBtnEnabled = Value
@@ -766,25 +879,27 @@ Tabs.Combat:AddSlider("ShootBtnWidth", {
 
 Tabs.Combat:AddSlider("ShootBtnHeight", {
     Title = "Button Height",
-    Default = 55,
-    Min = 40,
-    Max = 150,
+    Default = 45,
+    Min = 30,
+    Max = 120,
     Rounding = 0,
     Callback = function(Value)
         ShootBtn.Size = UDim2.new(0, ShootBtn.Size.X.Offset, 0, Value)
     end
 })
-
--- ═══════════════════════════════════════════════════════════════
 -- TAB 5: SETTINGS
--- ═══════════════════════════════════════════════════════════════
 Tabs.Settings:AddSection("UI Settings")
 
 Tabs.Settings:AddDropdown("ThemeSelector", {
     Title = "UI Theme",
     Values = {"Dark", "Light", "Darker", "Midnight", "Amethyst", "Rose"},
     Default = "Dark",
-    Callback = function(Value) Fluent:SetTheme(Value) end
+    Callback = function(Value)
+        Fluent:SetTheme(Value)
+        if ThemeStrokeColors[Value] and ShootStroke then
+            ShootStroke.Color = ThemeStrokeColors[Value]
+        end
+    end
 })
 
 Tabs.Settings:AddSection("Custom Cursor")
@@ -865,7 +980,6 @@ Tabs.Settings:AddButton({
 -- MAIN LOOPS
 -- ═══════════════════════════════════════════════════════════════
 
--- FOV Loop
 RunService.RenderStepped:Connect(function()
     if FOVEnabled then
         if SmoothFOV then
@@ -876,7 +990,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Noclip Loop
 RunService.Stepped:Connect(function()
     if NoclipEnabled then
         local char = SafeGetCharacter(LocalPlayer)
@@ -888,7 +1001,6 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Movement Loop
 RunService.Heartbeat:Connect(function()
     local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
     if not hum then return end
@@ -896,7 +1008,6 @@ RunService.Heartbeat:Connect(function()
     if JumpPowerEnabled then hum.JumpPower = TargetJumpPower hum.UseJumpPower = true end
 end)
 
--- ESP Loop
 RunService.Heartbeat:Connect(function()
     if ESP.Players or ESP.Names or ESP.Distance or ESP.Health then
         for _, player in pairs(Players:GetPlayers()) do
@@ -909,7 +1020,6 @@ RunService.Heartbeat:Connect(function()
     if ESP.Gun then UpdateGunESP() end
 end)
 
--- Role Detection Loop
 task.spawn(function()
     while true do
         DetectRoles()
@@ -917,7 +1027,6 @@ task.spawn(function()
     end
 end)
 
--- Custom Cursor Loop
 RunService.RenderStepped:Connect(function()
     if CustomCursorEnabled then
         local mousePos = UserInputService:GetMouseLocation()
@@ -927,7 +1036,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Anti-AFK
 LocalPlayer.Idled:Connect(function()
     if AntiAFKEnabled then
         VirtualUser:CaptureController()
@@ -936,18 +1044,14 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- Character Added Handler
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     ResetRoleNotifications()
-    
     local hum = SafeGetHumanoid(char)
     if hum then
         if WalkSpeedEnabled then hum.WalkSpeed = TargetWalkSpeed end
         if JumpPowerEnabled then hum.JumpPower = TargetJumpPower hum.UseJumpPower = true end
     end
-    
-    -- Rebuild ESP for all players
     if ESP.Players or ESP.Names or ESP.Distance or ESP.Health then
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
@@ -958,7 +1062,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- Player Added Handler
 Players.PlayerAdded:Connect(function(player)
     player.CharacterAdded:Connect(function()
         task.wait(0.5)
@@ -969,16 +1072,12 @@ Players.PlayerAdded:Connect(function(player)
     end)
 end)
 
--- Player Removing Handler
 Players.PlayerRemoving:Connect(function(player)
     ClearPlayerESP(player)
     NotifiedRoles[player] = nil
 end)
 
--- ═══════════════════════════════════════════════════════════════
 -- INIT
--- ═══════════════════════════════════════════════════════════════
--- Setup existing players ESP
 for _, player in pairs(Players:GetPlayers()) do
     if player ~= LocalPlayer then
         player.CharacterAdded:Connect(function()
@@ -994,4 +1093,4 @@ for _, player in pairs(Players:GetPlayers()) do
     end
 end
 
-Notify("Crows Hub v3.0", "Loaded successfully!", "Roles: Auto-detect | ESP: Persistent | Noclip: Ready", 6)
+Notify("Crows Hub v4.0", "Loaded successfully!", "Sound: Fixed | Wallbang: Ready | Teleports: Active", 6)
