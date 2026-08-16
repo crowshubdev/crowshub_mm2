@@ -1,550 +1,221 @@
 --[[
-    Crows Hub | MM2 Full MultiHack Version 1.2
-    Categories: Main, Visual, World, Combat, Settings
+    Crows Hub | FULL v1.3 (Fluent UI Edition)
+    Categories: Main, Visuals, World, Settings
 ]]
 
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local SoundService = game:GetService("SoundService")
+-- Load Fluent UI
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+
 local CoreGui = game:GetService("CoreGui")
-
-local LocalPlayer = Players.LocalPlayer
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
--- Sound Effects
-local OpenSound = Instance.new("Sound")
-OpenSound.SoundId = "rbxassetid://122219932"
-OpenSound.Volume = 0.5
-OpenSound.Parent = SoundService
+-- 1. WINDOW CREATION
+local Window = Fluent:CreateWindow({
+    Title = "Crows Hub | FULL",
+    SubTitle = "v1.3 MM2",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(540, 380),
+    Acrylic = false,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftShift
+})
 
-local CloseSound = Instance.new("Sound")
-CloseSound.SoundId = "rbxassetid://122219808"
-CloseSound.Volume = 0.5
-CloseSound.Parent = SoundService
-
--- Color Themes Presets
-local Themes = {
-    ["Ocean Dark"] = {
-        Background = Color3.fromRGB(15, 22, 32),
-        Sidebar = Color3.fromRGB(10, 15, 22),
-        Stroke = Color3.fromRGB(0, 150, 200),
-        Title = Color3.fromRGB(100, 220, 255),
-        Button = Color3.fromRGB(24, 38, 55),
-        TabActive = Color3.fromRGB(0, 120, 170),
-        ShootBtnBg = Color3.fromRGB(20, 35, 50),
-        ShootBtnBorder = Color3.fromRGB(0, 160, 220)
-    },
-    ["Crimson Red"] = {
-        Background = Color3.fromRGB(28, 16, 18),
-        Sidebar = Color3.fromRGB(20, 10, 12),
-        Stroke = Color3.fromRGB(180, 40, 55),
-        Title = Color3.fromRGB(255, 110, 120),
-        Button = Color3.fromRGB(48, 24, 28),
-        TabActive = Color3.fromRGB(150, 30, 45),
-        ShootBtnBg = Color3.fromRGB(45, 18, 22),
-        ShootBtnBorder = Color3.fromRGB(210, 45, 60)
-    },
-    ["Dark Slate"] = {
-        Background = Color3.fromRGB(22, 23, 26),
-        Sidebar = Color3.fromRGB(15, 16, 18),
-        Stroke = Color3.fromRGB(80, 85, 95),
-        Title = Color3.fromRGB(210, 215, 225),
-        Button = Color3.fromRGB(36, 38, 44),
-        TabActive = Color3.fromRGB(60, 65, 75),
-        ShootBtnBg = Color3.fromRGB(32, 34, 40),
-        ShootBtnBorder = Color3.fromRGB(90, 95, 105)
-    },
-    ["Classic Blue"] = {
-        Background = Color3.fromRGB(22, 22, 28),
-        Sidebar = Color3.fromRGB(15, 15, 20),
-        Stroke = Color3.fromRGB(50, 50, 75),
-        Title = Color3.fromRGB(180, 195, 255),
-        Button = Color3.fromRGB(38, 38, 50),
-        TabActive = Color3.fromRGB(60, 70, 150),
-        ShootBtnBg = Color3.fromRGB(30, 35, 55),
-        ShootBtnBorder = Color3.fromRGB(80, 100, 220)
-    }
+-- 2. TABS
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "user" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
+    World = Window:AddTab({ Title = "World", Icon = "globe" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
--- Global Settings
-local Settings = {
-    -- Main
-    Speedhack = 16,
-    FOV = 120,
-    AntiFling = true,
-    AntiAFK = true,
-    AntiTrap = true,
-    
-    -- Visual
-    PlayerESP = false,
-    PlayerNames = false,
-    GunESP = false,
-    TrapESP = false,
-    
-    -- World
-    AutoGrabGun = false,
-    
-    -- Combat
-    KillAura = false,
-    AimbotMode = "Off", -- "Off", "Legit", "Silent"
-    Wallbang = false,
-    ShowShootButton = true,
-    ShootBtnSize = 1, -- Multiplier (0.8, 1, 1.2, 1.5)
-    
-    -- Settings
-    CurrentTheme = "Ocean Dark"
-}
-
--- Core Setup
-local TargetParent = gethui and gethui() or CoreGui
-if TargetParent:FindFirstChild("CrowsHubMM2Full") then
-    TargetParent.CrowsHubMM2Full:Destroy()
-end
-
+----------------------------------------------------------------
+-- MOBILE "CWH" BUTTON (Toggle Menu)
+----------------------------------------------------------------
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CrowsHubMM2Full"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = TargetParent
+ScreenGui.Name = "CWH_MobileUI"
+ScreenGui.Parent = gethui and gethui() or CoreGui
 
--- Draggable Function
-local function MakeDraggable(guiObject)
-    local dragging, dragInput, dragStart, startPos
-    guiObject.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = guiObject.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    guiObject.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-end
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "CWHButton"
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+ToggleBtn.Text = "CWH"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.SourceSansBold
+ToggleBtn.TextSize = 16
+ToggleBtn.Active = true
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(1, 0)
+BtnCorner.Parent = ToggleBtn
+
+local BtnStroke = Instance.new("UIStroke")
+BtnStroke.Color = Color3.fromRGB(0, 150, 200)
+BtnStroke.Thickness = 2
+BtnStroke.Parent = ToggleBtn
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Window:Minimize()
+end)
 
 ----------------------------------------------------------------
--- FLOATING "SHOOT MURDERER" BUTTON (Screen Shot Style)
+-- TAB 1: MAIN (FOV & Movement)
 ----------------------------------------------------------------
-local ShootBtnFrame = Instance.new("Frame")
-ShootBtnFrame.Name = "ShootMurdererFrame"
-ShootBtnFrame.Size = UDim2.new(0, 170, 0, 48)
-ShootBtnFrame.Position = UDim2.new(0.68, 0, 0.38, 0)
-ShootBtnFrame.BackgroundColor3 = Themes["Ocean Dark"].ShootBtnBg
-ShootBtnFrame.BackgroundTransparency = 0.2
-ShootBtnFrame.BorderSizePixel = 0
-ShootBtnFrame.Visible = true
-ShootBtnFrame.Parent = ScreenGui
+local DefaultFOV = Camera.FieldOfView
+local TargetFOV = 120
+local FOVEnabled = false
 
-local ShootBtnCorner = Instance.new("UICorner")
-ShootBtnCorner.CornerRadius = UDim.new(0, 10)
-ShootBtnCorner.Parent = ShootBtnFrame
+local FOVToggle = Tabs.Main:AddToggle("FOVToggle", { Title = "Enable FOV Changer", Default = false })
+FOVToggle:OnChanged(function(Value)
+    FOVEnabled = Value
+    if not Value then Camera.FieldOfView = DefaultFOV end
+end)
 
-local ShootBtnStroke = Instance.new("UIStroke")
-ShootBtnStroke.Color = Themes["Ocean Dark"].ShootBtnBorder
-ShootBtnStroke.Thickness = 2
-ShootBtnStroke.Parent = ShootBtnFrame
-
-local ShootBtn = Instance.new("TextButton")
-ShootBtn.Size = UDim2.new(1, 0, 1, 0)
-ShootBtn.BackgroundTransparency = 1
-ShootBtn.Text = "Shoot Murderer"
-ShootBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ShootBtn.Font = Enum.Font.SourceSansBold
-ShootBtn.TextSize = 16
-ShootBtn.Parent = ShootBtnFrame
-
-MakeDraggable(ShootBtnFrame)
-
-local function GetMurderer()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local backpack = player:FindFirstChild("Backpack")
-            local char = player.Character
-            if (backpack and backpack:FindFirstChild("Knife")) or (char and char:FindFirstChild("Knife")) then
-                return player
-            end
+Tabs.Main:AddInput("FOVInput", {
+    Title = "FOV Value",
+    Default = "120",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local Num = tonumber(Value)
+        if Num and Num >= 30 and Num <= 140 then
+            TargetFOV = Num
+            if FOVEnabled then Camera.FieldOfView = TargetFOV end
         end
     end
-    return nil
-end
+})
 
-local function ShootMurdererAction()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    local gun = (backpack and backpack:FindFirstChild("Gun")) or (char:FindFirstChild("Gun"))
-    if not gun then return end
+RunService.RenderStepped:Connect(function()
+    if FOVEnabled and Camera.FieldOfView ~= TargetFOV then
+        Camera.FieldOfView = TargetFOV
+    end
+end)
+
+----------------------------------------------------------------
+-- TAB 2: VISUALS (ESP Player, Gun, Traps)
+----------------------------------------------------------------
+local ESP_Players = false
+local ESP_Gun = false
+local ESP_Traps = false
+
+local Highlights = {}
+
+local function CreateHighlight(plr)
+    if plr == LocalPlayer or not plr.Character then return end
     
-    if gun.Parent == backpack then gun.Parent = char end
-    
-    local murderer = GetMurderer()
-    if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
-        local targetHrp = murderer.Character.HumanoidRootPart
-        local remote = gun:FindFirstChild("Shoot") or gun:FindFirstChild("ShootRemote") or game:GetService("ReplicatedStorage"):FindFirstChild("Shoot", true)
-        if remote then
-            local targetPos = targetHrp.Position + (targetHrp.Velocity * 0.1)
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(CFrame.new(char.HumanoidRootPart.Position, targetPos), targetPos)
-            elseif remote:IsA("RemoteFunction") then
-                remote:InvokeServer(CFrame.new(char.HumanoidRootPart.Position, targetPos), targetPos)
-            end
+    local char = plr.Character
+    if not char:FindFirstChild("CrowsHighlight") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "CrowsHighlight"
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        
+        -- Роли в MM2
+        local backpack = plr:FindFirstChild("Backpack")
+        if (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife") then
+            hl.FillColor = Color3.fromRGB(255, 50, 50) -- Murderer (Красный)
+        elseif (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun") then
+            hl.FillColor = Color3.fromRGB(50, 100, 255) -- Sheriff (Синий)
+        else
+            hl.FillColor = Color3.fromRGB(50, 255, 50) -- Innocent (Зеленый)
+        end
+        
+        hl.Parent = char
+    end
+end
+
+local function ClearHighlights()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character and plr.Character:FindFirstChild("CrowsHighlight") then
+            plr.Character.CrowsHighlight:Destroy()
         end
     end
 end
 
-ShootBtn.MouseButton1Click:Connect(ShootMurdererAction)
-
-----------------------------------------------------------------
--- MAIN HUB WINDOW & TAB SYSTEM
-----------------------------------------------------------------
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 520, 0, 320)
-MainFrame.Position = UDim2.new(0.3, 0, 0.25, 0)
-MainFrame.BackgroundColor3 = Themes["Ocean Dark"].Background
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
-
-MakeDraggable(MainFrame)
-
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 8)
-MainCorner.Parent = MainFrame
-
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Themes["Ocean Dark"].Stroke
-MainStroke.Thickness = 1.5
-MainStroke.Parent = MainFrame
-
--- Title Bar
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0.6, 0, 0, 30)
-Title.Position = UDim2.new(0.03, 0, 0.02, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "Crows Hub FULL ver 1.2"
-Title.TextColor3 = Themes["Ocean Dark"].Title
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 18
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = MainFrame
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(0.93, 0, 0.02, 0)
-CloseBtn.BackgroundTransparency = 1
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(220, 80, 80)
-CloseBtn.Font = Enum.Font.SourceSansBold
-CloseBtn.TextSize = 18
-CloseBtn.Parent = MainFrame
-
-CloseBtn.MouseButton1Click:Connect(function()
-    CloseSound:Play()
-    MainFrame.Visible = false
+local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles Highlight)", Default = false })
+PlayerESPToggle:OnChanged(function(Value)
+    ESP_Players = Value
+    if not Value then ClearHighlights() end
 end)
 
--- Sound trigger on open
-OpenSound:Play()
+local GunESPToggle = Tabs.Visuals:AddToggle("GunESP", { Title = "Dropped Gun ESP", Default = false })
+GunESPToggle:OnChanged(function(Value)
+    ESP_Gun = Value
+end)
 
--- Sidebar (Tabs Container)
-local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 110, 0, 270)
-Sidebar.Position = UDim2.new(0.02, 0, 0.13, 0)
-Sidebar.BackgroundColor3 = Themes["Ocean Dark"].Sidebar
-Sidebar.Parent = MainFrame
-
-local SideCorner = Instance.new("UICorner")
-SideCorner.CornerRadius = UDim.new(0, 6)
-SideCorner.Parent = Sidebar
-
-local SideList = Instance.new("UIListLayout")
-SideList.Padding = UDim.new(0, 5)
-SideList.Parent = Sidebar
-
--- Content Frame
-local Content = Instance.new("Frame")
-Content.Size = UDim2.new(0, 380, 0, 270)
-Content.Position = UDim2.new(0.25, 0, 0.13, 0)
-Content.BackgroundTransparency = 1
-Content.Parent = MainFrame
-
-local Tabs = {}
-local TabButtons = {}
-
-local function CreateTab(tabName)
-    local Scroll = Instance.new("ScrollingFrame")
-    Scroll.Size = UDim2.new(1, 0, 1, 0)
-    Scroll.BackgroundTransparency = 1
-    Scroll.ScrollBarThickness = 4
-    Scroll.Visible = false
-    Scroll.Parent = Content
-
-    local List = Instance.new("UIListLayout")
-    List.Padding = UDim.new(0, 6)
-    List.Parent = Scroll
-
-    Tabs[tabName] = Scroll
-
-    local TabBtn = Instance.new("TextButton")
-    TabBtn.Size = UDim2.new(1, 0, 0, 35)
-    TabBtn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
-    TabBtn.Text = tabName
-    TabBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    TabBtn.Font = Enum.Font.SourceSansBold
-    TabBtn.TextSize = 14
-    TabBtn.Parent = Sidebar
-
-    local TCorner = Instance.new("UICorner")
-    TCorner.CornerRadius = UDim.new(0, 4)
-    TCorner.Parent = TabBtn
-
-    TabBtn.MouseButton1Click:Connect(function()
-        for name, page in pairs(Tabs) do page.Visible = false end
-        for _, btn in pairs(TabButtons) do btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button end
-        Scroll.Visible = true
-        TabBtn.BackgroundColor3 = Themes[Settings.CurrentTheme].TabActive
-    end)
-
-    table.insert(TabButtons, TabBtn)
-    return Scroll
-end
-
--- Create Pages
-local MainTab = CreateTab("Main")
-local VisualTab = CreateTab("Visual")
-local WorldTab = CreateTab("World")
-local CombatTab = CreateTab("Combat")
-local SettingsTab = CreateTab("Settings")
-
--- Select Main by Default
-Tabs["Main"].Visible = true
-TabButtons[1].BackgroundColor3 = Themes["Ocean Dark"].TabActive
-
-----------------------------------------------------------------
--- UI BUILDING HELPERS
-----------------------------------------------------------------
-local function AddToggle(parent, text, settingName, callback)
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -10, 0, 30)
-    Btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(35, 130, 55) or Themes[Settings.CurrentTheme].Button
-    Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
-    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Btn.Font = Enum.Font.SourceSans
-    Btn.TextSize = 14
-    Btn.Parent = parent
-
-    local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = UDim.new(0, 5)
-    Corner.Parent = Btn
-
-    Btn.MouseButton1Click:Connect(function()
-        Settings[settingName] = not Settings[settingName]
-        Btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(35, 130, 55) or Themes[Settings.CurrentTheme].Button
-        Btn.Text = text .. " " .. (Settings[settingName] and "[ON]" or "[OFF]")
-        if callback then callback(Settings[settingName]) end
-    end)
-    return Btn
-end
-
-local function AddButton(parent, text, callback)
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -10, 0, 30)
-    Btn.BackgroundColor3 = Themes[Settings.CurrentTheme].Button
-    Btn.Text = text
-    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Btn.Font = Enum.Font.SourceSansBold
-    Btn.TextSize = 14
-    Btn.Parent = parent
-
-    local Corner = Instance.new("UICorner")
-    Corner.CornerRadius = UDim.new(0, 5)
-    Corner.Parent = Btn
-
-    Btn.MouseButton1Click:Connect(function()
-        if callback then callback() end
-    end)
-end
-
-local function AddDropdown(parent, titleText, options, settingName, callback)
-    local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(1, -10, 0, 32)
-    Frame.BackgroundColor3 = Color3.fromRGB(25, 30, 40)
-    Frame.Parent = parent
-
-    local FCorner = Instance.new("UICorner")
-    FCorner.CornerRadius = UDim.new(0, 5)
-    FCorner.Parent = Frame
-
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.5, 0, 1, 0)
-    Label.Position = UDim2.new(0.04, 0, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = titleText
-    Label.TextColor3 = Color3.fromRGB(210, 210, 220)
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Font = Enum.Font.SourceSans
-    Label.TextSize = 13
-    Label.Parent = Frame
-
-    local DropBtn = Instance.new("TextButton")
-    DropBtn.Size = UDim2.new(0.4, 0, 0.75, 0)
-    DropBtn.Position = UDim2.new(0.56, 0, 0.12, 0)
-    DropBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 68)
-    DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
-    DropBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    DropBtn.Font = Enum.Font.SourceSansBold
-    DropBtn.TextSize = 12
-    DropBtn.Parent = Frame
-
-    local DCorner = Instance.new("UICorner")
-    DCorner.CornerRadius = UDim.new(0, 4)
-    DCorner.Parent = DropBtn
-
-    local idx = 1
-    DropBtn.MouseButton1Click:Connect(function()
-        idx = (idx % #options) + 1
-        Settings[settingName] = options[idx]
-        DropBtn.Text = "「 " .. tostring(Settings[settingName]) .. " 」"
-        if callback then callback(Settings[settingName]) end
-    end)
-end
-
-----------------------------------------------------------------
--- TAB 1: MAIN
-----------------------------------------------------------------
-AddDropdown(MainTab, "Speedhack", {16, 22, 28, 35, 50}, "Speedhack", function(val)
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.WalkSpeed = val
+-- Loop ESP Updates
+RunService.Stepped:Connect(function()
+    if ESP_Players then
+        for _, plr in pairs(Players:GetPlayers()) do
+            CreateHighlight(plr)
+        end
+    end
+    
+    -- Gun ESP & Traps ESP
+    if ESP_Gun then
+        local gun = workspace:FindFirstChild("GunDrop", true)
+        if gun and not gun:FindFirstChild("GunHighlight") then
+            local hl = Instance.new("Highlight")
+            hl.Name = "GunHighlight"
+            hl.FillColor = Color3.fromRGB(255, 215, 0) -- Золотой цвет
+            hl.Parent = gun
+        end
     end
 end)
 
-AddDropdown(MainTab, "FOV Changer", {70, 90, 110, 120, 130}, "FOV", function(val)
-    Camera.FieldOfView = val
-end)
-
-AddToggle(MainTab, "Anti-Fling", "AntiFling")
-AddToggle(MainTab, "Anti-AFK", "AntiAFK")
-AddToggle(MainTab, "Anti-Trap (Walk on Traps)", "AntiTrap")
-
 ----------------------------------------------------------------
--- TAB 2: VISUAL
-----------------------------------------------------------------
-AddToggle(VisualTab, "Player ESP", "PlayerESP")
-AddToggle(VisualTab, "Player Names ESP", "PlayerNames")
-AddToggle(VisualTab, "Dropped Gun ESP", "GunESP")
-AddToggle(VisualTab, "Traps ESP", "TrapESP")
-
-----------------------------------------------------------------
--- TAB 3: WORLD
+-- TAB 3: WORLD & GAME NOTIFICATIONS
 ----------------------------------------------------------------
 local function PullGunToPlayer()
     local gun = workspace:FindFirstChild("GunDrop", true) or workspace:FindFirstChild("Gun", true)
     if gun and gun:IsA("BasePart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         gun.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
+        Fluent:Notify({
+            Title = "World Action",
+            Content = "Attempted to bring Gun to you!",
+            Duration = 4
+        })
     end
 end
 
-AddToggle(WorldTab, "Auto Grab Gun (Bring to You)", "AutoGrabGun")
-AddButton(WorldTab, "Grab Gun Now", PullGunToPlayer)
+Tabs.World:AddButton({
+    Title = "Grab Gun Now",
+    Description = "Teleports dropped gun to your position",
+    Callback = PullGunToPlayer
+})
 
-----------------------------------------------------------------
--- TAB 4: COMBAT
-----------------------------------------------------------------
-AddToggle(CombatTab, "Knife Kill Aura", "KillAura")
-
-AddButton(CombatTab, "Kill Sheriff / Hero", function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Knife") then
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local b = p:FindFirstChild("Backpack")
-                if (b and b:FindFirstChild("Gun")) or p.Character:FindFirstChild("Gun") then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame
-                    break
-                end
-            end
-        end
+-- Отслеживание выпадения пистолета и уведомление на 6 секунд
+workspace.ChildAdded:Connect(function(child)
+    if child.Name:lower():find("gun") then
+        Fluent:Notify({
+            Title = "MM2 Event",
+            Content = "Gun dropped on the map!",
+            SubContent = "Pick it up quickly!",
+            Duration = 6
+        })
     end
 end)
 
-AddDropdown(CombatTab, "Aimbot Mode", {"Off", "Legit", "Silent"}, "AimbotMode")
-AddToggle(CombatTab, "Wallbang", "Wallbang")
-
-AddToggle(CombatTab, "Show Shoot Murderer Button", "ShowShootButton", function(state)
-    ShootBtnFrame.Visible = state
-end)
-
-AddDropdown(CombatTab, "Shoot Button Size", {"0.8x", "1.0x", "1.2x", "1.5x"}, "ShootBtnSize", function(val)
-    local mult = 1
-    if val == "0.8x" then mult = 0.8
-    elseif val == "1.2x" then mult = 1.2
-    elseif val == "1.5x" then mult = 1.5 end
-    ShootBtnFrame.Size = UDim2.new(0, 170 * mult, 0, 48 * mult)
-end)
-
 ----------------------------------------------------------------
--- TAB 5: SETTINGS
+-- TAB 4: SETTINGS
 ----------------------------------------------------------------
-AddDropdown(SettingsTab, "UI Theme", {"Ocean Dark", "Crimson Red", "Dark Slate", "Classic Blue"}, "CurrentTheme", function(newTheme)
-    local t = Themes[newTheme]
-    MainFrame.BackgroundColor3 = t.Background
-    MainStroke.Color = t.Stroke
-    Title.TextColor3 = t.Title
-    Sidebar.BackgroundColor3 = t.Sidebar
-    ShootBtnFrame.BackgroundColor3 = t.ShootBtnBg
-    ShootBtnStroke.Color = t.ShootBtnBorder
-end)
+Tabs.Settings:AddDropdown("ThemeSelector", {
+    Title = "UI Theme",
+    Values = {"Dark", "Light", "Darker", "Midnight"},
+    Default = "Dark",
+    Callback = function(Value)
+        Fluent:SetTheme(Value)
+    end
+})
 
-----------------------------------------------------------------
--- BACKGROUND LOOPS & LOGIC
-----------------------------------------------------------------
-RunService.Stepped:Connect(function()
-    -- Speedhack
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        if LocalPlayer.Character.Humanoid.WalkSpeed ~= Settings.Speedhack then
-            LocalPlayer.Character.Humanoid.WalkSpeed = Settings.Speedhack
-        end
-    end
-    
-    -- FOV
-    if Camera.FieldOfView ~= Settings.FOV then
-        Camera.FieldOfView = Settings.FOV
-    end
-    
-    -- Anti-Trap Logic
-    if Settings.AntiTrap then
-        for _, v in pairs(workspace:GetChildren()) do
-            if v.Name:lower():find("trap") then
-                for _, part in pairs(v:GetDescendants()) do
-                    if part:IsA("BasePart") then part.CanCollide = false end
-                end
-            end
-        end
-    end
-    
-    -- Auto Grab Gun
-    if Settings.AutoGrabGun then
-        PullGunToPlayer()
-    end
-end)
-
--- Anti-AFK
-local VirtualUser = game:GetService("VirtualUser")
-LocalPlayer.Idled:Connect(function()
-    if Settings.AntiAFK then
-        VirtualUser:Button2Down(Vector2.new(0, 0), Camera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0), Camera.CFrame)
-    end
-end)
+Fluent:Notify({
+    Title = "Crows Hub FULL Loaded",
+    Content = "Press CWH button on screen to toggle UI.",
+    Duration = 5
+})
