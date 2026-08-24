@@ -1,13 +1,16 @@
 --[[
-    Crows Hub | FULL v5.0 (Fluent UI Edition)
+    Crows Hub | FULL v6.0 (Fluent UI Edition)
     Game: Murder Mystery 2 (MM2)
-    Features: ESP (Highlight/Chams), Noclip, Auto Roles, Shoot Button, Custom Cursor, Sounds,
-              Wallbang, Teleports, Infinite Jump, Grab Gun Button, Auto Farm, Fling, Anti Fling
+    Fixed: ESP, Chams, Farm, Fling, Silent Aim, Shoot Button, Coin Aura, Wallbang
+    New: Kill Aura, Round Timer, Silent Aim Modes
 ]]
 
 -- Load Fluent UI
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
+-- ═══════════════════════════════════════════════════════════════
+-- SERVICES
+-- ═══════════════════════════════════════════════════════════════
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,9 +20,12 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
+-- ═══════════════════════════════════════════════════════════════
+-- UTILITIES
+-- ═══════════════════════════════════════════════════════════════
 local function Notify(Title, Content, SubContent, Duration)
     Fluent:Notify({
         Title = Title or "Crows Hub",
@@ -86,10 +92,12 @@ local function GetCoins()
     return coins
 end
 
+-- ═══════════════════════════════════════════════════════════════
 -- WINDOW
+-- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v5.0 MM2",
+    SubTitle = "v6.0 MM2",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -106,7 +114,9 @@ local Tabs = {
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
+-- ═══════════════════════════════════════════════════════════════
 -- SOUNDS
+-- ═══════════════════════════════════════════════════════════════
 local SoundGui = Instance.new("ScreenGui")
 SoundGui.Name = "CWH_Sounds"
 SoundGui.Parent = gethui and gethui() or CoreGui
@@ -134,7 +144,9 @@ RoleDetectSound.Volume = 0.4
 RoleDetectSound.PlaybackSpeed = 1.2
 RoleDetectSound.Parent = SoundGui
 
+-- ═══════════════════════════════════════════════════════════════
 -- MOBILE BUTTONS
+-- ═══════════════════════════════════════════════════════════════
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "CWH_MobileUI"
 ScreenGui.Parent = gethui and gethui() or CoreGui
@@ -207,7 +219,9 @@ GrabBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
 -- WINDOW TOGGLE WITH SOUND
+-- ═══════════════════════════════════════════════════════════════
 local IsMinimized = false
 local function ToggleWindow()
     Window:Minimize()
@@ -230,7 +244,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
 -- ROLE DETECTION
+-- ═══════════════════════════════════════════════════════════════
 local NotifiedRoles = {}
 local RoleDetectEnabled = true
 
@@ -255,7 +271,9 @@ local function DetectRoles()
     end
 end
 
+-- ═══════════════════════════════════════════════════════════════
 -- TAB 1: MAIN
+-- ═══════════════════════════════════════════════════════════════
 local DefaultFOV = Camera.FieldOfView
 local TargetFOV = 120
 local FOVEnabled = false
@@ -281,10 +299,7 @@ SmoothFOVToggle:OnChanged(function(Value) SmoothFOV = Value end)
 
 Tabs.Main:AddSlider("FOVSlider", {
     Title = "FOV Value",
-    Default = 120,
-    Min = 30,
-    Max = 140,
-    Rounding = 0,
+    Default = 120, Min = 30, Max = 140, Rounding = 0,
     Callback = function(Value)
         TargetFOV = Value
         if FOVEnabled and not SmoothFOV then Camera.FieldOfView = TargetFOV end
@@ -302,10 +317,7 @@ end)
 
 Tabs.Main:AddSlider("SpeedSlider", {
     Title = "WalkSpeed",
-    Default = 25,
-    Min = 16,
-    Max = 100,
-    Rounding = 0,
+    Default = 25, Min = 16, Max = 100, Rounding = 0,
     Callback = function(Value)
         TargetWalkSpeed = Value
         if WalkSpeedEnabled then
@@ -327,10 +339,7 @@ end)
 
 Tabs.Main:AddSlider("JumpSlider", {
     Title = "JumpPower",
-    Default = 60,
-    Min = 50,
-    Max = 150,
-    Rounding = 0,
+    Default = 60, Min = 50, Max = 150, Rounding = 0,
     Callback = function(Value)
         TargetJumpPower = Value
         if JumpPowerEnabled then
@@ -340,7 +349,6 @@ Tabs.Main:AddSlider("JumpSlider", {
     end
 })
 
--- Infinite Jump
 local InfJumpToggle = Tabs.Main:AddToggle("InfJump", { Title = "Infinite Jump", Default = false })
 InfJumpToggle:OnChanged(function(Value) InfiniteJumpEnabled = Value end)
 
@@ -369,8 +377,11 @@ NoclipToggle:OnChanged(function(Value)
             end
         end
     end
-end) 
--- TAB 2: VISUALS
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 2: VISUALS (FIXED ESP + CHAMS)
+-- ═══════════════════════════════════════════════════════════════
 local ESP = {
     Players = false,
     Gun = false,
@@ -416,23 +427,29 @@ local function CreatePlayerESP(player)
     if ESPObjects[player] then return end
     local char = SafeGetCharacter(player)
     if not char then return end
+    local hrp = SafeGetHRP(char)
+    if not hrp then return end
     local data = {}
 
     local hl = Instance.new("Highlight")
     hl.Name = "CrowsESP_HL"
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    if ESP.Mode == "Chams" then
-        hl.FillTransparency = 0.1
-        hl.OutlineTransparency = 0
-    else
-        hl.FillTransparency = 0.6
-        hl.OutlineTransparency = 0.2
-    end
+    hl.FillTransparency = 0.6
+    hl.OutlineTransparency = 0.2
     hl.OutlineColor = Color3.fromRGB(255, 255, 255)
     hl.Parent = char
     data.Highlight = hl
 
-    local nameBillboard = CreateBillboard(char, UDim2.new(0, 200, 0, 35), Vector3.new(0, 3.5, 0))
+    -- FIXED: BillboardGui parented to CoreGui with Adornee to HRP
+    local nameBillboard = Instance.new("BillboardGui")
+    nameBillboard.Name = "CrowsNameESP"
+    nameBillboard.Size = UDim2.new(0, 200, 0, 35)
+    nameBillboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    nameBillboard.AlwaysOnTop = true
+    nameBillboard.Parent = ScreenGui
+    nameBillboard.Adornee = hrp
+    nameBillboard.Enabled = false
+
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Size = UDim2.new(1, 0, 1, 0)
     nameLabel.BackgroundTransparency = 1
@@ -444,7 +461,15 @@ local function CreatePlayerESP(player)
     data.NameTag = nameBillboard
     data.NameLabel = nameLabel
 
-    local healthBillboard = CreateBillboard(char, UDim2.new(0, 100, 0, 6), Vector3.new(0, 2.8, 0))
+    local healthBillboard = Instance.new("BillboardGui")
+    healthBillboard.Name = "CrowsHealthESP"
+    healthBillboard.Size = UDim2.new(0, 100, 0, 6)
+    healthBillboard.StudsOffset = Vector3.new(0, 2.8, 0)
+    healthBillboard.AlwaysOnTop = true
+    healthBillboard.Parent = ScreenGui
+    healthBillboard.Adornee = hrp
+    healthBillboard.Enabled = false
+
     local healthBg = Instance.new("Frame")
     healthBg.Size = UDim2.new(1, 0, 1, 0)
     healthBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -471,33 +496,44 @@ local function UpdatePlayerESP(player)
     local data = ESPObjects[player]
     if not data then return end
     local char = SafeGetCharacter(player)
-    if not char then ClearPlayerESP(player) return end
+    local hrp = SafeGetHRP(char)
+    if not char or not hrp then
+        ClearPlayerESP(player)
+        return
+    end
+    -- Re-assign adornee if HRP changed
+    if data.NameTag and data.NameTag.Adornee ~= hrp then data.NameTag.Adornee = hrp end
+    if data.HealthBar and data.HealthBar.Adornee ~= hrp then data.HealthBar.Adornee = hrp end
+
     local role = GetRole(player)
     local roleColor = GetRoleColor(role)
     local hum = SafeGetHumanoid(char)
-    local hrp = SafeGetHRP(char)
     local localHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
 
     if data.Highlight then
         data.Highlight.FillColor = roleColor
         data.Highlight.Enabled = ESP.Players
         if ESP.Mode == "Chams" then
-            data.Highlight.FillTransparency = 0.1
-            data.Highlight.OutlineTransparency = 0
+            data.Highlight.FillTransparency = 0.05
+            data.Highlight.OutlineTransparency = 0.5
+            data.Highlight.OutlineColor = roleColor
         else
             data.Highlight.FillTransparency = 0.6
             data.Highlight.OutlineTransparency = 0.2
+            data.Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
         end
     end
     if data.NameTag and data.NameLabel then
         data.NameTag.Enabled = ESP.Names or ESP.Distance
         local text = ""
         if ESP.Names then
-            text = player.DisplayName .. " (" .. player.Name .. ")\n[" .. role .. "]"
+            text = player.DisplayName .. " (" .. player.Name .. ")
+[" .. role .. "]"
         end
         if ESP.Distance and localHRP and hrp then
             local dist = math.floor((localHRP.Position - hrp.Position).Magnitude)
-            if text ~= "" then text = text .. "\n" end
+            if text ~= "" then text = text .. "
+" end
             text = text .. dist .. " studs"
         end
         data.NameLabel.Text = text
@@ -559,8 +595,8 @@ Tabs.Visuals:AddDropdown("ESPMode", {
         for plr, data in pairs(ESPObjects) do
             if data.Highlight then
                 if Value == "Chams" then
-                    data.Highlight.FillTransparency = 0.1
-                    data.Highlight.OutlineTransparency = 0
+                    data.Highlight.FillTransparency = 0.05
+                    data.Highlight.OutlineTransparency = 0.5
                 else
                     data.Highlight.FillTransparency = 0.6
                     data.Highlight.OutlineTransparency = 0.2
@@ -602,7 +638,10 @@ GunESPToggle:OnChanged(function(Value)
         GunESPObject = nil
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- TAB 3: WORLD
+-- ═══════════════════════════════════════════════════════════════
 local FullBrightEnabled = false
 local NoFogEnabled = false
 local AutoGrabGun = false
@@ -747,8 +786,12 @@ workspace.ChildAdded:Connect(function(child)
         end
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- TAB 4: COMBAT
+-- ═══════════════════════════════════════════════════════════════
 local SilentAimEnabled = false
+local SilentAimMode = "Normal"
 local SilentAimFOV = 150
 local SilentAimTarget = "Murderer"
 local WallbangEnabled = false
@@ -758,8 +801,18 @@ Tabs.Combat:AddSection("Silent Aim")
 local SilentAimToggle = Tabs.Combat:AddToggle("SilentAim", { Title = "Silent Aim (Gun)", Default = false })
 SilentAimToggle:OnChanged(function(Value)
     SilentAimEnabled = Value
-    if Value then Notify("Combat", "Silent Aim enabled!", nil, 3) end
+    if Value then Notify("Combat", "Silent Aim enabled! Mode: " .. SilentAimMode, nil, 3) end
 end)
+
+Tabs.Combat:AddDropdown("SilentAimMode", {
+    Title = "Aim Mode",
+    Values = {"Weak", "Normal", "Strong", "Hacker"},
+    Default = "Normal",
+    Callback = function(Value)
+        SilentAimMode = Value
+        Notify("Combat", "Silent Aim mode: " .. Value, nil, 2)
+    end
+})
 
 Tabs.Combat:AddDropdown("SilentAimTarget", {
     Title = "Target Priority",
@@ -770,10 +823,7 @@ Tabs.Combat:AddDropdown("SilentAimTarget", {
 
 Tabs.Combat:AddSlider("SilentAimFOV", {
     Title = "Aim FOV",
-    Default = 150,
-    Min = 50,
-    Max = 500,
-    Rounding = 0,
+    Default = 150, Min = 50, Max = 500, Rounding = 0,
     Callback = function(Value) SilentAimFOV = Value end
 })
 
@@ -782,34 +832,39 @@ Tabs.Combat:AddSection("Wallbang")
 local WallbangToggle = Tabs.Combat:AddToggle("Wallbang", { Title = "Wallbang (Shoot Through Walls)", Default = false })
 WallbangToggle:OnChanged(function(Value)
     WallbangEnabled = Value
-    if Value then Notify("Combat", "Wallbang enabled!", "Bullets pass through walls.", 4) end
+    if Value then Notify("Combat", "Wallbang enabled!", nil, 4) end
 end)
 
--- Wallbang via metatable hook
+-- Wallbang + Silent Aim metatable hook
 local mt = getrawmetatable(game)
 if mt then
     local oldNamecall = mt.__namecall
     setreadonly(mt, false)
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
-        if WallbangEnabled and method == "FireServer" and self:IsA("RemoteEvent") then
+        if method == "FireServer" and self:IsA("RemoteEvent") then
             local name = self.Name:lower()
-            if name:find("gun") or name:find("shoot") or name:find("fire") or name:find("bullet") or name:find("hit") or name:find("shootgun") then
-                local murderer = GetMurderer()
-                if murderer then
-                    local mChar = SafeGetCharacter(murderer)
-                    local mHead = mChar and mChar:FindFirstChild("Head")
-                    if mHead then
+            local isGunRemote = name:find("gun") or name:find("shoot") or name:find("fire") or name:find("bullet") or name:find("hit") or name:find("shootgun") or name:find("throw")
+            if isGunRemote and (WallbangEnabled or SilentAimEnabled) then
+                local target = nil
+                if SilentAimTarget == "Murderer" then target = GetMurderer()
+                elseif SilentAimTarget == "Sheriff" then target = GetSheriff()
+                else target = GetMurderer() end
+                if target then
+                    local tChar = SafeGetCharacter(target)
+                    local tTorso = tChar and (tChar:FindFirstChild("UpperTorso") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("HumanoidRootPart"))
+                    if tTorso then
                         local args = {...}
                         if #args > 0 then
                             if typeof(args[1]) == "Vector3" then
-                                args[1] = mHead.Position
+                                args[1] = tTorso.Position
                             elseif typeof(args[1]) == "CFrame" then
-                                args[1] = mHead.CFrame
-                            elseif typeof(args[1]) == "table" and args[1].Position then
-                                args[1].Position = mHead.Position
+                                args[1] = tTorso.CFrame
+                            elseif typeof(args[1]) == "table" then
+                                if args[1].Position then args[1].Position = tTorso.Position end
+                                if args[1].Hit then args[1].Hit = tTorso end
                             elseif typeof(args[1]) == "Instance" and args[1]:IsA("BasePart") then
-                                args[1] = mHead
+                                args[1] = tTorso
                             end
                         end
                         return oldNamecall(self, unpack(args))
@@ -822,7 +877,7 @@ if mt then
     setreadonly(mt, true)
 end
 
--- Silent Aim Input Hook
+-- Silent Aim on click
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if SilentAimEnabled and not gameProcessed then
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -854,12 +909,87 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     target = GetMurderer()
                 end
                 local tChar = target and SafeGetCharacter(target)
-                local tHead = tChar and tChar:FindFirstChild("Head")
-                if tHead then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHead.Position)
+                local tTorso = tChar and (tChar:FindFirstChild("UpperTorso") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("HumanoidRootPart"))
+                if tTorso then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, tTorso.Position)
+                    if SilentAimMode == "Strong" or SilentAimMode == "Hacker" then
+                        local gun = char and char:FindFirstChild("Gun")
+                        if gun then
+                            pcall(function() gun:Activate() end)
+                        end
+                    end
                 end
             end
         end
+    end
+end)
+
+Tabs.Combat:AddSection("Kill Aura (Murderer)")
+
+local KillAuraEnabled = false
+local KillAuraRange = 50
+local KillAuraTarget = "All" -- All, Sheriff, Innocent
+
+local KillAuraToggle = Tabs.Combat:AddToggle("KillAura", { Title = "Enable Kill Aura", Default = false })
+KillAuraToggle:OnChanged(function(Value)
+    KillAuraEnabled = Value
+    if Value then Notify("Combat", "Kill Aura enabled! Range: " .. KillAuraRange, nil, 3) end
+end)
+
+Tabs.Combat:AddSlider("KillAuraRange", {
+    Title = "Kill Aura Range",
+    Default = 50, Min = 5, Max = 250, Rounding = 0,
+    Callback = function(Value) KillAuraRange = Value end
+})
+
+Tabs.Combat:AddDropdown("KillAuraTarget", {
+    Title = "Kill Aura Target",
+    Values = {"All", "Sheriff", "Innocent"},
+    Default = "All",
+    Callback = function(Value) KillAuraTarget = Value end
+})
+
+-- Kill Aura Loop
+task.spawn(function()
+    while true do
+        if KillAuraEnabled then
+            local char = SafeGetCharacter(LocalPlayer)
+            local knife = char and char:FindFirstChild("Knife")
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            local packKnife = bp and bp:FindFirstChild("Knife")
+            if knife or packKnife then
+                if packKnife and not knife then
+                    local hum = SafeGetHumanoid(char)
+                    if hum then hum:EquipTool(packKnife) task.wait(0.2) end
+                end
+                knife = char and char:FindFirstChild("Knife")
+                if knife then
+                    local myHRP = SafeGetHRP(char)
+                    if myHRP then
+                        for _, p in pairs(Players:GetPlayers()) do
+                            if p ~= LocalPlayer then
+                                local role = GetRole(p)
+                                if KillAuraTarget == "Sheriff" and role ~= "Sheriff" then continue end
+                                if KillAuraTarget == "Innocent" and role ~= "Innocent" then continue end
+                                local pHRP = SafeGetHRP(SafeGetCharacter(p))
+                                if pHRP then
+                                    local dist = (myHRP.Position - pHRP.Position).Magnitude
+                                    if dist <= KillAuraRange then
+                                        pcall(function()
+                                            myHRP.CFrame = pHRP.CFrame + Vector3.new(0, 0, 2)
+                                            task.wait(0.05)
+                                            knife:Activate()
+                                            task.wait(0.05)
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.15)
     end
 end)
 
@@ -924,19 +1054,18 @@ local function ShootAtMurderer()
     local char = SafeGetCharacter(LocalPlayer)
     local hrp = SafeGetHRP(char)
     local mChar = SafeGetCharacter(murderer)
-    local mHead = mChar and mChar:FindFirstChild("Head")
-    if not hrp or not mHead then
+    local mTorso = mChar and (mChar:FindFirstChild("UpperTorso") or mChar:FindFirstChild("Torso") or mChar:FindFirstChild("HumanoidRootPart"))
+    if not hrp or not mTorso then
         Notify("Combat", "Target not available!", nil, 3)
         return
     end
-
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHead.Position)
 
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local charGun = char and char:FindFirstChild("Gun")
     local packGun = backpack and backpack:FindFirstChild("Gun")
 
     if charGun then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, mTorso.Position)
         task.wait(0.05)
         pcall(function() charGun:Activate() end)
         Notify("Combat", "Firing at " .. murderer.Name .. "!", nil, 3)
@@ -945,7 +1074,7 @@ local function ShootAtMurderer()
         if hum then
             hum:EquipTool(packGun)
             task.wait(0.3)
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, mHead.Position)
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, mTorso.Position)
             task.wait(0.05)
             pcall(function() packGun:Activate() end)
             Notify("Combat", "Equipped and fired at " .. murderer.Name .. "!", nil, 3)
@@ -966,10 +1095,7 @@ end)
 
 Tabs.Combat:AddSlider("ShootBtnWidth", {
     Title = "Button Width",
-    Default = 140,
-    Min = 80,
-    Max = 300,
-    Rounding = 0,
+    Default = 140, Min = 80, Max = 300, Rounding = 0,
     Callback = function(Value)
         ShootBtn.Size = UDim2.new(0, Value, 0, ShootBtn.Size.Y.Offset)
     end
@@ -977,16 +1103,15 @@ Tabs.Combat:AddSlider("ShootBtnWidth", {
 
 Tabs.Combat:AddSlider("ShootBtnHeight", {
     Title = "Button Height",
-    Default = 45,
-    Min = 30,
-    Max = 120,
-    Rounding = 0,
+    Default = 45, Min = 30, Max = 120, Rounding = 0,
     Callback = function(Value)
         ShootBtn.Size = UDim2.new(0, ShootBtn.Size.X.Offset, 0, Value)
     end
 })
 
--- FLING SYSTEM
+-- ═══════════════════════════════════════════════════════════════
+-- FLING SYSTEM (FIXED)
+-- ═══════════════════════════════════════════════════════════════
 local FlingData = {
     Murderer = false,
     Sheriff = false,
@@ -1000,6 +1125,7 @@ local function DoFling(targetPlayer)
     local hrp = SafeGetHRP(char)
     if not hrp then return end
 
+    -- Method 1: BodyAngularVelocity + BodyVelocity (legacy)
     local bv = Instance.new("BodyAngularVelocity")
     bv.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
     bv.AngularVelocity = Vector3.new(0, 9e9, 0)
@@ -1010,9 +1136,15 @@ local function DoFling(targetPlayer)
     bvel.Velocity = Vector3.new(0, 500, 0)
     bvel.Parent = hrp
 
-    task.wait(0.4)
+    task.wait(0.5)
     bv:Destroy()
     bvel:Destroy()
+
+    -- Method 2: CFrame spin fallback
+    for i = 1, 10 do
+        hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(90), 0) + Vector3.new(0, 20, 0)
+        task.wait(0.05)
+    end
 end
 
 Tabs.Combat:AddSection("Fling")
@@ -1035,11 +1167,8 @@ Tabs.Combat:AddDropdown("FlingPlayerSelect", {
     end)(),
     Default = "None",
     Callback = function(Value)
-        if Value == "None" then
-            SelectedFlingPlayer = nil
-        else
-            SelectedFlingPlayer = Players:FindFirstChild(Value)
-        end
+        if Value == "None" then SelectedFlingPlayer = nil
+        else SelectedFlingPlayer = Players:FindFirstChild(Value) end
     end
 })
 
@@ -1063,7 +1192,7 @@ task.spawn(function()
         if FlingData.Player and SelectedFlingPlayer then
             DoFling(SelectedFlingPlayer)
         end
-        task.wait(1.5)
+        task.wait(2)
     end
 end)
 
@@ -1073,14 +1202,17 @@ RunService.Heartbeat:Connect(function()
         local char = SafeGetCharacter(LocalPlayer)
         if char then
             for _, obj in pairs(char:GetDescendants()) do
-                if obj:IsA("BodyAngularVelocity") or obj:IsA("BodyVelocity") or obj:IsA("BodyThrust") or obj:IsA("BodyGyro") then
+                if obj:IsA("BodyAngularVelocity") or obj:IsA("BodyVelocity") or obj:IsA("BodyThrust") or obj:IsA("BodyGyro") or obj:IsA("AngularVelocity") or obj:IsA("LinearVelocity") or obj:IsA("VectorForce") then
                     obj:Destroy()
                 end
             end
         end
     end
 end)
--- TAB 5: AUTO FARM
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 5: AUTO FARM (FIXED)
+-- ═══════════════════════════════════════════════════════════════
 local AutoFarm = {
     Enabled = false,
     Mode = "Normal",
@@ -1093,8 +1225,7 @@ local AutoFarm = {
     MaxCoins = 40,
     AfterTeleport = "Void",
     UnderMapY = -4,
-    CollectedCoins = 0,
-    Farming = false
+    CollectedCoins = 0
 }
 
 Tabs.Farm:AddSection("Auto Farm Settings")
@@ -1103,9 +1234,7 @@ local FarmToggle = Tabs.Farm:AddToggle("AutoFarm", { Title = "Enable Auto Farm",
 FarmToggle:OnChanged(function(Value)
     AutoFarm.Enabled = Value
     AutoFarm.CollectedCoins = 0
-    if Value then
-        Notify("Auto Farm", "Farming started!", "Mode: " .. AutoFarm.Mode, 3)
-    end
+    if Value then Notify("Auto Farm", "Farming started! Mode: " .. AutoFarm.Mode, nil, 3) end
 end)
 
 Tabs.Farm:AddDropdown("FarmMode", {
@@ -1114,34 +1243,25 @@ Tabs.Farm:AddDropdown("FarmMode", {
     Default = "Normal",
     Callback = function(Value)
         AutoFarm.Mode = Value
-        Notify("Auto Farm", "Mode changed to: " .. Value, nil, 2)
+        Notify("Auto Farm", "Mode: " .. Value, nil, 2)
     end
 })
 
 Tabs.Farm:AddSlider("FarmSpeed", {
     Title = "Speed Twin",
-    Default = 25,
-    Min = 15,
-    Max = 35,
-    Rounding = 0,
+    Default = 25, Min = 15, Max = 35, Rounding = 0,
     Callback = function(Value) AutoFarm.Speed = Value end
 })
 
 Tabs.Farm:AddSlider("FarmDelay", {
     Title = "Twin Delay (sec)",
-    Default = 0,
-    Min = 0,
-    Max = 25,
-    Rounding = 0,
+    Default = 0, Min = 0, Max = 25, Rounding = 0,
     Callback = function(Value) AutoFarm.Delay = Value end
 })
 
 Tabs.Farm:AddSlider("UnderMapDepth", {
     Title = "Under Map Depth (Y)",
-    Default = -4,
-    Min = -6,
-    Max = -3,
-    Rounding = 0,
+    Default = -4, Min = -6, Max = -3, Rounding = 0,
     Callback = function(Value) AutoFarm.UnderMapY = Value end
 })
 
@@ -1150,10 +1270,7 @@ AuraToggle:OnChanged(function(Value) AutoFarm.CoinAura = Value end)
 
 Tabs.Farm:AddSlider("AuraRange", {
     Title = "Aura Range",
-    Default = 15,
-    Min = 5,
-    Max = 50,
-    Rounding = 0,
+    Default = 15, Min = 5, Max = 50, Rounding = 0,
     Callback = function(Value) AutoFarm.AuraRange = Value end
 })
 
@@ -1162,19 +1279,13 @@ AvoidToggle:OnChanged(function(Value) AutoFarm.AvoidMurder = Value end)
 
 Tabs.Farm:AddSlider("AvoidRange", {
     Title = "Avoid Range",
-    Default = 30,
-    Min = 10,
-    Max = 100,
-    Rounding = 0,
+    Default = 30, Min = 10, Max = 100, Rounding = 0,
     Callback = function(Value) AutoFarm.AvoidRange = Value end
 })
 
 Tabs.Farm:AddSlider("MaxCoins", {
     Title = "Max Coins Per Round",
-    Default = 40,
-    Min = 10,
-    Max = 40,
-    Rounding = 0,
+    Default = 40, Min = 10, Max = 40, Rounding = 0,
     Callback = function(Value) AutoFarm.MaxCoins = Value end
 })
 
@@ -1185,11 +1296,12 @@ Tabs.Farm:AddDropdown("AfterTeleport", {
     Callback = function(Value) AutoFarm.AfterTeleport = Value end
 })
 
--- Auto Farm Loop
+-- Auto Farm Loop (FIXED)
 task.spawn(function()
     while true do
         if AutoFarm.Enabled then
-            local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            local char = SafeGetCharacter(LocalPlayer)
+            local hrp = SafeGetHRP(char)
             if hrp then
                 if AutoFarm.CollectedCoins >= AutoFarm.MaxCoins then
                     if AutoFarm.AfterTeleport == "Void" then
@@ -1211,7 +1323,7 @@ task.spawn(function()
                         end
                     end
                     AutoFarm.Enabled = false
-                    Notify("Auto Farm", "Max coins reached! (" .. AutoFarm.MaxCoins .. ")", "Teleported to " .. AutoFarm.AfterTeleport, 5)
+                    Notify("Auto Farm", "Max coins! (" .. AutoFarm.MaxCoins .. ")", "Teleported to " .. AutoFarm.AfterTeleport, 5)
                 else
                     local coins = GetCoins()
                     local murderer = GetMurderer()
@@ -1220,15 +1332,13 @@ task.spawn(function()
                     local bestDist = math.huge
 
                     for _, coin in pairs(coins) do
-                        if coin and coin.Parent then
+                        if coin and coin.Parent and coin:IsA("BasePart") then
                             local coinPos = coin.Position
                             local dist = (hrp.Position - coinPos).Magnitude
 
                             if AutoFarm.AvoidMurder and mHRP then
                                 local murderDist = (mHRP.Position - coinPos).Magnitude
-                                if murderDist < AutoFarm.AvoidRange then
-                                    continue
-                                end
+                                if murderDist < AutoFarm.AvoidRange then continue end
                             end
 
                             if dist < bestDist then
@@ -1239,21 +1349,37 @@ task.spawn(function()
                     end
 
                     if bestCoin then
+                        local coinPos = bestCoin.Position
                         if AutoFarm.CoinAura and bestDist <= AutoFarm.AuraRange then
-                            hrp.CFrame = CFrame.new(bestCoin.Position.X, hrp.Position.Y, bestCoin.Position.Z)
+                            -- Teleport directly to coin
+                            hrp.CFrame = CFrame.new(coinPos.X, coinPos.Y + 2, coinPos.Z)
                             AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
                             if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
                         else
-                            local targetPos = bestCoin.Position
                             if AutoFarm.Mode == "UnderMap" then
-                                targetPos = Vector3.new(bestCoin.Position.X, AutoFarm.UnderMapY, bestCoin.Position.Z)
-                            end
-                            local direction = (targetPos - hrp.Position).Unit
-                            hrp.CFrame = hrp.CFrame + direction * AutoFarm.Speed * 0.03
+                                -- Move under map but pop up to collect
+                                local underPos = Vector3.new(coinPos.X, AutoFarm.UnderMapY, coinPos.Z)
+                                local direction = (underPos - hrp.Position).Unit
+                                hrp.CFrame = hrp.CFrame + direction * AutoFarm.Speed * 0.03
 
-                            if (hrp.Position - bestCoin.Position).Magnitude < 5 then
-                                AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
-                                if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
+                                if (hrp.Position - underPos).Magnitude < 8 then
+                                    -- Pop up to collect
+                                    hrp.CFrame = CFrame.new(coinPos.X, coinPos.Y + 3, coinPos.Z)
+                                    task.wait(0.1)
+                                    hrp.CFrame = CFrame.new(coinPos.X, AutoFarm.UnderMapY, coinPos.Z)
+                                    AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
+                                    if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
+                                end
+                            else
+                                -- Normal mode: move towards coin
+                                local targetPos = Vector3.new(coinPos.X, hrp.Position.Y, coinPos.Z)
+                                local direction = (targetPos - hrp.Position).Unit
+                                hrp.CFrame = hrp.CFrame + direction * AutoFarm.Speed * 0.03
+
+                                if (hrp.Position - coinPos).Magnitude < 5 then
+                                    AutoFarm.CollectedCoins = AutoFarm.CollectedCoins + 1
+                                    if AutoFarm.Delay > 0 then task.wait(AutoFarm.Delay) end
+                                end
                             end
                         end
                     end
@@ -1263,7 +1389,100 @@ task.spawn(function()
         task.wait(0.03)
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ROUND TIMER (DRAGGABLE + PINNABLE)
+-- ═══════════════════════════════════════════════════════════════
+local TimerGui = Instance.new("ScreenGui")
+TimerGui.Name = "CWH_Timer"
+TimerGui.Parent = gethui and gethui() or CoreGui
+TimerGui.ResetOnSpawn = false
+TimerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local TimerFrame = Instance.new("Frame")
+TimerFrame.Name = "TimerFrame"
+TimerFrame.Size = UDim2.new(0, 120, 0, 40)
+TimerFrame.Position = UDim2.new(0.5, -60, 0.05, 0)
+TimerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+TimerFrame.BackgroundTransparency = 0.3
+TimerFrame.BorderSizePixel = 0
+TimerFrame.Active = true
+TimerFrame.Draggable = true
+TimerFrame.Parent = TimerGui
+
+local TimerCorner = Instance.new("UICorner")
+TimerCorner.CornerRadius = UDim.new(0, 6)
+TimerCorner.Parent = TimerFrame
+
+local TimerStroke = Instance.new("UIStroke")
+TimerStroke.Color = Color3.fromRGB(0, 150, 200)
+TimerStroke.Thickness = 1.5
+TimerStroke.Parent = TimerFrame
+
+local TimerLabel = Instance.new("TextLabel")
+TimerLabel.Name = "TimerLabel"
+TimerLabel.Size = UDim2.new(1, 0, 1, 0)
+TimerLabel.BackgroundTransparency = 1
+TimerLabel.Text = "Round: --:--"
+TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimerLabel.Font = Enum.Font.GothamBold
+TimerLabel.TextSize = 16
+TimerLabel.Parent = TimerFrame
+
+local PinBtn = Instance.new("TextButton")
+PinBtn.Name = "PinBtn"
+PinBtn.Size = UDim2.new(0, 20, 0, 20)
+PinBtn.Position = UDim2.new(1, -22, 0, 2)
+PinBtn.BackgroundTransparency = 1
+PinBtn.Text = "📌"
+PinBtn.TextSize = 12
+PinBtn.Parent = TimerFrame
+
+local TimerPinned = false
+PinBtn.MouseButton1Click:Connect(function()
+    TimerPinned = not TimerPinned
+    TimerFrame.Draggable = not TimerPinned
+    PinBtn.Text = TimerPinned and "🔒" or "📌"
+end)
+
+-- Timer Loop
+task.spawn(function()
+    while true do
+        local timeText = "Round: --:--"
+        -- Try to find MM2 timer
+        local status = workspace:FindFirstChild("Status") or ReplicatedStorage:FindFirstChild("Status")
+        if status then
+            local roundTime = status:FindFirstChild("RoundTime") or status:FindFirstChild("Timer")
+            if roundTime and roundTime.Value then
+                local seconds = roundTime.Value
+                local mins = math.floor(seconds / 60)
+                local secs = seconds % 60
+                timeText = string.format("Round: %02d:%02d", mins, secs)
+            end
+        end
+        -- Fallback: look in PlayerGui
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            local mainGui = pg:FindFirstChild("MainGUI") or pg:FindFirstChild("GameGUI")
+            if mainGui then
+                for _, obj in pairs(mainGui:GetDescendants()) do
+                    if obj:IsA("TextLabel") and (obj.Text:find(":") or obj.Name:lower():find("timer") or obj.Name:lower():find("time")) then
+                        if obj.Text ~= "" and obj.Text ~= "--:--" then
+                            timeText = "Round: " .. obj.Text
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        TimerLabel.Text = timeText
+        task.wait(0.5)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- TAB 6: SETTINGS
+-- ═══════════════════════════════════════════════════════════════
 Tabs.Settings:AddSection("UI Settings")
 
 Tabs.Settings:AddDropdown("ThemeSelector", {
@@ -1327,6 +1546,15 @@ Tabs.Settings:AddDropdown("CursorType", {
     end
 })
 
+Tabs.Settings:AddSection("Timer")
+
+local TimerVisible = true
+local TimerToggle = Tabs.Settings:AddToggle("TimerVisible", { Title = "Show Round Timer", Default = true })
+TimerToggle:OnChanged(function(Value)
+    TimerVisible = Value
+    TimerGui.Enabled = Value
+end)
+
 Tabs.Settings:AddSection("System")
 
 Tabs.Settings:AddButton({
@@ -1338,6 +1566,7 @@ Tabs.Settings:AddButton({
         ShootBtnGui:Destroy()
         CursorGui:Destroy()
         SoundGui:Destroy()
+        TimerGui:Destroy()
         Window:Destroy()
     end
 })
@@ -1467,4 +1696,4 @@ for _, player in pairs(Players:GetPlayers()) do
     end
 end
 
-Notify("Crows Hub v5.0", "Loaded!", "Silent Aim: Fixed | Farm: Active | Fling: Ready", 6)
+Notify("Crows Hub v6.0", "Loaded!", "ESP Fixed | Farm Fixed | Kill Aura | Timer", 6)
