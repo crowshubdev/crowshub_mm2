@@ -1,5 +1,5 @@
 --[[
-    Crows Hub | FULL v9.2
+    Crows Hub | FULL v9.2.1
     GUI: Crows Hub (твой Fluent)
     Кнопки: Vision Hub (orialdev)
     Логика: SHITARO (без ключа/HWID) + Vision Hub
@@ -121,7 +121,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v9.0 MM2",
+    SubTitle = "v9.2.1 MM2",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -400,10 +400,86 @@ Tabs.Main:AddSection("Misc")
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
 AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
 
-local NoclipToggle = Tabs.Main:AddToggle("Noclip", { Title = "Enable Noclip", Default = false })
+-- ═══════════════════════════════════════════════════════════════
+-- NOCLIP (проход через стены)
+-- ═══════════════════════════════════════════════════════════════
+
+local NoclipSystem = {
+    Enabled = false,
+    Cache = {},          -- запоминаем CanCollide
+    Connection = nil,
+}
+
+local function enableNoclip()
+    NoclipSystem.Enabled = true
+    
+    if NoclipSystem.Connection then
+        NoclipSystem.Connection:Disconnect()
+    end
+    
+    -- Loop через Stepped (нужно каждый кадр)
+    NoclipSystem.Connection = RunService.Stepped:Connect(function()
+        if not NoclipSystem.Enabled then return end
+        
+        local char = SafeGetCharacter(LocalPlayer)
+        if not char then return end
+        
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if part.CanCollide then
+                    -- Запоминаем оригинал чтобы потом восстановить
+                    if NoclipSystem.Cache[part] == nil then
+                        NoclipSystem.Cache[part] = true
+                    end
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    NoclipSystem.Enabled = false
+    
+    if NoclipSystem.Connection then
+        NoclipSystem.Connection:Disconnect()
+        NoclipSystem.Connection = nil
+    end
+    
+    -- Восстанавливаем CanCollide
+    for part, original in pairs(NoclipSystem.Cache) do
+        if part and part.Parent then
+            pcall(function() part.CanCollide = original end)
+        end
+    end
+    NoclipSystem.Cache = {}
+end
+
+-- GUI
+Tabs.Combat:AddSection("Noclip")
+
+local NoclipToggle = Tabs.Combat:AddToggle("NoclipToggle", {
+    Title = "Enable Noclip",
+    Description = "Проход через стены",
+    Default = false
+})
 NoclipToggle:OnChanged(function(Value)
-    NoclipEnabled = Value
-    if Value then Notify("Noclip", "Enabled!", nil, 3) end
+    if Value then
+        enableNoclip()
+        Notify("Noclip", "🟢 Enabled!", nil, 3)
+    else
+        disableNoclip()
+        Notify("Noclip", "🔴 Disabled", nil, 2)
+    end
+end)
+
+-- Автовосстановление при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if NoclipSystem.Enabled then
+        NoclipSystem.Cache = {}  -- сбрасываем кэш
+        -- Автоматически перезапускается через Stepped
+    end
 end)
 
 -- ФИКС: постоянная проверка скорости (лечит баг с ножом)
@@ -425,7 +501,6 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
 -- ═══════════════════════════════════════════════════════════════
 -- GOD MODE (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
@@ -2805,6 +2880,181 @@ task.spawn(function()
             TimerLabel.Text = "Round: --:--"
         end
         task.wait(0.5)
+    end
+end)
+-- ═══════════════════════════════════════════════════════════════
+-- COIN AURA (собирает монеты в радиусе при движении)
+-- Работает вместе с Auto Farm — летишь по монетам, аура сама
+-- подбирает всё что рядом по пути
+-- ═══════════════════════════════════════════════════════════════
+
+local CoinAura = {
+    Enabled = false,
+    Radius = 15,              -- Радиус вокруг игрока
+    Connection = nil,
+    LastTouch = 0,
+    TouchDelay = 0.05,        -- Задержка между касаниями (сек)
+    CollectedCount = 0,
+    AutoEquipCount = true     -- Считаем собранные монеты
+}
+
+-- Получить все CoinContainer на карте
+local function getCoinContainers()
+    local containers = {}
+    for _, map in ipairs(workspace:GetChildren()) do
+        local container = map:FindFirstChild("CoinContainer")
+        if container then
+            table.insert(containers, container)
+        end
+    end
+    return containers
+end
+
+-- Получить все части монет с TouchTransmitter
+local function getCoinParts(containers)
+    local parts = {}
+    for _, container in ipairs(containers) do
+        for _, descendant in ipairs(container:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                local hasTouch = descendant:FindFirstChildOfClass("TouchTransmitter")
+                if not hasTouch then
+                    -- Проверяем родителя (иногда монета это модель)
+                    local parent = descendant.Parent
+                    if parent then
+                        hasTouch = parent:FindFirstChildOfClass("TouchTransmitter")
+                    end
+                end
+                if hasTouch then
+                    table.insert(parts, descendant)
+                end
+            end
+        end
+    end
+    return parts
+end
+
+-- Основная функция — собирает все монеты в радиусе
+local function collectNearbyCoins()
+    if not CoinAura.Enabled then return end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    -- Проверка задержки (чтобы не спамить)
+    local now = os.clock()
+    if now - CoinAura.LastTouch < CoinAura.TouchDelay then return end
+    
+    local rootPos = rootPart.Position
+    local containers = getCoinContainers()
+    if #containers == 0 then return end
+    
+    local coinParts = getCoinParts(containers)
+    if #coinParts == 0 then return end
+    
+    local touched = false
+    for _, part in ipairs(coinParts) do
+        if part and part.Parent then
+            local dist = (rootPos - part.Position).Magnitude
+            if dist <= CoinAura.Radius then
+                pcall(function()
+                    firetouchinterest(rootPart, part, 0)  -- touch end
+                    firetouchinterest(rootPart, part, 1)  -- touch begin
+                end)
+                touched = true
+            end
+        end
+    end
+    
+    if touched then
+        CoinAura.LastTouch = now
+    end
+end
+
+-- Запуск ауры
+local function startCoinAura()
+    CoinAura.Enabled = true
+    CoinAura.CollectedCount = 0
+    
+    if CoinAura.Connection then
+        CoinAura.Connection:Disconnect()
+    end
+    
+    -- Оптимизировано: 30 раз в секунду (не 60)
+    local accum = 0
+    CoinAura.Connection = RunService.Heartbeat:Connect(function(dt)
+        accum = accum + dt
+        if accum < 0.03 then return end
+        accum = 0
+        pcall(collectNearbyCoins)
+    end)
+end
+
+-- Остановка ауры
+local function stopCoinAura()
+    CoinAura.Enabled = false
+    if CoinAura.Connection then
+        CoinAura.Connection:Disconnect()
+        CoinAura.Connection = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════════════════════════════════
+
+Tabs.Farm:AddSection("Coin Aura")
+
+local CoinAuraToggle = Tabs.Farm:AddToggle("CoinAuraMain", {
+    Title = "🎯 Enable Coin Aura",
+    Description = "Собирает монеты в радиусе без прямого касания",
+    Default = false
+})
+CoinAuraToggle:OnChanged(function(Value)
+    if Value then
+        startCoinAura()
+        Notify("Coin Aura", "🟢 Включена! Радиус: " .. CoinAura.Radius .. " studs", nil, 3)
+    else
+        stopCoinAura()
+        Notify("Coin Aura", "🔴 Выключена. Собрано: " .. CoinAura.CollectedCount, nil, 3)
+    end
+end)
+
+Tabs.Farm:AddSlider("CoinAuraRange", {
+    Title = "Aura Radius",
+    Description = "Радиус вокруг тебя (в studs)",
+    Default = 15, Min = 3, Max = 60, Rounding = 0,
+    Callback = function(Value)
+        CoinAura.Radius = Value
+    end
+})
+
+Tabs.Farm:AddSlider("CoinAuraDelay", {
+    Title = "Touch Delay",
+    Description = "Задержка между касаниями (сек)",
+    Default = 0.05, Min = 0.01, Max = 0.5, Rounding = 2,
+    Callback = function(Value)
+        CoinAura.TouchDelay = Value
+    end
+})
+
+Tabs.Farm:AddButton({
+    Title = "🔄 Reset Counter",
+    Description = "Сбросить счётчик собранных монет",
+    Callback = function()
+        CoinAura.CollectedCount = 0
+        Notify("Coin Aura", "Counter reset!", nil, 2)
+    end
+})
+
+-- Сброс при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if CoinAura.Enabled then
+        -- Перезапускаем ауру после респавна
+        startCoinAura()
     end
 end)
 
