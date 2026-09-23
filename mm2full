@@ -1,5 +1,5 @@
 --[[
-    Crows Hub | FULL v9.0
+    Crows Hub | FULL v9.2
     GUI: Crows Hub (твой Fluent)
     Кнопки: Vision Hub (orialdev)
     Логика: SHITARO (без ключа/HWID) + Vision Hub
@@ -1527,7 +1527,7 @@ Tabs.Combat:AddToggle("KillAuraFireTouch", {
     KillAuraSystem.UseFireTouch = Value
 end)
 -- ═══════════════════════════════════════════════════════════════
--- SILENT AIM + FORCE SHOOT (взято из SHITARO)
+-- SILENT AIM + FORCE SHOOT v2 (ИСПРАВЛЕННЫЙ)
 -- ═══════════════════════════════════════════════════════════════
 
 local SilentSystem = {
@@ -1544,10 +1544,6 @@ local orig_screen = nil
 local hook_mouse = nil
 local hook_screen = nil
 
--- ═══════════════════════════════════════════════════════════════
--- БАЗОВЫЕ ФУНКЦИИ
--- ═══════════════════════════════════════════════════════════════
-
 local function get_weapon_service()
     if weapon_service then return weapon_service end
     local ok, m = pcall(function()
@@ -1563,7 +1559,6 @@ local function get_target_player()
     elseif SilentSystem.Target == "Sheriff" then
         return GetSheriff()
     else
-        -- Closest
         local closest, minDist = nil, math.huge
         local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
         if myHRP then
@@ -1581,23 +1576,21 @@ local function get_target_player()
     end
 end
 
--- Получить точку для аима (с предиктом)
 local function get_aim_cframe()
     local target = get_target_player()
     if not target then return nil end
     local tChar = SafeGetCharacter(target)
     if not tChar then return nil end
-    
+
     local part = tChar:FindFirstChild("Head")
         or tChar:FindFirstChild("UpperTorso")
         or tChar:FindFirstChild("Torso")
         or tChar:FindFirstChild("HumanoidRootPart")
-    
+
     if not part then return nil end
-    
+
     local pos = part.Position
-    
-    -- Предикт по пингу
+
     if SilentSystem.Predict then
         local hum = SafeGetHumanoid(tChar)
         if hum then
@@ -1607,26 +1600,23 @@ local function get_aim_cframe()
             pos = pos + vel * (ping + 0.05)
         end
     end
-    
+
     return CFrame.new(pos)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- FORCE SHOOT (главная фича!)
+-- FORCE SHOOT — ИСПРАВЛЕННАЯ ЛОГИКА
 -- ═══════════════════════════════════════════════════════════════
 
--- Attachment пистолета (откуда летит пуля)
 local function gun_attachment()
     local char = SafeGetCharacter(LocalPlayer)
     local hrp = SafeGetHRP(char)
-    if not hrp then return nil, nil end
-    return hrp:FindFirstChild("GunRaycastAttachment"), hrp
+    if not hrp then return nil end
+    return hrp:FindFirstChild("GunRaycastAttachment")
 end
 
--- Сохранение позиции перед подменой
 local force_att = nil
 local force_saved = nil
-local force_stamp = 0
 
 local function restore_origin()
     local att = force_att
@@ -1641,117 +1631,102 @@ local function restore_origin()
     end
 end
 
--- Подмена позиции пистолета на нужную точку
 local function push_origin(cf)
     local att = gun_attachment()
     if not att then return false end
-    
+
     if force_att and force_att ~= att then restore_origin() end
-    
+
     if not force_att then
         local ok, saved = pcall(function() return att.WorldCFrame end)
         if not ok then return false end
         force_att = att
         force_saved = saved
     end
-    
-    force_stamp = os.clock()
+
     local ok = pcall(function() att.WorldCFrame = cf end)
     if not ok then
         restore_origin()
         return false
     end
-    
-    -- Восстанавливаем через кадр (дефер)
+
     task.defer(restore_origin)
     return true
 end
 
--- Проверка что из origin видно цель
 local function los_clear(origin, point)
     if not origin or not point then return false end
     local delta = point - origin
     local dist = delta.Magnitude
     if dist < 0.5 then return true end
-    
+
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
     params.FilterDescendantsInstances = { LocalPlayer.Character }
-    
+
     local hit = workspace:Raycast(origin, delta, params)
     if not hit then return true end
-    
+
     local target = get_target_player()
     local tChar = target and SafeGetCharacter(target)
     if hit.Instance and tChar and (hit.Instance == tChar or hit.Instance:IsDescendantOf(tChar)) then
         return true
     end
-    
+
     return (hit.Position - origin).Magnitude >= dist - 0.75
 end
 
--- Главная функция Force Shoot
--- Строит "коридор" от нас к цели через стены
+-- ИСПРАВЛЕНО: origin ВПЕРЁД от меня (а не сзади от цели)
 local function resolve_force()
     local target = get_target_player()
     if not target then return nil end
-    
+
     local tChar = SafeGetCharacter(target)
     local tPart = tChar and SafeGetHRP(tChar)
     if not tPart then return nil end
-    
+
     local live = tPart.Position
     local myChar = SafeGetCharacter(LocalPlayer)
     local myHRP = SafeGetHRP(myChar)
     if not myHRP then return nil end
-    
+
     local myPos = myHRP.Position
-    
-    -- Направление от меня к цели
     local dir = (live - myPos)
     if dir.Magnitude < 1 then return nil end
     dir = dir.Unit
-    
-    -- Пробуем разные точки "origin" (стрелка)
-    -- Идея: поставить пистолет в точку БЛИЖЕ к цели, откуда стена не мешает
+
+    -- Ищем точку ВПЕРЁД от меня, откуда видно цель
     local best_origin = nil
-    local best_dist = math.huge
-    
-    -- Проверяем точки на пути к цели, начиная с близкой к ней
-    local test_distances = { 4, 6, 8, 10, 15, 20, 30, 40, 50 }
+    local test_distances = { 50, 40, 30, 20, 15, 10, 8, 6, 4 }
     
     for _, d in ipairs(test_distances) do
-        local test_origin = live - dir * d
+        local test_origin = myPos + dir * d
         
-        -- Может ли пистолет стоять в этой точке и видеть цель?
-        if los_clear(test_origin, live) then
-            -- Проверяем что от меня до этой точки нет стен между нами и целью? 
-            -- На самом деле нет, нужно только чтобы СНАЙПЕР видел цель
-            best_origin = test_origin
-            best_dist = d
-            break  -- Берём ближайшую точку
+        -- Только если точка не за целью
+        if (test_origin - live).Magnitude > 2 then
+            if los_clear(test_origin, live) then
+                best_origin = test_origin
+                break
+            end
         end
     end
-    
+
     if not best_origin then
-        -- Fallback: ставим пистолет прямо НА цель
+        -- Fallback: около цели
         best_origin = live - dir * 2
     end
-    
-    -- Aim точка — сама цель
-    local aim = live
-    
-    return CFrame.new(best_origin, aim), CFrame.new(aim)
+
+    return CFrame.new(best_origin, live), CFrame.new(live)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- HOOK УСТАНОВКА (для обычного Silent Aim)
+-- HOOKS
 -- ═══════════════════════════════════════════════════════════════
 
 local function install_silent_hooks()
     local m = get_weapon_service()
     if not m then return end
-    
+
     if not hook_mouse then
         hook_mouse = function(self, ...)
             if SilentSystem.Enabled then
@@ -1760,7 +1735,7 @@ local function install_silent_hooks()
             end
             return orig_mouse(self, ...)
         end
-        
+
         hook_screen = function(self, x, y, ...)
             if SilentSystem.Enabled then
                 local cf = get_aim_cframe()
@@ -1769,14 +1744,14 @@ local function install_silent_hooks()
             return orig_screen(self, x, y, ...)
         end
     end
-    
+
     pcall(function() setreadonly(m, false) end)
-    
+
     if type(m.GetMouseTargetCFrame) == "function" and m.GetMouseTargetCFrame ~= hook_mouse then
         orig_mouse = m.GetMouseTargetCFrame
         pcall(function() m.GetMouseTargetCFrame = hook_mouse end)
     end
-    
+
     if type(m.GetTargetPosition) == "function" and m.GetTargetPosition ~= hook_screen then
         orig_screen = m.GetTargetPosition
         pcall(function() m.GetTargetPosition = hook_screen end)
@@ -1793,14 +1768,13 @@ local function remove_silent_hooks()
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- ГЛАВНАЯ ФУНКЦИЯ СТРЕЛЬБЫ
+-- DO SHOOT — ВСЕГДА РАБОТАЕТ
 -- ═══════════════════════════════════════════════════════════════
 
 local function doShoot()
     local char = SafeGetCharacter(LocalPlayer)
     if not char then return false end
-    
-    -- Ищем пистолет
+
     local gun = char:FindFirstChild("Gun")
     if not gun then
         local bp = LocalPlayer:FindFirstChild("Backpack")
@@ -1814,45 +1788,36 @@ local function doShoot()
             end
         end
     end
-    
+
     if not gun or not gun.Parent then return false end
-    
+
+    -- ВСЕГДА включаем Silent Aim хук
     local was_silent = SilentSystem.Enabled
-    local was_force = SilentSystem.ForceShoot
-    
-    -- Всегда включаем silent для наводки
     SilentSystem.Enabled = true
-    
+    install_silent_hooks()
+    task.wait(0.05)
+
     if SilentSystem.ForceShoot then
-        -- FORCE SHOOT режим: подменяем origin
         local origin_cf, aim_cf = resolve_force()
         if origin_cf and aim_cf then
-            if push_origin(origin_cf) then
-                install_silent_hooks()
-                pcall(function() gun:Activate() end)
-                task.wait(0.15)
-            else
-                -- Fallback на обычный silent
-                install_silent_hooks()
-                pcall(function() gun:Activate() end)
-                task.wait(0.15)
-            end
+            push_origin(origin_cf)
+            pcall(function() gun:Activate() end)
+            task.wait(0.15)
         else
-            install_silent_hooks()
             pcall(function() gun:Activate() end)
             task.wait(0.15)
         end
     else
-        -- Обычный Silent Aim
-        install_silent_hooks()
         pcall(function() gun:Activate() end)
         task.wait(0.15)
     end
-    
-    -- Возвращаем как было
+
     SilentSystem.Enabled = was_silent
-    if not was_silent then remove_silent_hooks() end
-    
+    if not was_silent then 
+        task.wait(0.05)
+        remove_silent_hooks() 
+    end
+
     return true
 end
 
@@ -1889,7 +1854,6 @@ local PredictToggle = Tabs.Combat:AddToggle("SilentAimPredict", {
 })
 PredictToggle:OnChanged(function(Value) SilentSystem.Predict = Value end)
 
--- FORCE SHOOT
 local ForceToggle = Tabs.Combat:AddToggle("ForceShoot", { 
     Title = "🔥 Force Shoot (Better than Wallbang)", 
     Default = false 
@@ -1897,7 +1861,7 @@ local ForceToggle = Tabs.Combat:AddToggle("ForceShoot", {
 ForceToggle:OnChanged(function(Value)
     SilentSystem.ForceShoot = Value
     if Value then
-        Notify("Force Shoot", "Enabled! Shoots through walls & teleports bullet origin.", nil, 5)
+        Notify("Force Shoot", "Enabled!", nil, 5)
     end
 end)
 
@@ -1907,137 +1871,98 @@ Tabs.Combat:AddSlider("ForceStandOff", {
     Callback = function(Value) SilentSystem.StandOff = Value end
 })
 
--- SHOOT BUTTON
-local ShootBtnGui = Instance.new("ScreenGui")
-ShootBtnGui.Name = "CWH_ShootBtn"
-ShootBtnGui.Parent = gethui and gethui() or CoreGui
-ShootBtnGui.ResetOnSpawn = false
-
-local ShootBtn = Instance.new("TextButton")
-ShootBtn.Size = UDim2.new(0, 140, 0, 45)
-ShootBtn.Position = UDim2.new(0.75, 0, 0.6, 0)
-ShootBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-ShootBtn.BackgroundTransparency = 0.2
-ShootBtn.Text = "Shoot Murderer"
-ShootBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ShootBtn.Font = Enum.Font.GothamBold
-ShootBtn.TextSize = 14
-ShootBtn.Active = true
-ShootBtn.Draggable = true
-ShootBtn.Visible = false
-ShootBtn.Parent = ShootBtnGui
-
-local SC = Instance.new("UICorner")
-SC.CornerRadius = UDim.new(0, 6)
-SC.Parent = ShootBtn
-
-local SS = Instance.new("UIStroke")
-SS.Color = Color3.fromRGB(100, 100, 255)
-SS.Thickness = 1.5
-SS.Parent = ShootBtn
-
-ShootBtn.MouseButton1Click:Connect(function()
-    if doShoot() then
-        Notify("Shoot", "Fired!", nil, 2)
-    else
-        Notify("Shoot", "Failed! Need gun.", nil, 3)
+-- Автопереустановка хуков (оптимизировано — раз в 5 сек)
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if SilentSystem.Enabled then pcall(install_silent_hooks) end
     end
 end)
 
-Tabs.Combat:AddSection("Shoot Button")
-
-local ShootBtnToggle = Tabs.Combat:AddToggle("ShootBtnToggle", { 
-    Title = "Show Shoot Button", 
-    Default = false 
-})
-ShootBtnToggle:OnChanged(function(Value) ShootBtn.Visible = Value end)
-
-Tabs.Combat:AddButton({
-    Title = "🔫 Shoot Now",
-    Description = "Выстрел в цель (Silent Aim + Force Shoot если включен)",
-    Callback = function() doShoot() end
-})
-
--- Авто-переустановка хуков
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if SilentSystem.Enabled then pcall(install_silent_hooks) end
-    end
-end) 
 -- ═══════════════════════════════════════════════════════════════
 -- FLING (взято из SHITARO)
+-- ═══════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════
+-- FLING v2 (ИСПРАВЛЕННЫЙ + Stop Fling)
 -- ═══════════════════════════════════════════════════════════════
 
 local FlingSystem = {
     Murderer = false,
     Sheriff = false,
     SelectedPlayer = nil,
-    UseBypassVelocity = false,
     IsActive = false
 }
 
--- Сохраняем оригинальную позицию для восстановления
 local fling_original_pos = nil
+local fling_should_stop = false
 
 -- ─── Главная функция fling ─────────────────────────────────
 local function doFling(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return end
     if FlingSystem.IsActive then return end
-    
+
     local myChar = SafeGetCharacter(LocalPlayer)
     local myHRP = SafeGetHRP(myChar)
     local myHum = SafeGetHumanoid(myChar)
-    
+
     local tChar = targetPlayer.Character
     local tHRP = SafeGetHRP(tChar)
     local tHum = SafeGetHumanoid(tChar)
-    
+
     if not myHRP or not myHum or not tHRP or not tHum then return end
     if tHum.Sit then return end
-    
+
     FlingSystem.IsActive = true
+    fling_should_stop = false
     getgenv().FLING_ACTIVE = (getgenv().FLING_ACTIVE or 0) + 1
-    
-    -- Сохраняем мою позицию
+
+    -- Сохраняем позицию
     if myHRP.Velocity.Magnitude < 50 then
         fling_original_pos = myHRP.CFrame
         getgenv().OldPos = myHRP.CFrame
     end
-    
-    -- Сохраняем FallenPartsDestroyHeight
+
     local old_fdh = workspace.FallenPartsDestroyHeight
-    
-    -- Camera на цель
     local camera = workspace.CurrentCamera
-    camera.CameraSubject = tHRP
     
-    -- Отключаем урон от падения
+    -- Переключаем камеру на цель
+    if camera then
+        camera.CameraSubject = tHRP
+    end
+    
     pcall(function() workspace.FallenPartsDestroyHeight = 0/0 end)
-    
-    -- BodyVelocity для контроля
+
+    -- BodyVelocity
     local bv = Instance.new("BodyVelocity")
     bv.Parent = myHRP
     bv.Velocity = Vector3.zero
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    
-    -- Отключаем Seated
+
     local se = myHum:GetStateEnabled(Enum.HumanoidStateType.Seated)
     myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-    
+
     local ang = 0
-    local end_time = tick() + 2
-    
+    local start_time = tick()
+    local MAX_TIME = 5  -- максимум 5 секунд флинга
+
     repeat
+        -- Проверка на Stop
+        if fling_should_stop then
+            break
+        end
+        
+        -- Проверка таймаута
+        if tick() - start_time > MAX_TIME then
+            break
+        end
+
         if myHRP and myHRP.Parent and tHRP and tHRP.Parent then
             local tv = tHRP.Velocity
-            if FlingSystem.UseBypassVelocity then
-                tv = tHum.MoveDirection * tHum.WalkSpeed
-            end
-            
+
             if tv.Magnitude < 50 then
                 ang = ang + 100
-                
+
                 -- Позиция 1: сверху
                 myHRP.CFrame = CFrame.new(tHRP.Position) 
                     * CFrame.new(0, 1.5, 0) 
@@ -2047,7 +1972,7 @@ local function doFling(targetPlayer)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
+
                 -- Позиция 2: снизу
                 myHRP.CFrame = CFrame.new(tHRP.Position)
                     * CFrame.new(0, -1.5, 0)
@@ -2057,8 +1982,8 @@ local function doFling(targetPlayer)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
-                -- Позиция 3: диагональ
+
+                -- Позиция 3: диагональ 1
                 myHRP.CFrame = CFrame.new(tHRP.Position)
                     * CFrame.new(2.25, 1.5, -2.25)
                     + tHum.MoveDirection * tv.Magnitude / 1.25
@@ -2067,8 +1992,8 @@ local function doFling(targetPlayer)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
-                -- Позиция 4: другая диагональ
+
+                -- Позиция 4: диагональ 2
                 myHRP.CFrame = CFrame.new(tHRP.Position)
                     * CFrame.new(-2.25, -1.5, 2.25)
                     + tHum.MoveDirection * tv.Magnitude / 1.25
@@ -2077,15 +2002,16 @@ local function doFling(targetPlayer)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
-                -- Позиция 5 и 6: короткие
+
+                -- Позиция 5: короткая
                 myHRP.CFrame = CFrame.new(tHRP.Position) * CFrame.new(0, 1.5, 0) + tHum.MoveDirection
                 myHRP.CFrame = myHRP.CFrame * CFrame.Angles(math.rad(ang), 0, 0)
                 myChar:SetPrimaryPartCFrame(myHRP.CFrame)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
+
+                -- Позиция 6: короткая снизу
                 myHRP.CFrame = CFrame.new(tHRP.Position) * CFrame.new(0, -1.5, 0) + tHum.MoveDirection
                 myHRP.CFrame = myHRP.CFrame * CFrame.Angles(math.rad(ang), 0, 0)
                 myChar:SetPrimaryPartCFrame(myHRP.CFrame)
@@ -2093,14 +2019,14 @@ local function doFling(targetPlayer)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
             else
-                -- Быстрый режим когда цель движется
+                -- Быстрый режим (когда цель движется)
                 myHRP.CFrame = CFrame.new(tHRP.Position) * CFrame.new(0, 1.5, tHum.WalkSpeed)
                 myHRP.CFrame = myHRP.CFrame * CFrame.Angles(math.rad(90), 0, 0)
                 myChar:SetPrimaryPartCFrame(myHRP.CFrame)
                 myHRP.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
                 myHRP.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
                 task.wait()
-                
+
                 myHRP.CFrame = CFrame.new(tHRP.Position) * CFrame.new(0, -1.5, -tHum.WalkSpeed)
                 myHRP.CFrame = myHRP.CFrame * CFrame.Angles(0, 0, 0)
                 myChar:SetPrimaryPartCFrame(myHRP.CFrame)
@@ -2109,17 +2035,22 @@ local function doFling(targetPlayer)
                 task.wait()
             end
         end
-    until tick() > end_time or not FlingSystem.IsActive
-    
+    until false
+
     -- Очистка
     if bv then bv:Destroy() end
     myHum:SetStateEnabled(Enum.HumanoidStateType.Seated, se)
-    camera.CameraSubject = myHum
+    if camera and myHum then
+        camera.CameraSubject = myHum
+    end
     pcall(function() workspace.FallenPartsDestroyHeight = old_fdh end)
-    
+
     -- Возвращаемся на позицию
     if fling_original_pos and myHRP then
+        local target_pos = fling_original_pos.p
+        local attempts = 0
         repeat
+            attempts = attempts + 1
             myHRP.CFrame = fling_original_pos * CFrame.new(0, 0.5, 0)
             myChar:SetPrimaryPartCFrame(fling_original_pos * CFrame.new(0, 0.5, 0))
             myHum:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -2132,122 +2063,229 @@ local function doFling(targetPlayer)
             task.wait()
         until not fling_original_pos 
             or not myHRP.Parent 
-            or (myHRP.Position - fling_original_pos.p).Magnitude < 25
+            or (myHRP.Position - target_pos).Magnitude < 25
+            or attempts > 50
     end
-    
+
     getgenv().FLING_ACTIVE = math.max(0, (getgenv().FLING_ACTIVE or 1) - 1)
     FlingSystem.IsActive = false
+    fling_original_pos = nil
 end
 
--- ─── Loop по флагам ────────────────────────────────────────
+-- ─── Функция Stop Fling ────────────────────────────────────
+local function stopFling()
+    fling_should_stop = true
+    FlingSystem.IsActive = false
+    getgenv().FLING_ACTIVE = 0
+    
+    -- Возвращаем камеру
+    local camera = workspace.CurrentCamera
+    local myHum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+    if camera and myHum then
+        camera.CameraSubject = myHum
+    end
+    
+    -- Очищаем BodyMovers
+    local myChar = SafeGetCharacter(LocalPlayer)
+    if myChar then
+        for _, obj in pairs(myChar:GetDescendants()) do
+            if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity")
+                or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+    
+    Notify("Fling", "Stopped!", nil, 3)
+end
+
+-- ─── GUI ───────────────────────────────────────────────────
+Tabs.Combat:AddSection("Fling (Player Selector)")
+
+local flingDropdown = Tabs.Combat:AddDropdown("FlingPlayerSelect", {
+    Title = "Select Player",
+    Values = {"None"},
+    Default = "None",
+    Callback = function(Value)
+        if Value == "None" then
+            FlingSystem.SelectedPlayer = nil
+        else
+            FlingSystem.SelectedPlayer = Players:FindFirstChild(Value)
+        end
+    end
+})
+
+-- Функция обновления списка игроков
+local function RefreshPlayerList()
+    local names = {"None"}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    pcall(function()
+        flingDropdown:SetValues(names)
+        flingDropdown:Generate()
+    end)
+    Notify("Fling", "Refreshed! (" .. (#names - 1) .. " players)", nil, 3)
+end
+
+-- Кнопка Refresh Players
+Tabs.Combat:AddButton({
+    Title = "🔄 Refresh Players",
+    Description = "Обновить список игроков",
+    Callback = RefreshPlayerList
+})
+
+-- Кнопка Fling Selected
+Tabs.Combat:AddButton({
+    Title = "💨 Fling Selected Player",
+    Description = "Запустить fling на выбранного игрока",
+    Callback = function()
+        if not FlingSystem.SelectedPlayer then
+            Notify("Fling", "No player selected!", nil, 3)
+            return
+        end
+        if FlingSystem.IsActive then
+            Notify("Fling", "Already flinging! Stop first.", nil, 3)
+            return
+        end
+        task.spawn(function()
+            doFling(FlingSystem.SelectedPlayer)
+        end)
+        Notify("Fling", "Flinging " .. FlingSystem.SelectedPlayer.Name .. "!", nil, 3)
+    end
+})
+
+-- Кнопка STOP FLING
+Tabs.Combat:AddButton({
+    Title = "🛑 Stop Fling",
+    Description = "Немедленно остановить fling",
+    Callback = stopFling
+})
+
+-- Кнопка Fling Murderer
+Tabs.Combat:AddButton({
+    Title = "💨 Fling Murderer",
+    Callback = function()
+        local m = GetMurderer()
+        if m and not FlingSystem.IsActive then
+            task.spawn(function() doFling(m) end)
+            Notify("Fling", "Flinging " .. m.Name .. "!", nil, 3)
+        else
+            Notify("Fling", "No murderer or already flinging!", nil, 3)
+        end
+    end
+})
+
+-- Кнопка Fling Sheriff
+Tabs.Combat:AddButton({
+    Title = "💨 Fling Sheriff",
+    Callback = function()
+        local s = GetSheriff()
+        if s and not FlingSystem.IsActive then
+            task.spawn(function() doFling(s) end)
+            Notify("Fling", "Flinging " .. s.Name .. "!", nil, 3)
+        else
+            Notify("Fling", "No sheriff or already flinging!", nil, 3)
+        end
+    end
+})
+
+-- Автообновление списка при заходе/выходе игроков
+Players.PlayerAdded:Connect(function() 
+    task.wait(0.5) 
+    RefreshPlayerList() 
+end)
+Players.PlayerRemoving:Connect(function() 
+    task.wait(0.5) 
+    RefreshPlayerList() 
+end)
+
+-- Автозапуск loop'а флинга (если Murderer/Sheriff включены)
 task.spawn(function()
     while true do
-        if FlingSystem.Murderer then
-            local m = GetMurderer()
-            if m and not FlingSystem.IsActive then
-                pcall(doFling, m)
-            end
-        end
-        if FlingSystem.Sheriff then
-            local s = GetSheriff()
-            if s and not FlingSystem.IsActive then
-                pcall(doFling, s)
-            end
-        end
-        if FlingSystem.SelectedPlayer and not FlingSystem.IsActive then
-            pcall(doFling, FlingSystem.SelectedPlayer)
-        end
         task.wait(1.5)
+        
+        if FlingSystem.Murderer and not FlingSystem.IsActive then
+            local m = GetMurderer()
+            if m then
+                task.spawn(function() doFling(m) end)
+            end
+        end
+        
+        if FlingSystem.Sheriff and not FlingSystem.IsActive then
+            local s = GetSheriff()
+            if s then
+                task.spawn(function() doFling(s) end)
+            end
+        end
     end
 end)
 
--- ─── Anti-Fling (защита) ───────────────────────────────────
-local antiFlingEnabled = false
-local antiFlingConn = nil
-
+-- Сброс при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    FlingSystem.IsActive = false
+    fling_should_stop = false
+    getgenv().FLING_ACTIVE = 0
+    fling_original_pos = nil
+end) 
 -- ═══════════════════════════════════════════════════════════════
--- GUI для Fling
+-- ANTI-FLING (улучшенный, отдельный модуль)
 -- ═══════════════════════════════════════════════════════════════
 
-Tabs.Combat:AddSection("Fling")
+local AntiFling = {
+    Enabled = false,
+    ClearBodyMovers = true,     -- Удалять BodyVelocity у себя
+    DisableEnemyCollide = true, -- Убирать CanCollide у чужих
+    ResetVelocity = true,       -- Обнулять свою скорость при спайке
+    MaxVelocity = 500,          -- Порог скорости (если больше — спайк)
+    CheckInterval = 0.05,       -- Проверка 20 раз/сек
+    LastCheck = 0
+}
 
-local FlingMurderToggle = Tabs.Combat:AddToggle("FlingMurder", {
-    Title = "Fling Murderer",
-    Default = false
-})
-FlingMurderToggle:OnChanged(function(Value) FlingSystem.Murderer = Value end)
-
-local FlingSheriffToggle = Tabs.Combat:AddToggle("FlingSheriff", {
-    Title = "Fling Sheriff",
-    Default = false
-})
-FlingSheriffToggle:OnChanged(function(Value) FlingSystem.Sheriff = Value end)
-
-local FlingBypassToggle = Tabs.Combat:AddToggle("FlingBypass", {
-    Title = "Bypass Velocity Check",
-    Default = false
-})
-FlingBypassToggle:OnChanged(function(Value) FlingSystem.UseBypassVelocity = Value end)
-
--- Кнопки для мгновенного действия
-Tabs.Combat:AddButton({
-    Title = "💨 Fling Murderer Now",
-    Callback = function()
-        local m = GetMurderer()
-        if m then doFling(m) end
-    end
-})
-
-Tabs.Combat:AddButton({
-    Title = "💨 Fling Sheriff Now",
-    Callback = function()
-        local s = GetSheriff()
-        if s then doFling(s) end
-    end
-})
-
--- Dropdown для выбора игрока
-Tabs.Combat:AddDropdown("FlingPlayerSelect", {
-    Title = "Fling Specific Player",
-    Values = (function()
-        local names = {"None"}
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then table.insert(names, p.Name) end
+-- Основной loop
+RunService.Heartbeat:Connect(function(dt)
+    if not AntiFling.Enabled then return end
+    
+    AntiFling.LastCheck = AntiFling.LastCheck + dt
+    if AntiFling.LastCheck < AntiFling.CheckInterval then return end
+    AntiFling.LastCheck = 0
+    
+    local char = SafeGetCharacter(LocalPlayer)
+    if not char then return end
+    
+    local hrp = SafeGetHRP(char)
+    local hum = SafeGetHumanoid(char)
+    if not hrp then return end
+    
+    -- ═══ Защита 1: очистка BodyMovers у себя ═══
+    if AntiFling.ClearBodyMovers then
+        for _, obj in pairs(char:GetDescendants()) do
+            if obj:IsA("BodyVelocity") 
+                or obj:IsA("BodyAngularVelocity")
+                or obj:IsA("BodyThrust") 
+                or obj:IsA("BodyGyro")
+                or obj:IsA("LinearVelocity") 
+                or obj:IsA("AngularVelocity")
+                or obj:IsA("VectorForce") 
+                or obj:IsA("Torque") then
+                pcall(function() obj:Destroy() end)
+            end
         end
-        return names
-    end)(),
-    Default = "None",
-    Callback = function(Value)
-        if Value == "None" then FlingSystem.SelectedPlayer = nil
-        else FlingSystem.SelectedPlayer = Players:FindFirstChild(Value) end
-    end
-})
-
--- ─── Anti-Fling ────────────────────────────────────────────
-Tabs.Combat:AddSection("Anti-Fling")
-
-local AntiFlingToggle = Tabs.Combat:AddToggle("AntiFling", {
-    Title = "Anti-Fling",
-    Default = false
-})
-AntiFlingToggle:OnChanged(function(Value)
-    antiFlingEnabled = Value
-    
-    if antiFlingConn then
-        antiFlingConn:Disconnect()
-        antiFlingConn = nil
     end
     
-    if Value then
-        antiFlingConn = RunService.Stepped:Connect(function()
-            local char = SafeGetCharacter(LocalPlayer)
-            if not char then return end
-            -- Убираем CanCollide у чужих чтобы они не могли флингнуть
-            for _, other in ipairs(Players:GetPlayers()) do
-                if other ~= LocalPlayer and other.Character then
-                    for _, part in ipairs(other.Character:GetChildren()) do
+    -- ═══ Защита 2: убираем CanCollide у чужих ═══
+    if AntiFling.DisableEnemyCollide then
+        for _, other in ipairs(Players:GetPlayers()) do
+            if other ~= LocalPlayer then
+                local oChar = SafeGetCharacter(other)
+                if oChar then
+                    for _, part in ipairs(oChar:GetChildren()) do
                         if part:IsA("BasePart") and part.CanCollide then
                             part.CanCollide = false
+                            -- Обнуляем скорость HRP чужого
                             if part.Name == "HumanoidRootPart" then
                                 part.Velocity = Vector3.zero
                                 part.RotVelocity = Vector3.zero
@@ -2256,24 +2294,112 @@ AntiFlingToggle:OnChanged(function(Value)
                     end
                 end
             end
-        end)
+        end
     end
-end)
-
--- Второй слой: удаляем BodyMovers у себя
-RunService.Heartbeat:Connect(function()
-    if not antiFlingEnabled then return end
-    local char = SafeGetCharacter(LocalPlayer)
-    if char then
-        for _, obj in pairs(char:GetDescendants()) do
-            if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity")
-                or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity")
-                or obj:IsA("BodyThrust") or obj:IsA("BodyGyro") then
-                pcall(function() obj:Destroy() end)
-            end
+    
+    -- ═══ Защита 3: сброс своей скорости при спайке ═══
+    if AntiFling.ResetVelocity and hrp then
+        local vel = hrp.AssemblyLinearVelocity or hrp.Velocity
+        local rot = hrp.AssemblyAngularVelocity or hrp.RotVelocity
+        
+        if vel and vel.Magnitude > AntiFling.MaxVelocity then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.Velocity = Vector3.zero
+            end)
+        end
+        
+        if rot and rot.Magnitude > AntiFling.MaxVelocity then
+            pcall(function()
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+        end
+    end
+    
+    -- ═══ Защита 4: если стоим на месте но двигаемся — фикс ═══
+    if hum and hrp then
+        local humanoidVel = hrp.Velocity
+        if humanoidVel and humanoidVel.Magnitude > 1000 then
+            pcall(function()
+                hrp.CFrame = CFrame.new(hrp.Position)
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
         end
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI для Anti-Fling
+-- ═══════════════════════════════════════════════════════════════
+
+Tabs.Combat:AddSection("Anti-Fling (Защита)")
+
+local AntiFlingToggle = Tabs.Combat:AddToggle("AntiFlingToggle", {
+    Title = "Enable Anti-Fling",
+    Default = false
+})
+AntiFlingToggle:OnChanged(function(Value)
+    AntiFling.Enabled = Value
+    if Value then
+        Notify("Anti-Fling", "Enabled! You are protected.", nil, 3)
+    else
+        Notify("Anti-Fling", "Disabled.", nil, 2)
+    end
+end)
+
+Tabs.Combat:AddToggle("AntiFlingClearBodyMovers", {
+    Title = "Clear BodyMovers",
+    Description = "Удалять BodyVelocity/LinearVelocity у себя",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.ClearBodyMovers = Value
+end)
+
+Tabs.Combat:AddToggle("AntiFlingDisableCollide", {
+    Title = "Disable Enemy Collide",
+    Description = "Убирать CanCollide у чужих частей",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.DisableEnemyCollide = Value
+end)
+
+Tabs.Combat:AddToggle("AntiFlingResetVel", {
+    Title = "Reset Velocity Spike",
+    Description = "Обнулять скорость если она аномально высокая",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.ResetVelocity = Value
+end)
+
+Tabs.Combat:AddSlider("AntiFlingMaxVel", {
+    Title = "Max Velocity Threshold",
+    Description = "Если скорость > этого значения — сброс",
+    Default = 500, Min = 100, Max = 2000, Rounding = 0,
+    Callback = function(Value)
+        AntiFling.MaxVelocity = Value
+    end
+})
+
+-- Кнопка ручного сброса
+Tabs.Combat:AddButton({
+    Title = "🛑 Force Reset Velocity",
+    Description = "Мгновенно обнулить свою скорость (если флингнуло)",
+    Callback = function()
+        local char = SafeGetCharacter(LocalPlayer)
+        local hrp = SafeGetHRP(char)
+        if hrp then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+            Notify("Anti-Fling", "Velocity reset!", nil, 2)
+        end
+    end
+})
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 5: AUTO FARM
 -- ═══════════════════════════════════════════════════════════════
@@ -2716,6 +2842,258 @@ Tabs.Settings:AddButton({
 })
 
 -- ═══════════════════════════════════════════════════════════════
+-- SERVER STATUS UI (Murderer/Sheriff/GunDrop)
+-- ═══════════════════════════════════════════════════════════════
+
+local StatusGui = Instance.new("ScreenGui")
+StatusGui.Name = "CWH_Status"
+StatusGui.Parent = gethui and gethui() or CoreGui
+StatusGui.ResetOnSpawn = false
+StatusGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local StatusFrame = Instance.new("Frame")
+StatusFrame.Name = "StatusFrame"
+StatusFrame.Size = UDim2.new(0, 220, 0, 130)
+StatusFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
+StatusFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+StatusFrame.BackgroundTransparency = 0.2
+StatusFrame.BorderSizePixel = 0
+StatusFrame.Active = true
+StatusFrame.Draggable = true
+StatusFrame.Parent = StatusGui
+
+local StatusCorner = Instance.new("UICorner")
+StatusCorner.CornerRadius = UDim.new(0, 8)
+StatusCorner.Parent = StatusFrame
+
+local StatusStroke = Instance.new("UIStroke")
+StatusStroke.Color = Color3.fromRGB(0, 150, 200)
+StatusStroke.Thickness = 1.5
+StatusStroke.Parent = StatusFrame
+
+-- Заголовок
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.Position = UDim2.new(0, 0, 0, 5)
+Title.BackgroundTransparency = 1
+Title.Text = "📊 SERVER STATUS"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 13
+Title.Parent = StatusFrame
+
+-- Murderer
+local MurdererLabel = Instance.new("TextLabel")
+MurdererLabel.Size = UDim2.new(1, -20, 0, 25)
+MurdererLabel.Position = UDim2.new(0, 10, 0, 30)
+MurdererLabel.BackgroundTransparency = 1
+MurdererLabel.Text = "🩸 Murderer: Searching..."
+MurdererLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+MurdererLabel.TextXAlignment = Enum.TextXAlignment.Left
+MurdererLabel.Font = Enum.Font.GothamBold
+MurdererLabel.TextSize = 13
+MurdererLabel.Parent = StatusFrame
+
+-- Sheriff
+local SheriffLabel = Instance.new("TextLabel")
+SheriffLabel.Size = UDim2.new(1, -20, 0, 25)
+SheriffLabel.Position = UDim2.new(0, 10, 0, 55)
+SheriffLabel.BackgroundTransparency = 1
+SheriffLabel.Text = "🔫 Sheriff: Searching..."
+SheriffLabel.TextColor3 = Color3.fromRGB(50, 150, 255)
+SheriffLabel.TextXAlignment = Enum.TextXAlignment.Left
+SheriffLabel.Font = Enum.Font.GothamBold
+SheriffLabel.TextSize = 13
+SheriffLabel.Parent = StatusFrame
+
+-- Gun Drop
+local GunLabel = Instance.new("TextLabel")
+GunLabel.Size = UDim2.new(1, -20, 0, 25)
+GunLabel.Position = UDim2.new(0, 10, 0, 80)
+GunLabel.BackgroundTransparency = 1
+GunLabel.Text = "🔫 Gun Drop: No"
+GunLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+GunLabel.TextXAlignment = Enum.TextXAlignment.Left
+GunLabel.Font = Enum.Font.GothamBold
+GunLabel.TextSize = 13
+GunLabel.Parent = StatusFrame
+
+-- Players count
+local CountLabel = Instance.new("TextLabel")
+CountLabel.Size = UDim2.new(1, -20, 0, 20)
+CountLabel.Position = UDim2.new(0, 10, 0, 105)
+CountLabel.BackgroundTransparency = 1
+CountLabel.Text = "👥 Players: 0"
+CountLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+CountLabel.TextXAlignment = Enum.TextXAlignment.Left
+CountLabel.Font = Enum.Font.Gotham
+CountLabel.TextSize = 12
+CountLabel.Parent = StatusFrame
+
+-- Обновление статуса (оптимизировано — раз в 0.5 сек)
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        
+        -- Murderer
+        local murderer = GetMurderer()
+        if murderer then
+            MurdererLabel.Text = "🩸 Murderer: " .. murderer.Name
+        else
+            MurdererLabel.Text = "🩸 Murderer: Not found"
+        end
+        
+        -- Sheriff
+        local sheriff = GetSheriff()
+        if sheriff then
+            SheriffLabel.Text = "🔫 Sheriff: " .. sheriff.Name
+        else
+            SheriffLabel.Text = "🔫 Sheriff: Not found"
+        end
+        
+        -- Gun Drop
+        local map = getMap()
+        local gun = map and map:FindFirstChild("GunDrop", true)
+        if gun then
+            GunLabel.Text = "🔫 Gun Drop: YES ⚠️"
+            GunLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        else
+            GunLabel.Text = "🔫 Gun Drop: No"
+            GunLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        end
+        
+        -- Players
+        CountLabel.Text = "👥 Players: " .. #Players:GetPlayers()
+    end
+end)
+
+-- GUI для Status
+Tabs.Settings:AddSection("Server Status")
+
+local StatusToggle = Tabs.Settings:AddToggle("StatusVisible", {
+    Title = "Show Server Status",
+    Default = true
+})
+StatusToggle:OnChanged(function(Value)
+    StatusGui.Enabled = Value
+end) 
+-- ═══════════════════════════════════════════════════════════════
+-- ROUND TIMER v2 (ИСПРАВЛЕННЫЙ)
+-- ═══════════════════════════════════════════════════════════════
+
+local TimerGui = Instance.new("ScreenGui")
+TimerGui.Name = "CWH_Timer"
+TimerGui.Parent = gethui and gethui() or CoreGui
+TimerGui.ResetOnSpawn = false
+TimerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local TimerFrame = Instance.new("Frame")
+TimerFrame.Name = "TimerFrame"
+TimerFrame.Size = UDim2.new(0, 140, 0, 45)
+TimerFrame.Position = UDim2.new(0.5, -70, 0.05, 0)
+TimerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+TimerFrame.BackgroundTransparency = 0.3
+TimerFrame.BorderSizePixel = 0
+TimerFrame.Active = true
+TimerFrame.Draggable = true
+TimerFrame.Parent = TimerGui
+
+local TimerCorner = Instance.new("UICorner")
+TimerCorner.CornerRadius = UDim.new(0, 6)
+TimerCorner.Parent = TimerFrame
+
+local TimerStroke = Instance.new("UIStroke")
+TimerStroke.Color = Color3.fromRGB(0, 150, 200)
+TimerStroke.Thickness = 1.5
+TimerStroke.Parent = TimerFrame
+
+local TimerLabel = Instance.new("TextLabel")
+TimerLabel.Size = UDim2.new(1, 0, 1, 0)
+TimerLabel.BackgroundTransparency = 1
+TimerLabel.Text = "Round: --:--"
+TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimerLabel.Font = Enum.Font.GothamBold
+TimerLabel.TextSize = 16
+TimerLabel.Parent = TimerFrame
+
+-- Кнопка закрытия
+local TimerCloseBtn = Instance.new("TextButton")
+TimerCloseBtn.Size = UDim2.new(0, 20, 0, 20)
+TimerCloseBtn.Position = UDim2.new(1, -22, 0, 2)
+TimerCloseBtn.BackgroundTransparency = 1
+TimerCloseBtn.Text = "✕"
+TimerCloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+TimerCloseBtn.TextSize = 12
+TimerCloseBtn.Font = Enum.Font.GothamBold
+TimerCloseBtn.Parent = TimerFrame
+
+TimerCloseBtn.MouseButton1Click:Connect(function()
+    TimerGui.Enabled = false
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TIMER LOOP (правильный вызов MM2)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    -- Пробуем разные способы получения таймера
+    local function getTimerFromRemote()
+        local ok, timeLeft = pcall(function()
+            return game:GetService("ReplicatedStorage").Remotes.Extras.GetTimer:InvokeServer()
+        end)
+        if ok and type(timeLeft) == "number" and timeLeft >= 0 then
+            return timeLeft
+        end
+        return nil
+    end
+    
+    local function getTimerFromGui()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then return nil end
+        
+        -- Ищем MainGUI/Game
+        local mainGui = pg:FindFirstChild("MainGUI")
+        if mainGui then
+            local gameGui = mainGui:FindFirstChild("Game")
+            if gameGui then
+                -- Ищем таймер по имени
+                for _, obj in pairs(gameGui:GetDescendants()) do
+                    if obj:IsA("TextLabel") then
+                        local name = obj.Name:lower()
+                        if name:find("timer") or name:find("time") or name:find("round") then
+                            local text = obj.Text
+                            if text and text ~= "" and text ~= "--:--" then
+                                return text  -- строка типа "02:34"
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+    
+    while true do
+        task.wait(0.5)
+        
+        -- Способ 1: через Remote
+        local seconds = getTimerFromRemote()
+        if seconds then
+            local mins = math.floor(seconds / 60)
+            local secs = seconds % 60
+            TimerLabel.Text = string.format("Round: %02d:%02d", mins, secs)
+        else
+            -- Способ 2: через GUI
+            local text = getTimerFromGui()
+            if text then
+                TimerLabel.Text = "Round: " .. text
+            else
+                TimerLabel.Text = "Round: --:--"
+            end
+        end
+    end
+end)
+-- ═══════════════════════════════════════════════════════════════
 -- MAIN LOOPS
 -- ═══════════════════════════════════════════════════════════════
 RunService.RenderStepped:Connect(function()
@@ -2728,68 +3106,102 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-RunService.Stepped:Connect(function()
-    if NoclipEnabled then
-        local char = SafeGetCharacter(LocalPlayer)
-        if char then
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
-            end
-        end
+-- ═══════════════════════════════════════════════════════════════
+-- ОПТИМИЗАЦИЯ: ESP (вместо RenderStepped → 10 FPS)
+-- ═══════════════════════════════════════════════════════════════
+
+local espTick = 0
+RunService.Heartbeat:Connect(function(dt)
+    espTick = espTick + dt
+    if espTick < 0.1 then return end  -- 10 раз в секунду вместо 60
+    espTick = 0
+    
+    if ESPConfig.Players or ESPConfig.Names or ESPConfig.Distance then
+        pcall(updateESP)
     end
 end)
 
-RunService.Heartbeat:Connect(function()
-    if ESP.Players or ESP.Names or ESP.Distance then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                CreatePlayerESP(player)
-                UpdatePlayerESP(player)
-            end
-        end
-    end
-end)
+-- ═══════════════════════════════════════════════════════════════
+-- ОПТИМИЗАЦИЯ: Speed/Jump (вместо 2 Heartbeat → 1)
+-- ═══════════════════════════════════════════════════════════════
 
-task.spawn(function()
-    while true do
-        DetectRoles()
-        task.wait(1)
-    end
-end)
-
--- Авто-установка silent aim хуков
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if SilentAimEnabled then pcall(install_silent_hooks) end
-    end
-end)
-
-LocalPlayer.Idled:Connect(function()
-    if AntiAFKEnabled then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    ResetRoleNotifications()
-    AutoFarm.CollectedCoins = 0
-    -- ФИКС: переприменяем скорость после респа
-    if WalkSpeedEnabled then
-        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-        if hum then hum.WalkSpeed = TargetWalkSpeed end
+local humTick = 0
+RunService.Heartbeat:Connect(function(dt)
+    humTick = humTick + dt
+    if humTick < 0.1 then return end  -- 10 раз в секунду
+    humTick = 0
+    
+    local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+    if not hum then return end
+    
+    if WalkSpeedEnabled and hum.WalkSpeed ~= TargetWalkSpeed then
+        hum.WalkSpeed = TargetWalkSpeed
     end
     if JumpPowerEnabled then
-        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-        if hum then hum.UseJumpPower = true hum.JumpPower = TargetJumpPower end
+        hum.UseJumpPower = true
+        if hum.JumpPower ~= TargetJumpPower then
+            hum.JumpPower = TargetJumpPower
+        end
     end
 end)
 
-Players.PlayerRemoving:Connect(function(player)
-    ClearPlayerESP(player)
-    NotifiedRoles[player] = nil
+-- ═══════════════════════════════════════════════════════════════
+-- ОПТИМИЗАЦИЯ: Anti-Fling (вместо Stepped → Heartbeat 20 FPS)
+-- ═══════════════════════════════════════════════════════════════
+
+local afTick = 0
+RunService.Heartbeat:Connect(function(dt)
+    if not antiFlingEnabled then return end
+    afTick = afTick + dt
+    if afTick < 0.05 then return end  -- 20 раз в секунду
+    afTick = 0
+    
+    local char = SafeGetCharacter(LocalPlayer)
+    if not char then return end
+    
+    -- Только очищаем BodyMovers
+    for _, obj in pairs(char:GetDescendants()) do
+        if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity") 
+            or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity") then
+            pcall(function() obj:Destroy() end)
+        end
+    end
 end)
 
-Notify("Crows Hub v9.0", "Loaded!", "Fixed Speed | Anti-Fling | Shoot Murderer", 6)
+-- ═══════════════════════════════════════════════════════════════
+-- ОПТИМИЗАЦИЯ: Silent Aim auto-reinstall (вместо каждую сек → 5 сек)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    while true do
+        task.wait(5)  -- было 1 сек
+        if SilentSystem.Enabled then 
+            pcall(install_silent_hooks) 
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ОПТИМИЗАЦИЯ: Auto Grab Gun (вместо Heartbeat → 0.2 сек)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)  -- 5 раз в секунду
+        if AutoGrabGun then
+            local map = getMap()
+            local root = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if map and root then
+                local gunDrop = map:FindFirstChild("GunDrop", true)
+                if gunDrop and gunDrop:IsA("BasePart") then
+                    pcall(function()
+                        firetouchinterest(gunDrop, root, 1)
+                        firetouchinterest(gunDrop, root, 0)
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+Notify("Crows Hub v9.2", "Loaded!", "Fixed Speed | Anti-Fling | Shoot Murderer | Optimization", 6)
