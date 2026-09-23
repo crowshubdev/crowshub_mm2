@@ -400,13 +400,14 @@ Tabs.Main:AddSection("Misc")
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
 AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
 
+
 -- ═══════════════════════════════════════════════════════════════
 -- NOCLIP (проход через стены)
 -- ═══════════════════════════════════════════════════════════════
 
 local NoclipSystem = {
     Enabled = false,
-    Cache = {},          -- запоминаем CanCollide
+    Cache = {},
     Connection = nil,
 }
 
@@ -417,7 +418,6 @@ local function enableNoclip()
         NoclipSystem.Connection:Disconnect()
     end
     
-    -- Loop через Stepped (нужно каждый кадр)
     NoclipSystem.Connection = RunService.Stepped:Connect(function()
         if not NoclipSystem.Enabled then return end
         
@@ -427,7 +427,6 @@ local function enableNoclip()
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 if part.CanCollide then
-                    -- Запоминаем оригинал чтобы потом восстановить
                     if NoclipSystem.Cache[part] == nil then
                         NoclipSystem.Cache[part] = true
                     end
@@ -446,7 +445,6 @@ local function disableNoclip()
         NoclipSystem.Connection = nil
     end
     
-    -- Восстанавливаем CanCollide
     for part, original in pairs(NoclipSystem.Cache) do
         if part and part.Parent then
             pcall(function() part.CanCollide = original end)
@@ -455,10 +453,10 @@ local function disableNoclip()
     NoclipSystem.Cache = {}
 end
 
--- GUI
-Tabs.Combat:AddSection("Noclip")
+-- GUI (в Main или в Combat — как хочешь)
+Tabs.Main:AddSection("Noclip")
 
-local NoclipToggle = Tabs.Combat:AddToggle("NoclipToggle", {
+local NoclipToggle = Tabs.Main:AddToggle("NoclipToggle", {
     Title = "Enable Noclip",
     Description = "Проход через стены",
     Default = false
@@ -477,30 +475,10 @@ end)
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if NoclipSystem.Enabled then
-        NoclipSystem.Cache = {}  -- сбрасываем кэш
-        -- Автоматически перезапускается через Stepped
+        NoclipSystem.Cache = {}
     end
 end)
 
--- ФИКС: постоянная проверка скорости (лечит баг с ножом)
-RunService.Heartbeat:Connect(function()
-    if not WalkSpeedEnabled then return end
-    local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-    if hum and hum.WalkSpeed ~= TargetWalkSpeed then
-        hum.WalkSpeed = TargetWalkSpeed
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not JumpPowerEnabled then return end
-    local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-    if hum then
-        hum.UseJumpPower = true
-        if hum.JumpPower ~= TargetJumpPower then
-            hum.JumpPower = TargetJumpPower
-        end
-    end
-end)
 -- ═══════════════════════════════════════════════════════════════
 -- GOD MODE (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
