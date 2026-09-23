@@ -400,85 +400,6 @@ Tabs.Main:AddSection("Misc")
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
 AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
 
-
--- ═══════════════════════════════════════════════════════════════
--- NOCLIP (проход через стены)
--- ═══════════════════════════════════════════════════════════════
-
-local NoclipSystem = {
-    Enabled = false,
-    Cache = {},
-    Connection = nil,
-}
-
-local function enableNoclip()
-    NoclipSystem.Enabled = true
-    
-    if NoclipSystem.Connection then
-        NoclipSystem.Connection:Disconnect()
-    end
-    
-    NoclipSystem.Connection = RunService.Stepped:Connect(function()
-        if not NoclipSystem.Enabled then return end
-        
-        local char = SafeGetCharacter(LocalPlayer)
-        if not char then return end
-        
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if part.CanCollide then
-                    if NoclipSystem.Cache[part] == nil then
-                        NoclipSystem.Cache[part] = true
-                    end
-                    part.CanCollide = false
-                end
-            end
-        end
-    end)
-end
-
-local function disableNoclip()
-    NoclipSystem.Enabled = false
-    
-    if NoclipSystem.Connection then
-        NoclipSystem.Connection:Disconnect()
-        NoclipSystem.Connection = nil
-    end
-    
-    for part, original in pairs(NoclipSystem.Cache) do
-        if part and part.Parent then
-            pcall(function() part.CanCollide = original end)
-        end
-    end
-    NoclipSystem.Cache = {}
-end
-
--- GUI (в Main или в Combat — как хочешь)
-Tabs.Main:AddSection("Noclip")
-
-local NoclipToggle = Tabs.Main:AddToggle("NoclipToggle", {
-    Title = "Enable Noclip",
-    Description = "Проход через стены",
-    Default = false
-})
-NoclipToggle:OnChanged(function(Value)
-    if Value then
-        enableNoclip()
-        Notify("Noclip", "🟢 Enabled!", nil, 3)
-    else
-        disableNoclip()
-        Notify("Noclip", "🔴 Disabled", nil, 2)
-    end
-end)
-
--- Автовосстановление при респавне
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    if NoclipSystem.Enabled then
-        NoclipSystem.Cache = {}
-    end
-end)
-
 -- ═══════════════════════════════════════════════════════════════
 -- GOD MODE (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
@@ -563,6 +484,84 @@ RunService.Heartbeat:Connect(function()
                 pcall(function() obj:Destroy() end)
             end
         end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- NOCLIP (проход через стены)
+-- ═══════════════════════════════════════════════════════════════
+
+local NoclipSystem = {
+    Enabled = false,
+    Cache = {},
+    Connection = nil,
+}
+
+local function enableNoclip()
+    NoclipSystem.Enabled = true
+    
+    if NoclipSystem.Connection then
+        NoclipSystem.Connection:Disconnect()
+    end
+    
+    NoclipSystem.Connection = RunService.Stepped:Connect(function()
+        if not NoclipSystem.Enabled then return end
+        
+        local char = SafeGetCharacter(LocalPlayer)
+        if not char then return end
+        
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if part.CanCollide then
+                    if NoclipSystem.Cache[part] == nil then
+                        NoclipSystem.Cache[part] = true
+                    end
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    NoclipSystem.Enabled = false
+    
+    if NoclipSystem.Connection then
+        NoclipSystem.Connection:Disconnect()
+        NoclipSystem.Connection = nil
+    end
+    
+    for part, original in pairs(NoclipSystem.Cache) do
+        if part and part.Parent then
+            pcall(function() part.CanCollide = original end)
+        end
+    end
+    NoclipSystem.Cache = {}
+end
+
+-- GUI (в Main или в Combat — как хочешь)
+Tabs.Main:AddSection("Noclip")
+
+local NoclipToggle = Tabs.Main:AddToggle("NoclipToggle", {
+    Title = "Enable Noclip",
+    Description = "Проход через стены",
+    Default = false
+})
+NoclipToggle:OnChanged(function(Value)
+    if Value then
+        enableNoclip()
+        Notify("Noclip", "🟢 Enabled!", nil, 3)
+    else
+        disableNoclip()
+        Notify("Noclip", "🔴 Disabled", nil, 2)
+    end
+end)
+
+-- Автовосстановление при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if NoclipSystem.Enabled then
+        NoclipSystem.Cache = {}
     end
 end)
 
@@ -3432,4 +3431,4 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2", "Loaded!", "Fixed Speed | Anti-Fling | Shoot Murderer | Optimization", 6)
+Notify("Crows Hub v9.2.1", "Loaded!", "Fixed Speed | Anti-Fling | Shoot Murderer | Optimization", 6)
