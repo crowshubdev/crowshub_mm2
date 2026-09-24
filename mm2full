@@ -399,7 +399,37 @@ Tabs.Main:AddSection("Misc")
 
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
 AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
+-- ═══════════════════════════════════════════════════════════════
+-- NOCLIP (простой и надёжный)
+-- Вставь в САМЫЙ КОНЕЦ файла
+-- ═══════════════════════════════════════════════════════════════
 
+local noclipOn = false
+
+Tabs.Main:AddSection("Noclip")
+Tabs.Main:AddToggle("NoclipSimple", {
+    Title = "Enable Noclip",
+    Description = "Проход через стены",
+    Default = false
+}):OnChanged(function(v)
+    noclipOn = v
+    Notify("Noclip", v and "🟢 Enabled" or "🔴 Disabled", nil, 2)
+end)
+
+RunService.Stepped:Connect(function()
+    if not noclipOn then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.CanCollide then
+            p.CanCollide = false
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    noclipOn = false
+end)
 -- ═══════════════════════════════════════════════════════════════
 -- GOD MODE (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
