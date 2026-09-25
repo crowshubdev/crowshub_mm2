@@ -1529,7 +1529,229 @@ Tabs.Combat:AddToggle("KillAuraFireTouch", {
     Default = true
 }):OnChanged(function(Value)
     KillAuraSystem.UseFireTouch = Value
+end) 
+
+-- ═══════════════════════════════════════════════════════════════
+-- KILL EVERYONE (убить всех, включая невидимок)
+-- ═══════════════════════════════════════════════════════════════
+
+local KillEveryone = {
+    Enabled = false,
+    Range = 999,              -- Радиус (999 = вся карта)
+    UseFireTouch = true,      -- firetouchinterest (работает через стены)
+    UseStab = true,           -- KnifeStabbed (дополнительно)
+    Delay = 0.1,              -- Задержка между ударами
+    Thread = nil,
+}
+
+-- Проверка что я Murderer
+local function amMurderer()
+    local char = SafeGetCharacter(LocalPlayer)
+    if not char then return false end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    return (char:FindFirstChild("Knife") ~= nil) or (bp and bp:FindFirstChild("Knife") ~= nil)
+end
+
+-- Получить нож
+local function getMyKnife()
+    local char = SafeGetCharacter(LocalPlayer)
+    if char then
+        local eq = char:FindFirstChild("Knife")
+        if eq then return eq end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        return bp:FindFirstChild("Knife")
+    end
+    return nil
+end
+
+-- Экипировать нож
+local function equipKnife()
+    local knife = getMyKnife()
+    if not knife then return nil end
+    local char = SafeGetCharacter(LocalPlayer)
+    if knife.Parent ~= char then
+        local hum = SafeGetHumanoid(char)
+        if hum then
+            pcall(function() hum:EquipTool(knife) end)
+            task.wait(0.2)
+        end
+    end
+    return getMyKnife()
+end
+
+-- Убить игрока
+local function killTarget(part)
+    local knife = getMyKnife()
+    if not knife or not part then return false end
+    
+    local events = knife:FindFirstChild("Events")
+    
+    -- Способ 1: KnifeStabbed
+    if KillEveryone.UseStab and events then
+        local stabbed = events:FindFirstChild("KnifeStabbed")
+        if stabbed then
+            pcall(function() stabbed:FireServer() end)
+        end
+    end
+    
+    -- Способ 2: HandleTouched (главный)
+    if events then
+        local touched = events:FindFirstChild("HandleTouched")
+        if touched then
+            pcall(function() touched:FireServer(part) end)
+        end
+    end
+    
+    -- Способ 3: firetouchinterest (работает через стены)
+    if KillEveryone.UseFireTouch and firetouchinterest then
+        local handle = knife:FindFirstChild("Handle")
+        if handle then
+            pcall(function()
+                firetouchinterest(handle, part, 1)
+                firetouchinterest(handle, part, 0)
+            end)
+        end
+    end
+    
+    return true
+end
+
+-- Главный loop Kill Everyone
+local function killEveryoneLoop()
+    while KillEveryone.Enabled do
+        if amMurderer() then
+            local knife = equipKnife()
+            if knife then
+                local myChar = SafeGetCharacter(LocalPlayer)
+                local myHRP = SafeGetHRP(myChar)
+                
+                if myHRP then
+                    -- Проходим по всем игрокам
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        if plr ~= LocalPlayer then
+                            local pChar = SafeGetCharacter(plr)
+                            if pChar then
+                                local pHum = SafeGetHumanoid(pChar)
+                                if pHum and pHum.Health > 0 then
+                                    local pHRP = SafeGetHRP(pChar)
+                                    if pHRP then
+                                        local dist = (myHRP.Position - pHRP.Position).Magnitude
+                                        if dist <= KillEveryone.Range then
+                                            -- Убиваем (работает даже на невидимках!)
+                                            killTarget(pHRP)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(KillEveryone.Delay)
+    end
+end
+
+-- GUI
+Tabs.Combat:AddSection("Kill Everyone")
+
+local KillEveryoneToggle = Tabs.Combat:AddToggle("KillEveryoneToggle", {
+    Title = "💀 Kill Everyone",
+    Description = "Убивает всех игроков (включая невидимок)",
+    Default = false
+})
+KillEveryoneToggle:OnChanged(function(Value)
+    KillEveryone.Enabled = Value
+    if Value then
+        if not amMurderer() then
+            Notify("Kill Everyone", "⚠️ Ты не Murderer!", nil, 4)
+        else
+            Notify("Kill Everyone", "🔴 Enabled! Killing everyone...", nil, 3)
+            if KillEveryone.Thread then
+                task.cancel(KillEveryone.Thread)
+            end
+            KillEveryone.Thread = task.spawn(killEveryoneLoop)
+        end
+    else
+        if KillEveryone.Thread then
+            KillEveryone.Thread = nil
+        end
+        Notify("Kill Everyone", "🟢 Disabled", nil, 2)
+    end
 end)
+
+Tabs.Combat:AddSlider("KillEveryoneRange", {
+    Title = "Range",
+    Description = "999 = вся карта",
+    Default = 999, Min = 50, Max = 999, Rounding = 0,
+    Callback = function(Value)
+        KillEveryone.Range = Value
+    end
+})
+
+Tabs.Combat:AddSlider("KillEveryoneDelay", {
+    Title = "Delay",
+    Description = "Задержка между убийствами (сек)",
+    Default = 0.1, Min = 0.01, Max = 0.5, Rounding = 2,
+    Callback = function(Value)
+        KillEveryone.Delay = Value
+    end
+})
+
+Tabs.Combat:AddToggle("KillEveryoneFireTouch", {
+    Title = "Use FireTouch",
+    Description = "Работает через стены (главный способ)",
+    Default = true
+}):OnChanged(function(Value)
+    KillEveryone.UseFireTouch = Value
+end)
+
+Tabs.Combat:AddToggle("KillEveryoneStab", {
+    Title = "Use Stab",
+    Description = "Дополнительный KnifeStabbed",
+    Default = true
+}):OnChanged(function(Value)
+    KillEveryone.UseStab = Value
+end)
+
+-- Кнопка однократного вызова
+Tabs.Combat:AddButton({
+    Title = "💀 Kill Everyone Once",
+    Description = "Один раз пройтись по всем",
+    Callback = function()
+        if not amMurderer() then
+            Notify("Kill Everyone", "⚠️ Ты не Murderer!", nil, 4)
+            return
+        end
+        local knife = equipKnife()
+        if not knife then
+            Notify("Kill Everyone", "No knife!", nil, 3)
+            return
+        end
+        
+        local myChar = SafeGetCharacter(LocalPlayer)
+        local myHRP = SafeGetHRP(myChar)
+        if not myHRP then return end
+        
+        local killed = 0
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local pChar = SafeGetCharacter(plr)
+                if pChar then
+                    local pHRP = SafeGetHRP(pChar)
+                    if pHRP then
+                        killTarget(pHRP)
+                        killed = killed + 1
+                    end
+                end
+            end
+        end
+        Notify("Kill Everyone", "Attacked " .. killed .. " players!", nil, 3)
+    end
+})
+
 -- ═══════════════════════════════════════════════════════════════
 -- SILENT AIM + FORCE SHOOT v2 (ИСПРАВЛЕННЫЙ)
 -- ═══════════════════════════════════════════════════════════════
@@ -3027,110 +3249,58 @@ Tabs.Settings:AddButton({
 -- SERVER STATUS UI (Murderer/Sheriff/GunDrop)
 -- ═══════════════════════════════════════════════════════════════
 
-local StatusGui = Instance.new("ScreenGui")
-StatusGui.Name = "CWH_Status"
-StatusGui.Parent = gethui and gethui() or CoreGui
-StatusGui.ResetOnSpawn = false
-StatusGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local StatusFrame = Instance.new("Frame")
-StatusFrame.Name = "StatusFrame"
-StatusFrame.Size = UDim2.new(0, 220, 0, 130)
-StatusFrame.Position = UDim2.new(0.02, 0, 0.4, 0)
-StatusFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-StatusFrame.BackgroundTransparency = 0.2
-StatusFrame.BorderSizePixel = 0
-StatusFrame.Active = true
-StatusFrame.Draggable = true
-StatusFrame.Parent = StatusGui
-
-local StatusCorner = Instance.new("UICorner")
-StatusCorner.CornerRadius = UDim.new(0, 8)
-StatusCorner.Parent = StatusFrame
-
-local StatusStroke = Instance.new("UIStroke")
-StatusStroke.Color = Color3.fromRGB(0, 150, 200)
-StatusStroke.Thickness = 1.5
-StatusStroke.Parent = StatusFrame
-
--- Заголовок
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 25)
-Title.Position = UDim2.new(0, 0, 0, 5)
-Title.BackgroundTransparency = 1
-Title.Text = "📊 SERVER STATUS"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 13
-Title.Parent = StatusFrame
-
--- Murderer
-local MurdererLabel = Instance.new("TextLabel")
-MurdererLabel.Size = UDim2.new(1, -20, 0, 25)
-MurdererLabel.Position = UDim2.new(0, 10, 0, 30)
-MurdererLabel.BackgroundTransparency = 1
-MurdererLabel.Text = "🩸 Murderer: Searching..."
-MurdererLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-MurdererLabel.TextXAlignment = Enum.TextXAlignment.Left
-MurdererLabel.Font = Enum.Font.GothamBold
-MurdererLabel.TextSize = 13
-MurdererLabel.Parent = StatusFrame
-
--- Sheriff
-local SheriffLabel = Instance.new("TextLabel")
-SheriffLabel.Size = UDim2.new(1, -20, 0, 25)
-SheriffLabel.Position = UDim2.new(0, 10, 0, 55)
-SheriffLabel.BackgroundTransparency = 1
-SheriffLabel.Text = "🔫 Sheriff: Searching..."
-SheriffLabel.TextColor3 = Color3.fromRGB(50, 150, 255)
-SheriffLabel.TextXAlignment = Enum.TextXAlignment.Left
-SheriffLabel.Font = Enum.Font.GothamBold
-SheriffLabel.TextSize = 13
-SheriffLabel.Parent = StatusFrame
-
--- Gun Drop
-local GunLabel = Instance.new("TextLabel")
-GunLabel.Size = UDim2.new(1, -20, 0, 25)
-GunLabel.Position = UDim2.new(0, 10, 0, 80)
-GunLabel.BackgroundTransparency = 1
-GunLabel.Text = "🔫 Gun Drop: No"
-GunLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-GunLabel.TextXAlignment = Enum.TextXAlignment.Left
-GunLabel.Font = Enum.Font.GothamBold
-GunLabel.TextSize = 13
-GunLabel.Parent = StatusFrame
-
--- Players count
-local CountLabel = Instance.new("TextLabel")
-CountLabel.Size = UDim2.new(1, -20, 0, 20)
-CountLabel.Position = UDim2.new(0, 10, 0, 105)
-CountLabel.BackgroundTransparency = 1
-CountLabel.Text = "👥 Players: 0"
-CountLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-CountLabel.TextXAlignment = Enum.TextXAlignment.Left
-CountLabel.Font = Enum.Font.Gotham
-CountLabel.TextSize = 12
-CountLabel.Parent = StatusFrame
-
--- Обновление статуса (оптимизировано — раз в 0.5 сек)
 task.spawn(function()
+    local rolesRevealed = false
+    local revealCheckTime = 0
+    
     while true do
         task.wait(0.5)
         
+        -- Проверяем показались ли роли
+        local murderer = nil
+        local sheriff = nil
+        for _, plr in ipairs(Players:GetPlayers()) do
+            local role = GetRole(plr, true)  -- ← с includeSelf
+            if role == "Murderer" then murderer = plr end
+            if role == "Sheriff" then sheriff = plr end
+        end
+        
+        if murderer or sheriff then
+            rolesRevealed = true
+        end
+        
         -- Murderer
-        local murderer = GetMurderer()
         if murderer then
-            MurdererLabel.Text = "🩸 Murderer: " .. murderer.Name
-        else
+            if murderer == LocalPlayer then
+                MurdererLabel.Text = "🩸 Murderer: YOU! ⚠️"
+                MurdererLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+            else
+                MurdererLabel.Text = "🩸 Murderer: " .. murderer.Name
+                MurdererLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            end
+        elseif rolesRevealed then
             MurdererLabel.Text = "🩸 Murderer: Not found"
+            MurdererLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        else
+            MurdererLabel.Text = "🩸 Murderer: ⏳ Revealing..."
+            MurdererLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         end
         
         -- Sheriff
-        local sheriff = GetSheriff()
         if sheriff then
-            SheriffLabel.Text = "🔫 Sheriff: " .. sheriff.Name
-        else
+            if sheriff == LocalPlayer then
+                SheriffLabel.Text = "🔫 Sheriff: YOU! ✅"
+                SheriffLabel.TextColor3 = Color3.fromRGB(50, 200, 255)
+            else
+                SheriffLabel.Text = "🔫 Sheriff: " .. sheriff.Name
+                SheriffLabel.TextColor3 = Color3.fromRGB(50, 150, 255)
+            end
+        elseif rolesRevealed then
             SheriffLabel.Text = "🔫 Sheriff: Not found"
+            SheriffLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        else
+            SheriffLabel.Text = "🔫 Sheriff: ⏳ Revealing..."
+            SheriffLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         end
         
         -- Gun Drop
@@ -3144,21 +3314,10 @@ task.spawn(function()
             GunLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
         end
         
-        -- Players
         CountLabel.Text = "👥 Players: " .. #Players:GetPlayers()
     end
 end)
 
--- GUI для Status
-Tabs.Settings:AddSection("Server Status")
-
-local StatusToggle = Tabs.Settings:AddToggle("StatusVisible", {
-    Title = "Show Server Status",
-    Default = true
-})
-StatusToggle:OnChanged(function(Value)
-    StatusGui.Enabled = Value
-end) 
 -- ═══════════════════════════════════════════════════════════════
 -- ROUND TIMER v2 (ИСПРАВЛЕННЫЙ)
 -- ═══════════════════════════════════════════════════════════════
@@ -3289,15 +3448,14 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ОПТИМИЗАЦИЯ: ESP (вместо RenderStepped → 10 FPS)
+-- ОПТИМИЗАЦИЯ: ESP (вместо RenderStepped → 5 FPS)
 -- ═══════════════════════════════════════════════════════════════
 
 local espTick = 0
 RunService.Heartbeat:Connect(function(dt)
     espTick = espTick + dt
-    if espTick < 0.1 then return end  -- 10 раз в секунду вместо 60
+    if espTick < 0.2 then return end  -- 5 раз/сек
     espTick = 0
-    
     if ESPConfig.Players or ESPConfig.Names or ESPConfig.Distance then
         pcall(updateESP)
     end
@@ -3335,7 +3493,7 @@ local afTick = 0
 RunService.Heartbeat:Connect(function(dt)
     if not antiFlingEnabled then return end
     afTick = afTick + dt
-    if afTick < 0.05 then return end  -- 20 раз в секунду
+    if afTick < 0.1 then return end  -- 10 раз в секунду
     afTick = 0
     
     local char = SafeGetCharacter(LocalPlayer)
