@@ -2407,14 +2407,15 @@ Tabs.Combat:AddButton({
 
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 5: AUTO FARM
+-- ═══════════════════════════════════════════════════════════════ 
+
 -- ═══════════════════════════════════════════════════════════════
- -- ═══════════════════════════════════════════════════════════════
--- AUTO FARM (взято из SHITARO, адаптировано)
+-- AUTO FARM SYSTEM v2
 -- ═══════════════════════════════════════════════════════════════
 
 local AutoFarmSystem = {
     Enabled = false,
-    Mode = "Basic",           -- Basic / Down
+    Mode = "Basic",
     AvoidMurder = false,
     AutoReset = false,
     AutoKill = false,
@@ -2424,11 +2425,16 @@ local AutoFarmSystem = {
     WasDown = false,
     DownRefY = nil,
     LastTouch = 0,
-    NoclipCache = {}
+    NoclipCache = {},
+    -- NEW:
+    Speed = 23,
+    TweenMode = false,
+    TweenSpeed = 35,
+    YDepth = 4,
 }
 
 local FARM_SPEED = 23
-local DOWN_DEPTH = 14
+local DOWN_DEPTH = 4
 local DOWN_RISE_XZ = 4
 local AVOID_DIST = 40
 local RISE_SAFE_DIST = 20
@@ -2443,7 +2449,6 @@ local function flat_dist(a, b)
     return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
 end
 
--- ─── Проверка что монеты есть ──────────────────────────────
 local function coin_available(v)
     return v and v.Parent and v:IsA("BasePart")
         and not v:GetAttribute("Collected")
@@ -2452,14 +2457,12 @@ end
 
 local function available_coins()
     local list = {}
-    -- Ищем через тэг CoinVisual (MM2 использует CollectionService)
     local cs = game:GetService("CollectionService")
     for _, v in ipairs(cs:GetTagged("CoinVisual")) do
         if coin_available(v) then
             list[#list + 1] = v
         end
     end
-    -- Fallback: обычный поиск
     if #list == 0 then
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("BasePart") and (obj.Name:lower():find("coin") or obj.Name:lower():find("collectible")) then
@@ -2505,25 +2508,6 @@ local function set_farm_noclip(on)
     end
 end
 
--- ─── Возврат на поверхность (для Down режима) ──────────────
-local function return_to_surface()
-    local hrp = farm_hrp()
-    if not hrp then return end
-    local origin = hrp.Position
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { LocalPlayer.Character }
-    params.IgnoreWater = true
-    local res = workspace:Raycast(origin, Vector3.new(0, 400, 0), params)
-    local y = res and (res.Position.Y + 5) or (AutoFarmSystem.DownRefY and AutoFarmSystem.DownRefY + 5)
-    if not y then return end
-    pcall(function()
-        hrp.CFrame = CFrame.new(origin.X, y, origin.Z)
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end)
-end
-
 -- ─── Murderer (для avoid) ──────────────────────────────────
 local function murderer_hrp()
     local m = GetMurderer()
@@ -2535,7 +2519,7 @@ local function murderer_hrp()
     return nil
 end
 
--- ─── Touch монеты через firetouchinterest ──────────────────
+-- ─── Touch монеты ──────────────────────────────────────────
 local function touch_targets(coin)
     local list = {}
     local seen = {}
@@ -2570,19 +2554,26 @@ local function fire_touch(coin)
     end
 end
 
--- ─── Движение ──────────────────────────────────────────────
+-- ─── Движение (с поддержкой Tween) ─────────────────────────
 local function farm_move(hrp, dest, dt)
     local dir = dest - hrp.Position
     local dist = dir.Magnitude
+
+    local speed = AutoFarmSystem.TweenMode
+        and (AutoFarmSystem.TweenSpeed or 35)
+        or FARM_SPEED
+
     local np = dest
     if dist > 0.1 then
-        np = hrp.Position + dir.Unit * math.min(FARM_SPEED * dt, dist)
+        np = hrp.Position + dir.Unit * math.min(speed * dt, dist)
     end
+
     local cf = CFrame.new(np)
     if AutoFarmSystem.Mode == "Down" then
         cf = cf * CFrame.Angles(-math.pi * 0.5, 0, 0)
         AutoFarmSystem.WasDown = true
     end
+
     pcall(function()
         hrp.CFrame = cf
         hrp.AssemblyLinearVelocity = Vector3.zero
@@ -2627,7 +2618,7 @@ local function coin_bags_full()
     return any
 end
 
--- ─── Главный цикл ──────────────────────────────────────────
+-- ─── Главный цикл Farm ─────────────────────────────────────
 task.spawn(function()
     while true do
         if AutoFarmSystem.Enabled then
@@ -2671,7 +2662,7 @@ task.spawn(function()
                                 dest = cpos
                                 fire_touch(AutoFarmSystem.Target)
                             else
-                                dest = Vector3.new(cpos.X, cpos.Y - DOWN_DEPTH, cpos.Z)
+                                dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
                             end
                         elseif (cpos - hrp.Position).Magnitude <= 6 then
                             fire_touch(AutoFarmSystem.Target)
@@ -2680,14 +2671,13 @@ task.spawn(function()
                         dest = avoid_steer(hrp.Position, dest, mpos)
                         farm_move(hrp, dest, 0.016)
                     elseif mpos then
-                        -- Отходим от убийцы если монет рядом нет
                         set_farm_noclip(true)
                         local away = Vector3.new(hrp.Position.X - mpos.X, 0, hrp.Position.Z - mpos.Z)
                         if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
                         away = away.Unit
                         local y = hrp.Position.Y
                         if AutoFarmSystem.Mode == "Down" and AutoFarmSystem.DownRefY then
-                            y = AutoFarmSystem.DownRefY - DOWN_DEPTH
+                            y = AutoFarmSystem.DownRefY - AutoFarmSystem.YDepth
                         end
                         farm_move(hrp, hrp.Position + away * 40 + Vector3.new(0, y - hrp.Position.Y, 0), 0.016)
                     end
@@ -2701,7 +2691,7 @@ task.spawn(function()
     end
 end)
 
--- ─── Сброс прогресса при новой игре ────────────────────────
+-- ─── Сброс прогресса ───────────────────────────────────────
 local function reset_farm_progress()
     AutoFarmSystem.CollectedIDs = {}
     AutoFarmSystem.CollectedCount = 0
@@ -2720,7 +2710,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- GUI для Auto Farm
+-- GUI Auto Farm
 -- ═══════════════════════════════════════════════════════════════
 
 Tabs.Farm:AddSection("Auto Farm")
@@ -2746,6 +2736,47 @@ Tabs.Farm:AddDropdown("FarmMode", {
     Callback = function(Value) AutoFarmSystem.Mode = Value end
 })
 
+-- ═══ НОВОЕ: Скорость фермы ═══
+Tabs.Farm:AddSlider("FarmSpeedSlider", {
+    Title = "Farm Speed",
+    Description = "Скорость движения к монетам",
+    Default = 23, Min = 15, Max = 35, Rounding = 0,
+    Callback = function(Value)
+        FARM_SPEED = Value
+        AutoFarmSystem.Speed = Value
+    end
+})
+
+-- ═══ НОВОЕ: Tween Mode ═══
+Tabs.Farm:AddToggle("FarmTweenMode", {
+    Title = "Tween Mode (плавно)",
+    Description = "Плавное движение вместо телепорта",
+    Default = false
+}):OnChanged(function(Value)
+    AutoFarmSystem.TweenMode = Value
+end)
+
+Tabs.Farm:AddSlider("FarmTweenSpeed", {
+    Title = "Tween Speed",
+    Description = "Скорость tween-движения",
+    Default = 35, Min = 10, Max = 80, Rounding = 0,
+    Callback = function(Value)
+        AutoFarmSystem.TweenSpeed = Value
+    end
+})
+
+-- ═══ НОВОЕ: Y Depth ═══
+Tabs.Farm:AddSlider("FarmYDepth", {
+    Title = "Down Y Depth",
+    Description = "Глубина вниз (только для Down режима)",
+    Default = 4, Min = 1, Max = 8, Rounding = 0,
+    Callback = function(Value)
+        AutoFarmSystem.YDepth = Value
+        DOWN_DEPTH = Value
+    end
+})
+
+-- ═══ Avoid / Auto Reset ═══
 local AvoidToggle = Tabs.Farm:AddToggle("AvoidMurder", {
     Title = "Avoid Murderer",
     Default = false
@@ -2759,7 +2790,211 @@ local ResetToggle = Tabs.Farm:AddToggle("AutoReset", {
     Title = "Auto Reset (когда сумки полные)",
     Default = false
 })
-ResetToggle:OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)                           
+ResetToggle:OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- COIN AURA v2 (УЛУЧШЕННАЯ)
+-- ═══════════════════════════════════════════════════════════════
+
+local CoinAura = {
+    Enabled = false,
+    Radius = 15,
+    Connection = nil,
+    LastTouch = 0,
+    TouchDelay = 0.05,
+    CollectedCount = 0,
+    UseRaycast = true,
+}
+
+-- Получить CoinContainer
+local function getCoinContainers()
+    local containers = {}
+    for _, map in ipairs(workspace:GetChildren()) do
+        local container = map:FindFirstChild("CoinContainer")
+        if container then
+            table.insert(containers, container)
+        end
+    end
+    return containers
+end
+
+-- Получить монеты (с проверкой Collected/Delete)
+local function getCoinParts(containers)
+    local parts = {}
+    for _, container in ipairs(containers) do
+        for _, descendant in ipairs(container:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                local collected = descendant:GetAttribute("Collected")
+                local deleted = descendant:GetAttribute("Delete")
+                if not collected and not deleted then
+                    local hasTouch = descendant:FindFirstChildOfClass("TouchTransmitter") ~= nil
+                    if not hasTouch then
+                        local parent = descendant.Parent
+                        if parent then
+                            hasTouch = parent:FindFirstChildOfClass("TouchTransmitter") ~= nil
+                        end
+                    end
+                    if hasTouch then
+                        table.insert(parts, descendant)
+                    end
+                end
+            end
+        end
+    end
+    return parts
+end
+
+-- Проверка что путь до монеты свободен
+local function hasLineOfSight(character, from, to)
+    if not CoinAura.UseRaycast then return true end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { character }
+    
+    local dir = to - from
+    local hit = workspace:Raycast(from, dir, params)
+    
+    if not hit then return true end
+    
+    -- Если попали в монету или её родителя — путь свободен
+    if hit.Instance == to then return true end
+    
+    return false
+end
+
+-- Основная функция
+local function collectNearbyCoins()
+    if not CoinAura.Enabled then return end
+
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local now = os.clock()
+    if now - CoinAura.LastTouch < CoinAura.TouchDelay then return end
+
+    local rootPos = rootPart.Position
+    local containers = getCoinContainers()
+    if #containers == 0 then return end
+
+    local coinParts = getCoinParts(containers)
+    if #coinParts == 0 then return end
+
+    local touched = false
+    for _, part in ipairs(coinParts) do
+        if part and part.Parent then
+            local dist = (rootPos - part.Position).Magnitude
+            if dist <= CoinAura.Radius then
+                -- Проверка прямой видимости (не через стены)
+                if hasLineOfSight(character, rootPos, part.Position) then
+                    pcall(function()
+                        firetouchinterest(rootPart, part, 0)
+                        firetouchinterest(rootPart, part, 1)
+                    end)
+                    touched = true
+                    CoinAura.CollectedCount = CoinAura.CollectedCount + 1
+                end
+            end
+        end
+    end
+
+    if touched then
+        CoinAura.LastTouch = now
+    end
+end
+
+-- Запуск
+local function startCoinAura()
+    CoinAura.Enabled = true
+    CoinAura.CollectedCount = 0
+
+    if CoinAura.Connection then
+        CoinAura.Connection:Disconnect()
+    end
+
+    local accum = 0
+    CoinAura.Connection = RunService.Heartbeat:Connect(function(dt)
+        accum = accum + dt
+        if accum < 0.03 then return end
+        accum = 0
+        pcall(collectNearbyCoins)
+    end)
+end
+
+-- Стоп
+local function stopCoinAura()
+    CoinAura.Enabled = false
+    if CoinAura.Connection then
+        CoinAura.Connection:Disconnect()
+        CoinAura.Connection = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI Coin Aura
+-- ═══════════════════════════════════════════════════════════════
+
+Tabs.Farm:AddSection("Coin Aura")
+
+local CoinAuraToggle = Tabs.Farm:AddToggle("CoinAuraMain", {
+    Title = "🎯 Enable Coin Aura",
+    Description = "Собирает монеты в радиусе без прямого касания",
+    Default = false
+})
+CoinAuraToggle:OnChanged(function(Value)
+    if Value then
+        startCoinAura()
+        Notify("Coin Aura", "🟢 Включена! Радиус: " .. CoinAura.Radius, nil, 3)
+    else
+        stopCoinAura()
+        Notify("Coin Aura", "🔴 Выключена. Собрано: " .. CoinAura.CollectedCount, nil, 3)
+    end
+end)
+
+Tabs.Farm:AddSlider("CoinAuraRange", {
+    Title = "Aura Radius",
+    Description = "Радиус вокруг тебя (в studs)",
+    Default = 15, Min = 3, Max = 30, Rounding = 0,
+    Callback = function(Value)
+        CoinAura.Radius = Value
+    end
+})
+
+Tabs.Farm:AddSlider("CoinAuraDelay", {
+    Title = "Touch Delay",
+    Description = "Задержка между касаниями (сек)",
+    Default = 0.05, Min = 0.01, Max = 0.5, Rounding = 2,
+    Callback = function(Value)
+        CoinAura.TouchDelay = Value
+    end
+})
+
+Tabs.Farm:AddToggle("CoinAuraRaycast", {
+    Title = "Raycast Check",
+    Description = "Проверять прямую видимость (не собирать через стены)",
+    Default = true
+}):OnChanged(function(Value)
+    CoinAura.UseRaycast = Value
+end)
+
+Tabs.Farm:AddButton({
+    Title = "🔄 Reset Counter",
+    Callback = function()
+        CoinAura.CollectedCount = 0
+        Notify("Coin Aura", "Counter reset!", nil, 2)
+    end
+})
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if CoinAura.Enabled then
+        startCoinAura()
+    end
+end)
+                           
 -- ═══════════════════════════════════════════════════════════════
 -- ROUND TIMER (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
@@ -2810,181 +3045,6 @@ task.spawn(function()
             TimerLabel.Text = "Round: --:--"
         end
         task.wait(0.5)
-    end
-end)
--- ═══════════════════════════════════════════════════════════════
--- COIN AURA (собирает монеты в радиусе при движении)
--- Работает вместе с Auto Farm — летишь по монетам, аура сама
--- подбирает всё что рядом по пути
--- ═══════════════════════════════════════════════════════════════
-
-local CoinAura = {
-    Enabled = false,
-    Radius = 15,              -- Радиус вокруг игрока
-    Connection = nil,
-    LastTouch = 0,
-    TouchDelay = 0.05,        -- Задержка между касаниями (сек)
-    CollectedCount = 0,
-    AutoEquipCount = true     -- Считаем собранные монеты
-}
-
--- Получить все CoinContainer на карте
-local function getCoinContainers()
-    local containers = {}
-    for _, map in ipairs(workspace:GetChildren()) do
-        local container = map:FindFirstChild("CoinContainer")
-        if container then
-            table.insert(containers, container)
-        end
-    end
-    return containers
-end
-
--- Получить все части монет с TouchTransmitter
-local function getCoinParts(containers)
-    local parts = {}
-    for _, container in ipairs(containers) do
-        for _, descendant in ipairs(container:GetDescendants()) do
-            if descendant:IsA("BasePart") then
-                local hasTouch = descendant:FindFirstChildOfClass("TouchTransmitter")
-                if not hasTouch then
-                    -- Проверяем родителя (иногда монета это модель)
-                    local parent = descendant.Parent
-                    if parent then
-                        hasTouch = parent:FindFirstChildOfClass("TouchTransmitter")
-                    end
-                end
-                if hasTouch then
-                    table.insert(parts, descendant)
-                end
-            end
-        end
-    end
-    return parts
-end
-
--- Основная функция — собирает все монеты в радиусе
-local function collectNearbyCoins()
-    if not CoinAura.Enabled then return end
-    
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-    
-    -- Проверка задержки (чтобы не спамить)
-    local now = os.clock()
-    if now - CoinAura.LastTouch < CoinAura.TouchDelay then return end
-    
-    local rootPos = rootPart.Position
-    local containers = getCoinContainers()
-    if #containers == 0 then return end
-    
-    local coinParts = getCoinParts(containers)
-    if #coinParts == 0 then return end
-    
-    local touched = false
-    for _, part in ipairs(coinParts) do
-        if part and part.Parent then
-            local dist = (rootPos - part.Position).Magnitude
-            if dist <= CoinAura.Radius then
-                pcall(function()
-                    firetouchinterest(rootPart, part, 0)  -- touch end
-                    firetouchinterest(rootPart, part, 1)  -- touch begin
-                end)
-                touched = true
-            end
-        end
-    end
-    
-    if touched then
-        CoinAura.LastTouch = now
-    end
-end
-
--- Запуск ауры
-local function startCoinAura()
-    CoinAura.Enabled = true
-    CoinAura.CollectedCount = 0
-    
-    if CoinAura.Connection then
-        CoinAura.Connection:Disconnect()
-    end
-    
-    -- Оптимизировано: 30 раз в секунду (не 60)
-    local accum = 0
-    CoinAura.Connection = RunService.Heartbeat:Connect(function(dt)
-        accum = accum + dt
-        if accum < 0.03 then return end
-        accum = 0
-        pcall(collectNearbyCoins)
-    end)
-end
-
--- Остановка ауры
-local function stopCoinAura()
-    CoinAura.Enabled = false
-    if CoinAura.Connection then
-        CoinAura.Connection:Disconnect()
-        CoinAura.Connection = nil
-    end
-end
-
--- ═══════════════════════════════════════════════════════════════
--- GUI
--- ═══════════════════════════════════════════════════════════════
-
-Tabs.Farm:AddSection("Coin Aura")
-
-local CoinAuraToggle = Tabs.Farm:AddToggle("CoinAuraMain", {
-    Title = "🎯 Enable Coin Aura",
-    Description = "Собирает монеты в радиусе без прямого касания",
-    Default = false
-})
-CoinAuraToggle:OnChanged(function(Value)
-    if Value then
-        startCoinAura()
-        Notify("Coin Aura", "🟢 Включена! Радиус: " .. CoinAura.Radius .. " studs", nil, 3)
-    else
-        stopCoinAura()
-        Notify("Coin Aura", "🔴 Выключена. Собрано: " .. CoinAura.CollectedCount, nil, 3)
-    end
-end)
-
-Tabs.Farm:AddSlider("CoinAuraRange", {
-    Title = "Aura Radius",
-    Description = "Радиус вокруг тебя (в studs)",
-    Default = 15, Min = 3, Max = 60, Rounding = 0,
-    Callback = function(Value)
-        CoinAura.Radius = Value
-    end
-})
-
-Tabs.Farm:AddSlider("CoinAuraDelay", {
-    Title = "Touch Delay",
-    Description = "Задержка между касаниями (сек)",
-    Default = 0.05, Min = 0.01, Max = 0.5, Rounding = 2,
-    Callback = function(Value)
-        CoinAura.TouchDelay = Value
-    end
-})
-
-Tabs.Farm:AddButton({
-    Title = "🔄 Reset Counter",
-    Description = "Сбросить счётчик собранных монет",
-    Callback = function()
-        CoinAura.CollectedCount = 0
-        Notify("Coin Aura", "Counter reset!", nil, 2)
-    end
-})
-
--- Сброс при респавне
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    if CoinAura.Enabled then
-        -- Перезапускаем ауру после респавна
-        startCoinAura()
     end
 end)
 
