@@ -1,5 +1,5 @@
 --[[
-    Crows Hub | FULL v9.2.1
+    Crows Hub | FULL v9.2.2 beta
     GUI: Crows Hub (твой Fluent)
     Кнопки: Vision Hub (orialdev)
     Логика: SHITARO (без ключа/HWID) + Vision Hub
@@ -121,7 +121,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v9.2.1 MM2",
+    SubTitle = "v9.2.2 beta MM2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -1537,7 +1537,7 @@ end)
 
 local KillEveryone = {
     Enabled = false,
-    Range = 999,              -- Радиус (999 = вся карта)
+    Range = 99999,              -- Радиус (999 = вся карта)
     UseFireTouch = true,      -- firetouchinterest (работает через стены)
     UseStab = true,           -- KnifeStabbed (дополнительно)
     Delay = 0.1,              -- Задержка между ударами
@@ -1684,7 +1684,7 @@ end)
 
 Tabs.Combat:AddSlider("KillEveryoneRange", {
     Title = "Range",
-    Description = "999 = вся карта",
+    Description = "99999 = вся карта",
     Default = 999, Min = 50, Max = 999, Rounding = 0,
     Callback = function(Value)
         KillEveryone.Range = Value
@@ -3550,7 +3550,7 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(30)  -- каждые 120 сек
+        task.wait(120)  -- каждые 120 сек
         
         -- Удаляем старые ESP объекты
         for plr, data in pairs(ESPObjects or {}) do
@@ -3583,4 +3583,4 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2.1", "Loaded!", "Added auto farm speed | Anti-Fling | Better auto farm | Optimization", 15)
+Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling | Better auto farm | Optimization", 15)
