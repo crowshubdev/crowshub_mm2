@@ -3544,4 +3544,43 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2.1", "Loaded!", "Fixed Speed | Anti-Fling | Shoot Murderer | Optimization", 15)
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO CLEANUP (для телефона — убирает мусор)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    while true do
+        task.wait(30)  -- каждые 120 сек
+        
+        -- Удаляем старые ESP объекты
+        for plr, data in pairs(ESPObjects or {}) do
+            if not plr.Parent then
+                if data.Highlight then data.Highlight:Destroy() end
+                if data.NameTag then data.NameTag:Destroy() end
+                if data.HealthBar then data.HealthBar:Destroy() end
+                ESPObjects[plr] = nil
+            end
+        end
+        
+        -- Удаляем мусорные звуки
+        for _, obj in pairs(SoundGui:GetChildren()) do
+            if obj:IsA("Sound") and not obj.IsPlaying and obj.TimePosition > 0 then
+                obj:Destroy()
+            end
+        end
+        
+        -- Удаляем мусорные BodyMovers (если остались)
+        local char = SafeGetCharacter(LocalPlayer)
+        if char then
+            for _, obj in pairs(char:GetDescendants()) do
+                if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity") then
+                    if obj.Velocity.Magnitude < 100 then
+                        pcall(function() obj:Destroy() end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+Notify("Crows Hub v9.2.1", "Loaded!", "Added auto farm speed | Anti-Fling | Better auto farm | Optimization", 15)
