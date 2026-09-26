@@ -3213,7 +3213,622 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 6: SETTINGS
+-- TAB 6: EXTRA / FUN
+-- ═══════════════════════════════════════════════════════════════
+
+local ExtraTab = Window:AddTab({ Title = "Extra", Icon = "sparkles" })
+
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-AIM (адаптирован из Overdrive)
+-- ═══════════════════════════════════════════════════════════════
+
+local AntiAim = {
+    Enabled = false,
+    UserWantsEnabled = false,
+    IgnoreListEnabled = true,
+    Ignore1 = nil,
+    Ignore2 = nil,
+    Ignore3 = nil,
+    Connection = nil,
+    HadKnifeLastFrame = false,
+    Random = math.random
+}
+
+local function aaGetPlayerList()
+    local list = {"None"}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    return list
+end
+
+local function aaFindPlayer(name)
+    if not name or name == "None" then return nil end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == name then return p end
+    end
+    return nil
+end
+
+local function aaHasKnife()
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    local char = LocalPlayer.Character
+    if bp and bp:FindFirstChild("Knife") then return true end
+    if char and char:FindFirstChild("Knife") then return true end
+    return false
+end
+
+local function aaIsPlayerNearby(hrp)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local otherHrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if otherHrp then
+                if (otherHrp.Position - hrp.Position).Magnitude <= 6 then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function aaIsInWater(humanoid)
+    local state = humanoid:GetState()
+    return state == Enum.HumanoidStateType.Swimming or humanoid.FloorMaterial == Enum.Material.Water
+end
+
+local function aaIsIgnoredArmed()
+    if not AntiAim.IgnoreListEnabled then return false end
+    local targets = {AntiAim.Ignore1, AntiAim.Ignore2, AntiAim.Ignore3}
+    for _, player in ipairs(targets) do
+        if player and player.Parent then
+            local bp = player:FindFirstChild("Backpack")
+            local char = player.Character
+            if bp then
+                for _, item in ipairs(bp:GetChildren()) do
+                    if item:IsA("Tool") then return true end
+                end
+            end
+            if char then
+                for _, item in ipairs(char:GetChildren()) do
+                    if item:IsA("Tool") then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function aaPerformRoleStep(humanoid)
+    task.spawn(function()
+        local randomX = math.random() > 0.5 and 1 or -1
+        local randomZ = math.random() > 0.5 and 1 or -1
+        local moveDir = Vector3.new(randomX, 0, randomZ).Unit
+        local startTime = tick()
+        while tick() - startTime < 0.15 do
+            if humanoid and humanoid.Parent then
+                humanoid:Move(moveDir, false)
+            end
+            RunService.RenderStepped:Wait()
+        end
+    end)
+end
+
+local function aaStop()
+    if AntiAim.Connection then
+        AntiAim.Connection:Disconnect()
+        AntiAim.Connection = nil
+    end
+end
+
+local function aaStart()
+    if AntiAim.Connection then return end
+    AntiAim.Connection = RunService.Heartbeat:Connect(function()
+        -- Проверка ignore list
+        if aaIsIgnoredArmed() then
+            AntiAim.Enabled = false
+            return
+        else
+            if AntiAim.UserWantsEnabled and not AntiAim.Enabled then
+                AntiAim.Enabled = true
+            end
+        end
+        
+        local char = LocalPlayer.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local currentlyHasKnife = aaHasKnife()
+                
+                -- Role step при взятии ножа
+                if currentlyHasKnife and not AntiAim.HadKnifeLastFrame then
+                    aaPerformRoleStep(hum)
+                end
+                AntiAim.HadKnifeLastFrame = currentlyHasKnife
+                
+                -- Дёргаем velocity
+                if currentlyHasKnife and not aaIsPlayerNearby(hrp) and not aaIsInWater(hum) then
+                    local oldVel = hrp.AssemblyLinearVelocity
+                    local state = hum:GetState()
+                    local isJumping = (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall)
+                    local isStopped = (hum.MoveDirection.Magnitude == 0)
+                    local multiplier = math.random(1, 2) == 1 and 320 or -320
+                    
+                    if isJumping then
+                        local jumpMultY = math.random(1, 2) == 1 and 250 or -250
+                        hrp.AssemblyLinearVelocity = Vector3.new(multiplier, jumpMultY, multiplier)
+                    elseif isStopped then
+                        local stopMult = math.random(1, 2) == 1 and 400 or -400
+                        hrp.AssemblyLinearVelocity = Vector3.new(stopMult, 0, stopMult)
+                    else
+                        hrp.AssemblyLinearVelocity = Vector3.new(multiplier, 0, multiplier)
+                    end
+                    
+                    RunService.RenderStepped:Wait()
+                    hrp.AssemblyLinearVelocity = oldVel
+                end
+            end
+        else
+            AntiAim.HadKnifeLastFrame = false
+        end
+    end)
+end
+
+ExtraTab:AddSection("Anti-Aim")
+
+local AntiAimToggle = ExtraTab:AddToggle("AntiAimEnable", {
+    Title = "🛡 Enable Anti-Aim",
+    Description = "Дёргает velocity чтобы читеры не попали",
+    Default = false
+})
+AntiAimToggle:OnChanged(function(Value)
+    AntiAim.UserWantsEnabled = Value
+    AntiAim.Enabled = Value
+    if Value then
+        aaStart()
+        Notify("Anti-Aim", "🟢 Enabled!", nil, 3)
+    else
+        aaStop()
+        Notify("Anti-Aim", "🔴 Disabled", nil, 2)
+    end
+end)
+
+ExtraTab:AddToggle("AntiAimIgnoreList", {
+    Title = "Ignore List",
+    Description = "Не дёргать если эти игроки вооружены",
+    Default = true
+}):OnChanged(function(Value)
+    AntiAim.IgnoreListEnabled = Value
+end)
+
+local ignore1Drop = ExtraTab:AddDropdown("AAIgnore1", {
+    Title = "Ignore Slot 1",
+    Values = aaGetPlayerList(),
+    Default = "None",
+    Callback = function(v) AntiAim.Ignore1 = aaFindPlayer(v) end
+})
+
+local ignore2Drop = ExtraTab:AddDropdown("AAIgnore2", {
+    Title = "Ignore Slot 2",
+    Values = aaGetPlayerList(),
+    Default = "None",
+    Callback = function(v) AntiAim.Ignore2 = aaFindPlayer(v) end
+})
+
+local ignore3Drop = ExtraTab:AddDropdown("AAIgnore3", {
+    Title = "Ignore Slot 3",
+    Values = aaGetPlayerList(),
+    Default = "None",
+    Callback = function(v) AntiAim.Ignore3 = aaFindPlayer(v) end
+})
+
+local function aaUpdateDropdowns()
+    local list = aaGetPlayerList()
+    pcall(function() ignore1Drop:SetValues(list) ignore1Drop:Generate() end)
+    pcall(function() ignore2Drop:SetValues(list) ignore2Drop:Generate() end)
+    pcall(function() ignore3Drop:SetValues(list) ignore3Drop:Generate() end)
+end
+
+Players.PlayerAdded:Connect(aaUpdateDropdowns)
+Players.PlayerRemoving:Connect(aaUpdateDropdowns)
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- SPIN BOT (Крутилка как в CS:GO)
+-- ═══════════════════════════════════════════════════════════════
+
+local SpinBot = {
+    Enabled = false,
+    Speed = 100,
+    Connection = nil
+}
+
+ExtraTab:AddSection("Spin Bot (Крутилка)")
+
+local SpinToggle = ExtraTab:AddToggle("SpinBotToggle", {
+    Title = "🌀 Enable Spin Bot",
+    Description = "Крутит тебя вокруг оси (для понта)",
+    Default = false
+})
+SpinToggle:OnChanged(function(Value)
+    SpinBot.Enabled = Value
+    if Value then
+        if SpinBot.Connection then SpinBot.Connection:Disconnect() end
+        SpinBot.Connection = RunService.Heartbeat:Connect(function()
+            if not SpinBot.Enabled then return end
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(SpinBot.Speed), 0)
+            end
+        end)
+        Notify("Spin Bot", "🟢 Enabled!", nil, 3)
+    else
+        if SpinBot.Connection then
+            SpinBot.Connection:Disconnect()
+            SpinBot.Connection = nil
+        end
+        Notify("Spin Bot", "🔴 Disabled", nil, 2)
+    end
+end)
+
+ExtraTab:AddSlider("SpinBotSpeed", {
+    Title = "Speed",
+    Default = 100, Min = 10, Max = 500, Rounding = 0,
+    Callback = function(Value)
+        SpinBot.Speed = Value
+    end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- INVISIBLE v2 (из SHITARO — правильная версия)
+-- ═══════════════════════════════════════════════════════════════
+
+local Invisible = {
+    Enabled = false,
+    BtnVisible = false,
+    SavePosition = nil,
+    Connection = nil,
+    VoidY = -500,       -- Куда телепортироваться
+    FadeAmount = 0.5,   -- Прозрачность для себя (0 = видно, 1 = невидимо)
+}
+
+-- Применить невидимость
+local function applyInvisible(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    if state then
+        -- Сохраняем оригинальную позицию
+        if not Invisible.SavePosition then
+            Invisible.SavePosition = hrp.CFrame
+        end
+        
+        -- Телепорт под карту
+        hrp.CFrame = CFrame.new(hrp.Position.X, Invisible.VoidY, hrp.Position.Z)
+        
+        -- Полупрозрачность только для себя
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") or part:IsA("Decal") then
+                if part:IsA("BasePart") then
+                    -- LocalTransparencyModifier = только для клиента
+                    part.LocalTransparencyModifier = Invisible.FadeAmount
+                end
+            end
+        end
+        
+        -- Аксессуары
+        for _, acc in ipairs(char:GetChildren()) do
+            if acc:IsA("Accessory") then
+                local handle = acc:FindFirstChild("Handle")
+                if handle then
+                    handle.LocalTransparencyModifier = Invisible.FadeAmount
+                end
+            end
+        end
+    else
+        -- Возвращаемся на позицию
+        if Invisible.SavePosition then
+            hrp.CFrame = Invisible.SavePosition
+            Invisible.SavePosition = nil
+        end
+        
+        -- Убираем прозрачность
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.LocalTransparencyModifier = 0
+            end
+        end
+        
+        for _, acc in ipairs(char:GetChildren()) do
+            if acc:IsA("Accessory") then
+                local handle = acc:FindFirstChild("Handle")
+                if handle then
+                    handle.LocalTransparencyModifier = 0
+                end
+            end
+        end
+    end
+end
+
+-- Loop — держим позицию и прозрачность
+local function startInvisibleLoop()
+    if Invisible.Connection then
+        Invisible.Connection:Disconnect()
+    end
+    
+    Invisible.Connection = RunService.Stepped:Connect(function()
+        if not Invisible.Enabled then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        -- Держим под картой (если что-то сдвинуло)
+        if hrp.Position.Y > Invisible.VoidY + 10 then
+            hrp.CFrame = CFrame.new(hrp.Position.X, Invisible.VoidY, hrp.Position.Z)
+        end
+        
+        -- Постоянно обновляем прозрачность
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = Invisible.FadeAmount
+            end
+        end
+    end)
+end
+
+local function stopInvisibleLoop()
+    if Invisible.Connection then
+        Invisible.Connection:Disconnect()
+        Invisible.Connection = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════════════════════════════════
+
+ExtraTab:AddSection("Invisible (SHITARO Mode)")
+
+local InvisibleToggle = ExtraTab:AddToggle("InvisibleToggle", {
+    Title = "👻 Enable Invisible",
+    Description = "Уводит тебя под карту — другие тебя не видят",
+    Default = false
+})
+InvisibleToggle:OnChanged(function(Value)
+    Invisible.Enabled = Value
+    
+    if Value then
+        applyInvisible(true)
+        startInvisibleLoop()
+        Notify("Invisible", "🟢 ON — ты под картой", nil, 3)
+    else
+        applyInvisible(false)
+        stopInvisibleLoop()
+        Notify("Invisible", "🔴 OFF — вернулся", nil, 2)
+    end
+end)
+
+ExtraTab:AddSlider("InvisibleY", {
+    Title = "Void Y Position",
+    Description = "Как глубоко под картой (по умолчанию -500)",
+    Default = -500, Min = -2000, Max = -100, Rounding = 0,
+    Callback = function(Value)
+        Invisible.VoidY = Value
+        -- Если включено — сразу телепорт
+        if Invisible.Enabled then
+            local hrp = SafeGetHRP(LocalPlayer.Character)
+            if hrp then
+                hrp.CFrame = CFrame.new(hrp.Position.X, Value, hrp.Position.Z)
+            end
+        end
+    end
+})
+
+ExtraTab:AddSlider("InvisibleFade", {
+    Title = "Self Transparency",
+    Description = "Насколько прозрачный ты для себя (0 = видно, 1 = невидимо)",
+    Default = 0.5, Min = 0, Max = 1, Rounding = 2,
+    Callback = function(Value)
+        Invisible.FadeAmount = Value
+    end
+})
+
+-- Кнопка на экране
+ExtraTab:AddToggle("InvisibleBtnToggle", {
+    Title = "Показать кнопку Invisible",
+    Description = "Плавающая кнопка 👻 на экране",
+    Default = false
+}):OnChanged(function(Value)
+    Invisible.BtnVisible = Value
+end)
+
+-- Плавающая кнопка
+local InvisibleBtn = Instance.new("TextButton")
+InvisibleBtn.Name = "CWH_InvisibleBtn"
+InvisibleBtn.Size = UDim2.new(0, 55, 0, 55)
+InvisibleBtn.Position = UDim2.new(0.05, 0, 0.5, 0)
+InvisibleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+InvisibleBtn.Text = "👻"
+InvisibleBtn.TextSize = 25
+InvisibleBtn.Font = Enum.Font.GothamBold
+InvisibleBtn.Active = true
+InvisibleBtn.Draggable = true
+InvisibleBtn.Visible = false
+InvisibleBtn.Parent = ScreenGui
+
+local InvBtnCorner = Instance.new("UICorner")
+InvBtnCorner.CornerRadius = UDim.new(1, 0)
+InvBtnCorner.Parent = InvisibleBtn
+
+local InvBtnStroke = Instance.new("UIStroke")
+InvBtnStroke.Color = Color3.fromRGB(150, 100, 200)
+InvBtnStroke.Thickness = 2
+InvBtnStroke.Parent = InvisibleBtn
+
+InvisibleBtn.MouseButton1Click:Connect(function()
+    Invisible.Enabled = not Invisible.Enabled
+    InvisibleToggle:SetValue(Invisible.Enabled)
+    
+    if Invisible.Enabled then
+        applyInvisible(true)
+        startInvisibleLoop()
+        InvisibleBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+        Notify("Invisible", "🟢 ON", nil, 2)
+    else
+        applyInvisible(false)
+        stopInvisibleLoop()
+        InvisibleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        Notify("Invisible", "🔴 OFF", nil, 2)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    InvisibleBtn.Visible = Invisible.BtnVisible
+end)
+
+-- Сброс при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if Invisible.Enabled then
+        Invisible.SavePosition = nil
+        Invisible.Enabled = false
+        stopInvisibleLoop()
+        Notify("Invisible", "Reset after respawn", nil, 2)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO END ROUND (когда умер — fling murderer)
+-- ═══════════════════════════════════════════════════════════════
+
+local AutoEndRound = {
+    Enabled = false,
+    FlingMurderer = true,
+    KillMurderer = false,
+    OnDeath = false
+}
+
+ExtraTab:AddSection("Auto End Round")
+
+local AERToggle = ExtraTab:AddToggle("AutoEndRoundToggle", {
+    Title = "💀 Auto End Round",
+    Description = "Когда ты умер — fling murderer в пустоту",
+    Default = false
+})
+AERToggle:OnChanged(function(Value)
+    AutoEndRound.Enabled = Value
+    if Value then
+        Notify("Auto End Round", "🟢 Enabled! Fling murderer on death.", nil, 3)
+    end
+end)
+
+ExtraTab:AddToggle("AutoEndRoundFling", {
+    Title = "Fling Murderer",
+    Description = "Отправляет убийцу в небо",
+    Default = true
+}):OnChanged(function(Value)
+    AutoEndRound.FlingMurderer = Value
+end)
+
+ExtraTab:AddToggle("AutoEndRoundKill", {
+    Title = "Kill Murderer",
+    Description = "Пытается убить через KnifeStabbed (только если ты Murderer)",
+    Default = false
+}):OnChanged(function(Value)
+    AutoEndRound.KillMurderer = Value
+end)
+
+-- Fling в пустоту
+local function doFlingToVoid(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local tChar = targetPlayer.Character
+    local tHRP = SafeGetHRP(tChar)
+    if not tHRP then return end
+    
+    local myChar = LocalPlayer.Character
+    local myHRP = SafeGetHRP(myChar)
+    if not myHRP then return end
+    
+    -- Отключаем FallenPartsDestroyHeight чтобы не упасть в пустоту
+    local old_fdh = workspace.FallenPartsDestroyHeight
+    pcall(function() workspace.FallenPartsDestroyHeight = 0/0 end)
+    
+    -- Крутимся вокруг цели
+    for i = 1, 60 do
+        if not tHRP.Parent or not tChar.Parent then break end
+        
+        myHRP.CFrame = CFrame.new(tHRP.Position) * CFrame.new(0, 1.5, 0) * CFrame.Angles(math.rad(i * 100), 0, 0)
+        myHRP.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 5, 9e7)
+        myHRP.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
+        myChar:SetPrimaryPartCFrame(myHRP.CFrame)
+        task.wait(0.03)
+    end
+    
+    -- Отправляем вверх
+    pcall(function()
+        tHRP.AssemblyLinearVelocity = Vector3.new(0, 5000, 0)
+    end)
+    
+    task.wait(2)
+    pcall(function() workspace.FallenPartsDestroyHeight = old_fdh end)
+end
+
+-- Слушаем смерть
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Died:Connect(function()
+            if not AutoEndRound.Enabled then return end
+            task.wait(0.5)
+            
+            local murderer = GetMurderer()
+            if murderer then
+                if AutoEndRound.FlingMurderer then
+                    task.spawn(function()
+                        doFlingToVoid(murderer)
+                    end)
+                    Notify("Auto End Round", "Flinging " .. murderer.Name .. " into void!", nil, 4)
+                end
+                
+                if AutoEndRound.KillMurderer then
+                    -- Пытаемся убить через нож (если он у нас)
+                    local myChar2 = LocalPlayer.Character
+                    local knife = myChar2 and myChar2:FindFirstChild("Knife")
+                    if not knife then
+                        local bp = LocalPlayer:FindFirstChild("Backpack")
+                        knife = bp and bp:FindFirstChild("Knife")
+                    end
+                    if knife then
+                        local events = knife:FindFirstChild("Events")
+                        local tHRP = SafeGetHRP(murderer.Character)
+                        if events and tHRP then
+                            local touched = events:FindFirstChild("HandleTouched")
+                            if touched then
+                                pcall(function() touched:FireServer(tHRP) end)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 7: SETTINGS
 -- ═══════════════════════════════════════════════════════════════
 Tabs.Settings:AddSection("UI")
 
@@ -3583,4 +4198,4 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling | Better auto farm | Optimization", 15)
+Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling |New Tab?| Better auto farm | Optimization", 15)
