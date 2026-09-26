@@ -1,11 +1,10 @@
 --[[
-    Crows Hub | FULL v9.5
-    GUI: Crows Hub (Fluent)
-    Новое: Force Shoot / Wallbang — пуля летит из-за спины Murderer и попадает
-    Silent-хук через __namecall + ручной режим + автоскан ремоута гана
+    Crows Hub | FULL v9.6
+    Новое: Fling (murderer/sheriff/player list), Farm Methods (Basic/Down),
+           Coin Aura, Avoid Murder v2 (активный побег), Gun ESP, Crosshair,
+           Auto Cleanup (фикс лагов)
 ]]
 
--- Load Fluent UI
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
 -- ═══════════════════════════════════════════════════════════════
@@ -52,16 +51,31 @@ local function SafeGetHRP(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
 end
 
-local function GetRole(player)
-    if not player or player == LocalPlayer then return "Unknown" end
-    local char = SafeGetCharacter(player)
-    if not char then return "Unknown" end
-    local backpack = player:FindFirstChild("Backpack")
-    local hasKnife = (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife")
-    local hasGun = (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun")
-    if hasKnife then return "Murderer" end
-    if hasGun then return "Sheriff" end
-    return "Innocent"
+local roleCache = {}
+local roleCacheTime = 0
+
+local function getCachedRole(plr)
+    local now = os.clock()
+    if now - roleCacheTime > 0.4 then
+        roleCache = {}
+        roleCacheTime = now
+    end
+    if not roleCache[plr] then
+        local role = "Unknown"
+        local char = plr and plr.Character
+        if char then
+            local backpack = plr:FindFirstChild("Backpack")
+            if (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife") then
+                role = "Murderer"
+            elseif (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun") then
+                role = "Sheriff"
+            else
+                role = "Innocent"
+            end
+        end
+        roleCache[plr] = role
+    end
+    return roleCache[plr]
 end
 
 local function GetRoleColor(role)
@@ -76,14 +90,14 @@ end
 
 local function GetMurderer()
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and GetRole(plr) == "Murderer" then return plr end
+        if plr ~= LocalPlayer and getCachedRole(plr) == "Murderer" then return plr end
     end
     return nil
 end
 
 local function GetSheriff()
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and GetRole(plr) == "Sheriff" then return plr end
+        if plr ~= LocalPlayer and getCachedRole(plr) == "Sheriff" then return plr end
     end
     return nil
 end
@@ -128,7 +142,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v9.5 MM2 by crowshubdev",
+    SubTitle = "v9.6 MM2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -264,7 +278,7 @@ GrabBtn.MouseButton1Click:Connect(function()
             if touchGrab(gunDrop, root) then
                 Notify("Grab Gun", "Touched gun!", nil, 3)
             else
-                Notify("Grab Gun", "Экзекутор не поддерживает firetouchinterest", nil, 4)
+                Notify("Grab Gun", "Экзекутор без firetouchinterest", nil, 4)
             end
             return
         end
@@ -291,19 +305,15 @@ end)
 local NotifiedRoles = {}
 local LastMapName = nil
 
-local function ResetRoleNotifications()
-    NotifiedRoles = {}
-end
-
 local function DetectRoles()
     local map = getMap()
     if map and map.Name ~= LastMapName then
         LastMapName = map.Name
-        ResetRoleNotifications()
+        NotifiedRoles = {}
     end
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
-        local role = GetRole(player)
+        local role = getCachedRole(player)
         if role == "Murderer" and NotifiedRoles[player] ~= "Murderer" then
             NotifiedRoles[player] = "Murderer"
             RoleDetectSound:Play()
@@ -492,7 +502,7 @@ RunService.Stepped:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- GOD MODE (client heal)
+-- GOD MODE
 -- ═══════════════════════════════════════════════════════════════
 Tabs.Main:AddToggle("GodMode", { Title = "God Mode (client heal)", Default = false })
     :OnChanged(function(Value) GodModeEnabled = Value end)
@@ -563,21 +573,9 @@ local ESPConfig = {
     Players = false,
     Names = false,
     Distance = false,
-    Health = false
+    Health = false,
+    GunDrop = false
 }
-
-local roleCache = {}
-local roleCacheTime = 0
-
-local function getCachedRole(plr)
-    local now = os.clock()
-    if now - roleCacheTime > 0.5 then
-        roleCache = {}
-        roleCacheTime = now
-    end
-    if not roleCache[plr] then roleCache[plr] = GetRole(plr) end
-    return roleCache[plr]
-end
 
 local function createPlayerHighlight(player)
     local char = SafeGetCharacter(player)
@@ -617,6 +615,17 @@ local function createPlayerNameTag(player)
     text.TextStrokeColor3 = Color3.new(0, 0, 0)
     text.Text = ""
     text.Parent = bg
+end
+
+local function removeESPFromChar(char)
+    if not char then return end
+    local hl = char:FindFirstChild("CrowsESP_HL")
+    if hl then hl:Destroy() end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+    if hrp then
+        local bg = hrp:FindFirstChild("CrowsNameESP")
+        if bg then bg:Destroy() end
+    end
 end
 
 local function updateESP()
@@ -685,16 +694,30 @@ task.spawn(function()
     end
 end)
 
-Players.PlayerRemoving:Connect(function(player)
-    local char = SafeGetCharacter(player)
-    if char then
-        local hl = char:FindFirstChild("CrowsESP_HL")
-        if hl then hl:Destroy() end
-        local hrp = SafeGetHRP(char)
-        if hrp then
-            local bg = hrp:FindFirstChild("CrowsNameESP")
-            if bg then bg:Destroy() end
-        end
+-- GUN DROP ESP: подсветка пушки когда Sheriff умер
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        pcall(function()
+            local map = getMap()
+            local drop = map and map:FindFirstChild("GunDrop", true)
+            if ESPConfig.GunDrop and drop and drop:IsA("BasePart") then
+                local hl = drop:FindFirstChild("CrowsGunHL")
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "CrowsGunHL"
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.FillColor = Color3.fromRGB(255, 215, 0)
+                    hl.OutlineColor = Color3.fromRGB(255, 215, 0)
+                    hl.FillTransparency = 0.4
+                    hl.OutlineTransparency = 0
+                    hl.Parent = drop
+                end
+            elseif drop then
+                local hl = drop:FindFirstChild("CrowsGunHL")
+                if hl then hl:Destroy() end
+            end
+        end)
+        task.wait(0.5)
     end
 end)
 
@@ -720,6 +743,22 @@ Tabs.Visuals:AddToggle("HealthESP", { Title = "Show Health", Default = false })
 
 Tabs.Visuals:AddToggle("DistESP", { Title = "Show Distance", Default = false })
     :OnChanged(function(Value) ESPConfig.Distance = Value end)
+
+Tabs.Visuals:AddSection("Gun ESP")
+
+Tabs.Visuals:AddToggle("GunDropESP", {
+    Title = "Gun Drop ESP",
+    Description = "Подсвечивает пушку когда Sheriff умер",
+    Default = false
+}):OnChanged(function(Value)
+    ESPConfig.GunDrop = Value
+    if not Value then
+        local map = getMap()
+        local drop = map and map:FindFirstChild("GunDrop", true)
+        local hl = drop and drop:FindFirstChild("CrowsGunHL")
+        if hl then hl:Destroy() end
+    end
+end)
 
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 3: WORLD
@@ -771,7 +810,7 @@ Tabs.World:AddButton({
                 if touchGrab(gunDrop, root) then
                     Notify("Grab", "Touched gun!", nil, 3)
                 else
-                    Notify("Grab", "Экзекутор не поддерживает firetouchinterest", nil, 4)
+                    Notify("Grab", "Экзекутор без firetouchinterest", nil, 4)
                 end
             else
                 Notify("Grab", "No gun on map!", nil, 3)
@@ -861,193 +900,7 @@ Tabs.World:AddToggle("FullBright", { Title = "Full Bright", Default = false })
     end)
 
 -- ═══════════════════════════════════════════════════════════════
--- GUN HELPERS (общие для Force Shoot)
--- ═══════════════════════════════════════════════════════════════
-local function getGun()
-    local char = SafeGetCharacter(LocalPlayer)
-    if char then
-        local eq = char:FindFirstChild("Gun")
-        if eq then return eq, true end
-    end
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then
-        local stored = bp:FindFirstChild("Gun")
-        if stored then return stored, false end
-    end
-    return nil, false
-end
-
--- Автоскан: ищем RemoteEvent выстрела внутри гана
-local discoveredShotRemote = nil
-
-local function scanGunRemote()
-    local gun = getGun()
-    if not gun then return nil end
-    -- прямой ребёнок
-    local direct = gun:FindFirstChildWhichIsA("RemoteEvent")
-    if direct then
-        discoveredShotRemote = direct
-        return direct
-    end
-    -- в подпапках (Events и т.п.)
-    for _, d in ipairs(gun:GetDescendants()) do
-        if d:IsA("RemoteEvent") then
-            discoveredShotRemote = d
-            return d
-        end
-    end
-    return nil
-end
-
--- Пере-скан при экипировке гана
-task.spawn(function()
-    while not getgenv().CWH_Unloaded do
-        local gun = getGun()
-        if gun and (not discoveredShotRemote or discoveredShotRemote.Parent ~= gun) then
-            local found = scanGunRemote()
-            if found then
-                Notify("Force Shoot", "Ремоут найден: " .. found:GetFullName():match("[^.]+$"), nil, 4)
-            end
-        end
-        task.wait(1)
-    end
-end)
-
--- ═══════════════════════════════════════════════════════════════
--- FORCE SHOOT / WALLBANG
--- Origin = точка ЗА СПИНОЙ Murderer, направление = в его HRP.
--- Murderer видит/получает пулю "сзади", сервер видит попадание.
--- ═══════════════════════════════════════════════════════════════
-local ForceShoot = {
-    Enabled = false,     -- Silent: перехват ЛЮБОГО выстрела гана и подмена origin
-    Offset = 6,          -- дистанция за спиной murder
-    UseMurdererBack = true,  -- true = за спиной по LookVector, false = зеркально от меня
-    AutoFire = false,    -- авто-выстрел когда murder в радиусе
-    AutoRange = 100,
-    LastShot = 0,
-}
-
--- Вычислить origin за спиной murder
-local function getBackOrigin(murHRP)
-    local murPos = murHRP.Position
-    if ForceShoot.UseMurdererBack then
-        -- за спиной = против LookVector murder
-        local look = murHRP.CFrame.LookVector
-        local flatLook = Vector3.new(look.X, 0, look.Z)
-        if flatLook.Magnitude < 0.05 then
-            return murPos + Vector3.new(0, 2, 0)
-        end
-        return murPos - flatLook.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
-    else
-        -- с противоположной от меня стороны
-        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-        if not myHRP then return murPos + Vector3.new(0, 2, 0) end
-        local dir = (murPos - myHRP.Position)
-        dir = Vector3.new(dir.X, 0, dir.Z)
-        if dir.Magnitude < 0.05 then return murPos + Vector3.new(0, 2, 0) end
-        return murPos + dir.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
-    end
-end
-
--- Ручной force shot
-local function doForceShoot()
-    local gun, equipped = getGun()
-    if not gun then
-        Notify("Force Shoot", "No gun!", nil, 3)
-        return false
-    end
-
-    local remote = discoveredShotRemote or scanGunRemote()
-    if not remote then
-        Notify("Force Shoot", "Ремоут выстрела не найден в Gun", nil, 4)
-        return false
-    end
-
-    local mur = GetMurderer()
-    local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
-    if not murHRP then
-        Notify("Force Shoot", "Murderer не найден", nil, 3)
-        return false
-    end
-
-    -- экипируем если надо
-    if not equipped then
-        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-        if hum then
-            pcall(function() hum:EquipTool(gun) end)
-            task.wait(0.15)
-        end
-    end
-
-    local origin = getBackOrigin(murHRP)
-    local targetPos = murHRP.Position
-    local direction = (targetPos - origin).Unit * 500
-
-    -- пробуем типовые форматы аргументов
-    local attempts = {
-        function() remote:FireServer(origin, direction) end,
-        function() remote:FireServer(CFrame.new(origin, targetPos), direction) end,
-        function() remote:FireServer(origin, targetPos) end,
-        function() remote:FireServer(direction, origin) end,
-    }
-
-    for i, attempt in ipairs(attempts) do
-        local ok = pcall(attempt)
-        if ok then
-            Notify("Force Shoot", "Выстрел: " .. mur.Name .. " (формат " .. i .. ")", nil, 2)
-            ForceShoot.LastShot = os.clock()
-            return true
-        end
-    end
-
-    Notify("Force Shoot", "Ни один формат не подошёл — сниффни ремоут", nil, 5)
-    return false
-end
-
--- Silent-хук: подменяем origin ЛЮБОГО выстрела через найденный ремоут
-if realHookNamecall then
-    local oldNamecall
-    oldNamecall = realHookNamecall(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        if method == "FireServer"
-            and ForceShoot.Enabled
-            and discoveredShotRemote
-            and self == discoveredShotRemote then
-
-            local mur = GetMurderer()
-            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
-            if murHRP then
-                local origin = getBackOrigin(murHRP)
-                local targetPos = murHRP.Position
-                local direction = (targetPos - origin).Unit * 500
-                -- подменяем аргументы: origin/направление на точку за спиной
-                return oldNamecall(self, origin, direction)
-            end
-        end
-        return oldNamecall(self, ...)
-    end)
-end
-
--- Авто-выстрел
-task.spawn(function()
-    while not getgenv().CWH_Unloaded do
-        if ForceShoot.AutoFire and discoveredShotRemote then
-            local mur = GetMurderer()
-            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
-            local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-            if murHRP and myHRP then
-                local dist = (murHRP.Position - myHRP.Position).Magnitude
-                if dist <= ForceShoot.AutoRange and os.clock() - ForceShoot.LastShot > 1 then
-                    doForceShoot()
-                end
-            end
-        end
-        task.wait(0.2)
-    end
-end)
-
--- ═══════════════════════════════════════════════════════════════
--- TAB 4: COMBAT — KILL AURA + FORCE SHOOT
+-- TAB 4: COMBAT — KILL AURA + FORCE SHOOT + FLING
 -- ═══════════════════════════════════════════════════════════════
 local function getKnife()
     local char = SafeGetCharacter(LocalPlayer)
@@ -1063,6 +916,21 @@ local function getKnife()
     return nil, false
 end
 
+local function getGun()
+    local char = SafeGetCharacter(LocalPlayer)
+    if char then
+        local eq = char:FindFirstChild("Gun")
+        if eq then return eq, true end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local stored = bp:FindFirstChild("Gun")
+        if stored then return stored, false end
+    end
+    return nil, false
+end
+
+-- ─── KILL AURA ────────────────────────────────────────────────
 local KillAuraSystem = {
     Enabled = false,
     Range = 50,
@@ -1187,19 +1055,167 @@ Tabs.Combat:AddDropdown("KillAuraTarget", {
     Callback = function(Value) KillAuraSystem.Target = Value end
 })
 
+-- ─── FORCE SHOOT ──────────────────────────────────────────────
+local discoveredShotRemote = nil
+
+local function scanGunRemote()
+    local gun = getGun()
+    if not gun then return nil end
+    local direct = gun:FindFirstChildWhichIsA("RemoteEvent")
+    if direct then
+        discoveredShotRemote = direct
+        return direct
+    end
+    for _, d in ipairs(gun:GetDescendants()) do
+        if d:IsA("RemoteEvent") then
+            discoveredShotRemote = d
+            return d
+        end
+    end
+    return nil
+end
+
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        local gun = getGun()
+        if gun and (not discoveredShotRemote or discoveredShotRemote.Parent ~= gun) then
+            scanGunRemote()
+        end
+        task.wait(1)
+    end
+end)
+
+local ForceShoot = {
+    Enabled = false,
+    Offset = 6,
+    UseMurdererBack = true,
+    AutoFire = false,
+    AutoRange = 100,
+    LastShot = 0,
+}
+
+local function getBackOrigin(murHRP)
+    local murPos = murHRP.Position
+    if ForceShoot.UseMurdererBack then
+        local look = murHRP.CFrame.LookVector
+        local flatLook = Vector3.new(look.X, 0, look.Z)
+        if flatLook.Magnitude < 0.05 then
+            return murPos + Vector3.new(0, 2, 0)
+        end
+        return murPos - flatLook.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
+    else
+        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        if not myHRP then return murPos + Vector3.new(0, 2, 0) end
+        local dir = (murPos - myHRP.Position)
+        dir = Vector3.new(dir.X, 0, dir.Z)
+        if dir.Magnitude < 0.05 then return murPos + Vector3.new(0, 2, 0) end
+        return murPos + dir.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
+    end
+end
+
+local function doForceShoot()
+    local gun, equipped = getGun()
+    if not gun then
+        Notify("Force Shoot", "No gun!", nil, 3)
+        return false
+    end
+
+    local remote = discoveredShotRemote or scanGunRemote()
+    if not remote then
+        Notify("Force Shoot", "Ремоут выстрела не найден", nil, 4)
+        return false
+    end
+
+    local mur = GetMurderer()
+    local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+    if not murHRP then
+        Notify("Force Shoot", "Murderer не найден", nil, 3)
+        return false
+    end
+
+    if not equipped then
+        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+        if hum then
+            pcall(function() hum:EquipTool(gun) end)
+            task.wait(0.15)
+        end
+    end
+
+    local origin = getBackOrigin(murHRP)
+    local targetPos = murHRP.Position
+    local direction = (targetPos - origin).Unit * 500
+
+    local attempts = {
+        function() remote:FireServer(origin, direction) end,
+        function() remote:FireServer(CFrame.new(origin, targetPos), direction) end,
+        function() remote:FireServer(origin, targetPos) end,
+        function() remote:FireServer(direction, origin) end,
+    }
+
+    for i, attempt in ipairs(attempts) do
+        local ok = pcall(attempt)
+        if ok then
+            ForceShoot.LastShot = os.clock()
+            return true
+        end
+    end
+
+    Notify("Force Shoot", "Формат не подошёл — нужен remote spy", nil, 5)
+    return false
+end
+
+if realHookNamecall then
+    local oldNamecall
+    oldNamecall = realHookNamecall(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer"
+            and ForceShoot.Enabled
+            and discoveredShotRemote
+            and self == discoveredShotRemote then
+
+            local mur = GetMurderer()
+            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+            if murHRP then
+                local origin = getBackOrigin(murHRP)
+                local targetPos = murHRP.Position
+                local direction = (targetPos - origin).Unit * 500
+                return oldNamecall(self, origin, direction)
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+end
+
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        if ForceShoot.AutoFire and discoveredShotRemote then
+            local mur = GetMurderer()
+            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+            local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if murHRP and myHRP then
+                local dist = (murHRP.Position - myHRP.Position).Magnitude
+                if dist <= ForceShoot.AutoRange and os.clock() - ForceShoot.LastShot > 1 then
+                    doForceShoot()
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
 Tabs.Combat:AddSection("Force Shoot / Wallbang")
 
 Tabs.Combat:AddToggle("ForceShootSilent", {
     Title = "Silent Force Shoot",
-    Description = "Перехватывает твой выстрел и бьёт из-за спины Murderer",
+    Description = "Перехватывает выстрел, бьёт из-за спины Murderer",
     Default = false
 }):OnChanged(function(Value)
     ForceShoot.Enabled = Value
     if Value and not realHookNamecall then
-        Notify("Force Shoot", "Экзекутор без hookmetamethod — Silent недоступен, юзай кнопку", nil, 5)
+        Notify("Force Shoot", "Экзекутор без hookmetamethod — Silent недоступен", nil, 5)
         ForceShoot.Enabled = false
     elseif Value and not discoveredShotRemote then
-        Notify("Force Shoot", "Возьми Gun в руки — идёт скан ремоута...", nil, 4)
+        Notify("Force Shoot", "Возьми Gun в руки — идёт скан ремоута", nil, 4)
     end
 end)
 
@@ -1211,7 +1227,6 @@ Tabs.Combat:AddButton({
 
 Tabs.Combat:AddToggle("ForceShootAuto", {
     Title = "Auto Force Shoot",
-    Description = "Сам стреляет когда Murderer в радиусе",
     Default = false
 }):OnChanged(function(Value) ForceShoot.AutoFire = Value end)
 
@@ -1229,23 +1244,190 @@ Tabs.Combat:AddSlider("ForceShootOffset", {
 
 Tabs.Combat:AddDropdown("ForceShootSide", {
     Title = "Origin Side",
-    Values = {"Murderer Back (по его взгляду)", "Opposite Side (от меня)"},
-    Default = "Murderer Back (по его взгляду)",
+    Values = {"Murderer Back", "Opposite Side"},
+    Default = "Murderer Back",
     Callback = function(Value)
-        ForceShoot.UseMurdererBack = (Value == "Murderer Back (по его взгляду)")
+        ForceShoot.UseMurdererBack = (Value == "Murderer Back")
+    end
+})
+
+-- ─── FLING ────────────────────────────────────────────────────
+local FlingSystem = {
+    Running = false,
+    Conn = nil,
+    Target = nil,
+}
+
+local function stopFling()
+    FlingSystem.Running = false
+    FlingSystem.Target = nil
+    if FlingSystem.Conn then
+        FlingSystem.Conn:Disconnect()
+        FlingSystem.Conn = nil
+    end
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if myHRP then
+        myHRP.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
+local function startFling(plr)
+    if not plr then
+        Notify("Fling", "Цель не выбрана", nil, 3)
+        return
+    end
+    if plr == LocalPlayer then
+        Notify("Fling", "Нельзя флинговать себя", nil, 3)
+        return
+    end
+
+    stopFling()
+    FlingSystem.Running = true
+    FlingSystem.Target = plr
+
+    FlingSystem.Conn = RunService.Heartbeat:Connect(function()
+        if not FlingSystem.Running then return end
+        local tChar = SafeGetCharacter(plr)
+        local tHRP = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        local myChar = SafeGetCharacter(LocalPlayer)
+        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        if not (tHRP and myHRP and myHum) or myHum.Health <= 0 then
+            stopFling()
+            return
+        end
+        -- телепорт на цель + спин: столкновение флингует
+        myHRP.CFrame = tHRP.CFrame * CFrame.Angles(0, math.rad(math.random(0, 359)), 0)
+        myHRP.AssemblyAngularVelocity = Vector3.new(
+            math.random(-900000, 900000),
+            math.random(-900000, 900000),
+            math.random(-900000, 900000)
+        )
+    end)
+
+    Notify("Fling", "Флинг: " .. plr.Name, nil, 3)
+end
+
+Tabs.Combat:AddSection("Fling")
+
+Tabs.Combat:AddButton({
+    Title = "🌪 Fling Murderer",
+    Callback = function()
+        local m = GetMurderer()
+        if m then
+            startFling(m)
+        else
+            Notify("Fling", "Murderer не найден", nil, 3)
+        end
+    end
+})
+
+Tabs.Combat:AddButton({
+    Title = "🌪 Fling Sheriff",
+    Callback = function()
+        local s = GetSheriff()
+        if s then
+            startFling(s)
+        else
+            Notify("Fling", "Sheriff не найден", nil, 3)
+        end
+    end
+})
+
+-- Список игроков
+local SelectedPlayerName = nil
+local PlayerDropdown = Tabs.Combat:AddDropdown("FlingPlayerList", {
+    Title = "Player List",
+    Values = {},
+    Default = "",
+    Callback = function(Value)
+        SelectedPlayerName = Value
+    end
+})
+
+local function getPlayerList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function refreshPlayerList()
+    local list = getPlayerList()
+    pcall(function() PlayerDropdown:SetValues(list) end)
+end
+
+Tabs.Combat:AddButton({
+    Title = "🔄 Refresh Player List",
+    Callback = function()
+        refreshPlayerList()
+        Notify("Fling", "Список обновлён", nil, 2)
+    end
+})
+
+Tabs.Combat:AddToggle("AutoRefreshList", {
+    Title = "Auto Refresh List (5s)",
+    Default = false
+}):OnChanged(function(Value) end)
+
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        local autoRefresh = false
+        pcall(function()
+            autoRefresh = Window.Flags and Window.Flags.AutoRefreshList or false
+        end)
+        task.wait(5)
+        -- Auto refresh работает всегда лёгким тиком — дешёвая операция
+        refreshPlayerList()
+    end
+end)
+
+Tabs.Combat:AddButton({
+    Title = "▶ Start Fling (Selected)",
+    Callback = function()
+        if not SelectedPlayerName then
+            Notify("Fling", "Сначала выбери игрока в списке", nil, 3)
+            return
+        end
+        local target
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Name == SelectedPlayerName then
+                target = p
+                break
+            end
+        end
+        if target then
+            startFling(target)
+        else
+            Notify("Fling", "Игрок не найден (вышел?)", nil, 3)
+        end
+    end
+})
+
+Tabs.Combat:AddButton({
+    Title = "⏹ Stop Fling",
+    Callback = function()
+        stopFling()
+        Notify("Fling", "Stopped", nil, 2)
     end
 })
 
 Tabs.Combat:AddParagraph({
-    Title = "Как работает Force Shoot",
-    Content = "Origin выстрела ставится за спиной Murderer, направление — в него. Он получает пулю 'откуда-то сзади'. Silent перехватывает твой обычный выстрел и подменяет координаты. Кнопка стреляет вручную, Auto — сам при приближении. Если форматы аргументов не подошли — напиши, нужен снифф ремоута."
+    Title = "Про Fling",
+    Content = "Телепортирует тебя к цели и раскручивает персонаж — столкновение флингует цель. Работает и по ролям (Murderer/Sheriff), и по списку игроков. Stop Fling останавливает."
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 5: AUTO FARM + AVOID MURDER
+-- TAB 5: AUTO FARM — METHODS + AVOID MURDER v2 + COIN AURA
 -- ═══════════════════════════════════════════════════════════════
 local FarmSystem = {
     Enabled = false,
+    Method = "Basic",
+    UnderDepth = 25,
     AvoidMurder = true,
     SafeRadius = 45,
     FleeRadius = 30,
@@ -1254,6 +1436,12 @@ local FarmSystem = {
     Active = false,
     CurrentTween = nil,
     LastRerouteNotify = 0,
+    PendingFlee = nil,
+}
+
+local CoinAura = {
+    Enabled = false,
+    Radius = 12
 }
 
 local function coinPos(c)
@@ -1282,18 +1470,77 @@ local function notifyReroute(reason)
     end
 end
 
-local function farmGoTo(coin, murPlayer)
+-- AVOID MURDER v2: активный побег от убийцы
+local function fleeFromMurderer(murPlr)
+    local start = os.clock()
+    while not getgenv().CWH_Unloaded
+        and FarmSystem.Enabled
+        and os.clock() - start < 12 do
+
+        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        local murHRP = murPlr and SafeGetHRP(SafeGetCharacter(murPlr))
+        if not (myHRP and murHRP) then return end
+
+        local dist = (murHRP.Position - myHRP.Position).Magnitude
+        if dist >= FarmSystem.FleeRadius then return end
+
+        -- направление от murder к мне
+        local away = (myHRP.Position - murHRP.Position)
+        away = Vector3.new(away.X, 0, away.Z)
+        if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
+        away = away.Unit
+
+        local fleePos = myHRP.Position + away * 25
+        if FarmSystem.Method == "Down" then
+            fleePos = Vector3.new(fleePos.X, myHRP.Position.Y, fleePos.Z)
+        end
+
+        local t = TweenService:Create(
+            myHRP,
+            TweenInfo.new(25 / FarmSystem.Speed, Enum.EasingStyle.Linear),
+            { CFrame = CFrame.new(fleePos) }
+        )
+        t:Play()
+
+        -- короткий шаг побега, потом перепроверка
+        local stepDone = false
+        local conn
+        conn = t.Completed:Connect(function() stepDone = true end)
+        local waited = 0
+        while not stepDone and waited < 1 and not getgenv().CWH_Unloaded do
+            task.wait(0.05)
+            waited = waited + 0.05
+            -- если murder догоняет — прерываем и бежим заново в новую сторону
+            local m2 = SafeGetHRP(SafeGetCharacter(murPlr))
+            local me2 = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if m2 and me2 and (m2.Position - me2.Position).Magnitude < FarmSystem.FleeRadius * 0.7 then
+                t:Cancel()
+                break
+            end
+        end
+        t:Cancel()
+        if conn then conn:Disconnect() end
+    end
+end
+
+local function farmGoTo(coin)
     local root = SafeGetHRP(SafeGetCharacter(LocalPlayer))
     if not root then return end
     local pos = coinPos(coin)
     if not pos then return end
 
-    local dist = (pos - root.Position).Magnitude
+    -- Down метод: летим ПОД ПОЛОМ на уровне coin.Y - UnderDepth
+    local targetPos = pos
+    if FarmSystem.Method == "Down" then
+        targetPos = Vector3.new(pos.X, math.max(pos.Y - FarmSystem.UnderDepth, -200), pos.Z)
+    end
+
+    local dist = (targetPos - root.Position).Magnitude
     local travelTime = math.max(dist / FarmSystem.Speed, 0.1)
     local tween = TweenService:Create(
         root,
         TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
-        { CFrame = CFrame.new(pos) }
+        { CFrame = CFrame.new(targetPos) }
     )
     FarmSystem.CurrentTween = tween
     tween:Play()
@@ -1308,28 +1555,40 @@ local function farmGoTo(coin, murPlayer)
         end
 
         local p = coinPos(coin)
+        if not p then
+            stop = true
+            return
+        end
 
-        if p and (p - r.Position).Magnitude < 8 then
+        -- В Down режиме важна только горизонтальная близость (подбор сквозь пол)
+        local flatDist = (Vector3.new(p.X, 0, p.Z) - Vector3.new(r.Position.X, 0, r.Position.Z)).Magnitude
+
+        if flatDist < 8 then
             local part = coin:IsA("BasePart") and coin or coin:FindFirstChildWhichIsA("BasePart", true)
             touchGrab(part, r)
         end
 
-        if FarmSystem.AvoidMurder and murPlayer and p then
-            local mHRP = SafeGetHRP(SafeGetCharacter(murPlayer))
-            if mHRP then
-                local murPos = mHRP.Position
-                local nearMe = (murPos - r.Position).Magnitude < FarmSystem.FleeRadius
-                local onPath = segment_gap(r.Position, p, murPos) < FarmSystem.SafeRadius
-                if nearMe or onPath then
-                    tween:Cancel()
-                    notifyReroute("Murderer на пути — меняю монету")
-                    stop = true
-                    return
+        -- AVOID MURDER v2: живая проверка каждые кадры
+        if FarmSystem.AvoidMurder then
+            local mur = GetMurderer()
+            if mur then
+                local mHRP = SafeGetHRP(SafeGetCharacter(mur))
+                if mHRP then
+                    local murPos = mHRP.Position
+                    local nearMe = (murPos - r.Position).Magnitude < FarmSystem.FleeRadius
+                    local onPath = segment_gap(r.Position, targetPos, murPos) < FarmSystem.SafeRadius
+                    if nearMe or onPath then
+                        tween:Cancel()
+                        notifyReroute("Murderer рядом — убегаю")
+                        FarmSystem.PendingFlee = mur
+                        stop = true
+                        return
+                    end
                 end
             end
         end
 
-        if p and (p - r.Position).Magnitude < 3 then
+        if flatDist < 3 then
             stop = true
         end
     end)
@@ -1345,6 +1604,16 @@ end
 task.spawn(function()
     while not getgenv().CWH_Unloaded do
         if FarmSystem.Enabled and not FarmSystem.Active then
+            -- побег после отмены маршрута
+            if FarmSystem.PendingFlee then
+                local mur = FarmSystem.PendingFlee
+                FarmSystem.PendingFlee = nil
+                FarmSystem.Active = true
+                pcall(fleeFromMurderer, mur)
+                FarmSystem.Active = false
+                continue
+            end
+
             local char = SafeGetCharacter(LocalPlayer)
             local root = SafeGetHRP(char)
             local hum = SafeGetHumanoid(char)
@@ -1382,12 +1651,32 @@ task.spawn(function()
 
                     if target then
                         FarmSystem.Active = true
-                        local ok, err = pcall(farmGoTo, target, mur)
+                        local ok, err = pcall(farmGoTo, target)
                         FarmSystem.Active = false
                         if not ok then warn("[CWH Farm] " .. tostring(err)) end
                     else
-                        notifyReroute("Все монеты рядом с Murderer — жду")
+                        notifyReroute("Все монеты у Murderer — жду")
                         task.wait(0.5)
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- COIN AURA: монеты собираются в радиусе без касания
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        if CoinAura.Enabled then
+            local root = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+            if root and hum and hum.Health > 0 then
+                for _, c in ipairs(farmGetCoins()) do
+                    local p = coinPos(c)
+                    if p and (p - root.Position).Magnitude <= CoinAura.Radius then
+                        local part = c:IsA("BasePart") and c or c:FindFirstChildWhichIsA("BasePart", true)
+                        touchGrab(part, root)
                     end
                 end
             end
@@ -1407,11 +1696,27 @@ Tabs.Farm:AddToggle("FarmToggle", { Title = "Enable Auto Farm", Default = false 
         Notify("Auto Farm", Value and "🟢 Enabled" or "🔴 Disabled", nil, 2)
     end)
 
-Tabs.Farm:AddSection("Avoid Murder")
+Tabs.Farm:AddDropdown("FarmMethod", {
+    Title = "Farm Method",
+    Values = {"Basic", "Down (под полом)"},
+    Default = "Basic",
+    Callback = function(Value)
+        FarmSystem.Method = (Value == "Basic") and "Basic" or "Down"
+    end
+})
+
+Tabs.Farm:AddSlider("FarmUnderDepth", {
+    Title = "Down Depth (под полом)",
+    Description = "Насколько глубоко под монетой лететь в режиме Down",
+    Default = 25, Min = 10, Max = 60, Rounding = 0,
+    Callback = function(Value) FarmSystem.UnderDepth = Value end
+})
+
+Tabs.Farm:AddSection("Avoid Murder v2")
 
 Tabs.Farm:AddToggle("AvoidMurder", {
     Title = "Avoid Murder",
-    Description = "Обходить убийцу через смену монеты",
+    Description = "Обход + активный побег от убийцы",
     Default = true
 }):OnChanged(function(Value)
     FarmSystem.AvoidMurder = Value
@@ -1424,9 +1729,29 @@ Tabs.Farm:AddSlider("FarmSafeRadius", {
 })
 
 Tabs.Farm:AddSlider("FarmFleeRadius", {
-    Title = "Flee Radius (рядом со мной)",
+    Title = "Flee Radius",
+    Description = "Murderer ближе — персонаж УБЕГАЕТ от него",
     Default = 30, Min = 10, Max = 80, Rounding = 0,
     Callback = function(Value) FarmSystem.FleeRadius = Value end
+})
+
+Tabs.Farm:AddSection("Coin Aura")
+
+Tabs.Farm:AddToggle("CoinAura", {
+    Title = "Coin Aura",
+    Description = "Монеты собираются в радиусе без касания",
+    Default = false
+}):OnChanged(function(Value)
+    CoinAura.Enabled = Value
+    if not realFireTouch and Value then
+        Notify("Coin Aura", "Экзекутор без firetouchinterest — не сработает", nil, 5)
+    end
+end)
+
+Tabs.Farm:AddSlider("CoinAuraRadius", {
+    Title = "Aura Radius",
+    Default = 12, Min = 5, Max = 35, Rounding = 0,
+    Callback = function(Value) CoinAura.Radius = Value end
 })
 
 Tabs.Farm:AddSection("Farm Settings")
@@ -1438,12 +1763,12 @@ Tabs.Farm:AddSlider("FarmSpeed", {
 })
 
 Tabs.Farm:AddParagraph({
-    Title = "Как работает Avoid Murder",
-    Content = "Фарм ищет ближайшую безопасную монету: Murderer не должен стоять у монеты и не должен пересекать путь. Если он приближается в момент полёта — твин отменяется и маршрут перестраивается. Фарм не выключается."
+    Title = "Farm Methods",
+    Content = "Basic: летишь прямо к монете. Down: летаешь ПОД ПОЛОМ на глубине Under Depth под монетами — Murderer не достанет, подбор работает сквозь пол. Avoid Murder v2: убегает от Murderer когда он ближе Flee Radius, потом берёт новую монету."
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 6: EXTRA — ANTI-AIM
+-- TAB 6: EXTRA — ANTI-AIM + CROSSHAIR
 -- ═══════════════════════════════════════════════════════════════
 local AntiAim = {
     Spin = false,
@@ -1495,13 +1820,11 @@ Tabs.Extra:AddSection("Anti-Aim")
 
 Tabs.Extra:AddToggle("AASpin", {
     Title = "Spinbot",
-    Description = "Быстрое вращение персонажа",
     Default = false
 }):OnChanged(function(Value)
     AntiAim.Spin = Value
     if not Value then
-        local char = SafeGetCharacter(LocalPlayer)
-        local root = SafeGetHRP(char)
+        local root = SafeGetHRP(SafeGetCharacter(LocalPlayer))
         if root then
             root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, 0, 0)
         end
@@ -1516,7 +1839,6 @@ Tabs.Extra:AddSlider("AASpinSpeed", {
 
 Tabs.Extra:AddToggle("AAJitter", {
     Title = "Jitter",
-    Description = "Резкие случайные дёрганья",
     Default = false
 }):OnChanged(function(Value) AntiAim.Jitter = Value end)
 
@@ -1528,18 +1850,164 @@ Tabs.Extra:AddSlider("AAJitterPower", {
 
 Tabs.Extra:AddToggle("AAFaceAway", {
     Title = "Face Away from Murderer",
-    Description = "Всегда спиной к убийце",
     Default = false
 }):OnChanged(function(Value) AntiAim.FaceAway = Value end)
 
-Tabs.Extra:AddParagraph({
-    Title = "Про Anti-Aim",
-    Content = "Spinbot и Jitter сбивают прицеливание ножом в ближнем бою. Face Away полезен против Sheriff — сложнее попасть. Во время полёта к монете (авто-фарм) вращение приостанавливается."
+-- ─── CROSSHAIR ────────────────────────────────────────────────
+local Crosshair = {
+    Enabled = false,
+    Size = 10,
+    Gap = 5,
+    Thickness = 2,
+    Dot = true
+}
+
+local CrosshairGui = Instance.new("ScreenGui")
+CrosshairGui.Name = "CWH_Crosshair"
+CrosshairGui.Parent = gethui and gethui() or CoreGui
+CrosshairGui.ResetOnSpawn = false
+CrosshairGui.IgnoreGuiInset = true
+CrosshairGui.Enabled = false
+
+local function makeLine()
+    local f = Instance.new("Frame")
+    f.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    f.BorderSizePixel = 0
+    f.Parent = CrosshairGui
+    return f
+end
+
+local CHTop = makeLine()
+local CHBottom = makeLine()
+local CHLeft = makeLine()
+local CHRight = makeLine()
+local CHDot = makeLine()
+
+RunService.RenderStepped:Connect(function()
+    if not Crosshair.Enabled then return end
+    local vp = Camera.ViewportSize
+    local cx, cy = vp.X / 2, vp.Y / 2
+    local len, gap, th = Crosshair.Size, Crosshair.Gap, Crosshair.Thickness
+
+    CHTop.Size = UDim2.fromOffset(th, len)
+    CHTop.Position = UDim2.fromOffset(cx - th / 2, cy - gap - len)
+    CHBottom.Size = UDim2.fromOffset(th, len)
+    CHBottom.Position = UDim2.fromOffset(cx - th / 2, cy + gap)
+    CHLeft.Size = UDim2.fromOffset(len, th)
+    CHLeft.Position = UDim2.fromOffset(cx - gap - len, cy - th / 2)
+    CHRight.Size = UDim2.fromOffset(len, th)
+    CHRight.Position = UDim2.fromOffset(cx + gap, cy - th / 2)
+
+    CHDot.Size = UDim2.fromOffset(th, th)
+    CHDot.Position = UDim2.fromOffset(cx - th / 2, cy - th / 2)
+    CHDot.Visible = Crosshair.Dot
+end)
+
+Tabs.Extra:AddSection("Crosshair")
+
+Tabs.Extra:AddToggle("CrosshairToggle", {
+    Title = "Custom Crosshair",
+    Default = false
+}):OnChanged(function(Value)
+    Crosshair.Enabled = Value
+    CrosshairGui.Enabled = Value
+end)
+
+Tabs.Extra:AddSlider("CHSize", {
+    Title = "Line Size",
+    Default = 10, Min = 4, Max = 30, Rounding = 0,
+    Callback = function(Value) Crosshair.Size = Value end
 })
 
+Tabs.Extra:AddSlider("CHGap", {
+    Title = "Center Gap",
+    Default = 5, Min = 0, Max = 15, Rounding = 0,
+    Callback = function(Value) Crosshair.Gap = Value end
+})
+
+Tabs.Extra:AddSlider("CHThickness", {
+    Title = "Thickness",
+    Default = 2, Min = 1, Max = 6, Rounding = 0,
+    Callback = function(Value) Crosshair.Thickness = Value end
+})
+
+Tabs.Extra:AddToggle("CHDot", {
+    Title = "Center Dot",
+    Default = true
+}):OnChanged(function(Value) Crosshair.Dot = Value end)
+
 -- ═══════════════════════════════════════════════════════════════
--- TAB 7: SETTINGS
+-- TAB 7: SETTINGS — CLEANUP + OPTIMIZATION
 -- ═══════════════════════════════════════════════════════════════
+local CleanupSystem = {
+    AutoCleanup = false,
+    Interval = 60
+}
+
+local function runCleanup()
+    local cleaned = 0
+    -- мёртвые персонажи: снимаем наши ESP-объекты
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local char = SafeGetCharacter(plr)
+        if char then
+            local hum = SafeGetHumanoid(char)
+            if hum and hum.Health <= 0 then
+                removeESPFromChar(char)
+                cleaned = cleaned + 1
+            end
+        end
+    end
+    -- осиротевшие подсветки GunDrop
+    local map = getMap()
+    local drop = map and map:FindFirstChild("GunDrop", true)
+    if not drop or not drop:IsA("BasePart") then
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d.Name == "CrowsGunHL" then
+                d:Destroy()
+                cleaned = cleaned + 1
+            end
+        end
+    end
+    -- сброс кэшей
+    roleCache = {}
+    roleCacheTime = 0
+    NotifiedRoles = {}
+    -- мусор GC
+    pcall(collectgarbage, "collect")
+    return cleaned
+end
+
+Tabs.Settings:AddSection("Cleanup & Optimization")
+
+Tabs.Settings:AddToggle("AutoCleanup", {
+    Title = "Auto Cleanup",
+    Description = "Авто-очистка мусора — фикс лагов при долгой игре",
+    Default = false
+}):OnChanged(function(Value) CleanupSystem.AutoCleanup = Value end)
+
+Tabs.Settings:AddSlider("CleanupInterval", {
+    Title = "Cleanup Interval (сек)",
+    Default = 60, Min = 30, Max = 300, Rounding = 0,
+    Callback = function(Value) CleanupSystem.Interval = Value end
+})
+
+Tabs.Settings:AddButton({
+    Title = "🧹 Cleanup Now",
+    Callback = function()
+        local n = runCleanup()
+        Notify("Cleanup", "Очищено объектов: " .. n, nil, 3)
+    end
+})
+
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        if CleanupSystem.AutoCleanup then
+            pcall(runCleanup)
+        end
+        task.wait(CleanupSystem.Interval)
+    end
+end)
+
 Tabs.Settings:AddSection("Utility")
 
 Tabs.Settings:AddButton({
@@ -1551,29 +2019,29 @@ Tabs.Settings:AddButton({
 
 Tabs.Settings:AddButton({
     Title = "Unload Crows Hub",
-    Description = "Останавливает все циклы и удаляет GUI",
     Callback = function()
         getgenv().CWH_Unloaded = true
+        stopFling()
         if FarmSystem.CurrentTween then FarmSystem.CurrentTween:Cancel() end
         for _, plr in ipairs(Players:GetPlayers()) do
             local char = SafeGetCharacter(plr)
-            if char then
-                local hl = char:FindFirstChild("CrowsESP_HL")
-                if hl then hl:Destroy() end
-                local hrp = SafeGetHRP(char)
-                if hrp then
-                    local bg = hrp:FindFirstChild("CrowsNameESP")
-                    if bg then bg:Destroy() end
-                end
-            end
+            if char then removeESPFromChar(char) end
         end
+        local map = getMap()
+        local drop = map and map:FindFirstChild("GunDrop", true)
+        local ghl = drop and drop:FindFirstChild("CrowsGunHL")
+        if ghl then ghl:Destroy() end
         Lighting.Brightness = originalBrightness
         Lighting.GlobalShadows = true
         Camera.FieldOfView = DefaultFOV
         pcall(function() Window:Destroy() end)
+        CrosshairGui:Destroy()
         SoundGui:Destroy()
         ScreenGui:Destroy()
     end
 })
 
-Notify("Crows Hub", "v9.5 загружен", "Force Shoot готов — возьми Gun для скана ремоута", 5)
+-- первичное заполнение списка игроков
+refreshPlayerList()
+
+Notify("Crows Hub", "v9.6 загружен", "Fling / Farm Methods / Coin Aura / Cleanup готовы", 5)
