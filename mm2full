@@ -2737,158 +2737,37 @@ local function murderer_hrp()
     return nil
 end
 
--- ═══════════════════════════════════════════════════════════════
--- AUTO FARM LOOP v3 (умное избегание убийцы)
--- ═══════════════════════════════════════════════════════════════
-
-task.spawn(function()
-    local lastMurdererCheck = 0
-    local murderCache = {}
+-- ─── Smart Murderer (с информацией о движении) ─────────────
+local function smart_murderer_info()
+    local m = GetMurderer()
+    if not m then return nil end
+    local c = SafeGetCharacter(m)
+    if not c then return nil end
+    local h = SafeGetHRP(c)
+    local hum = SafeGetHumanoid(c)
+    if not h or (hum and hum.Health <= 0) then return nil end
     
-    while true do
-        if AutoFarmSystem.Enabled then
-            local hrp = farm_hrp()
-            if hrp then
-                local list = available_coins()
-                
-                local function finish()
-                    AutoFarmSystem.Target = nil
-                    set_farm_noclip(false)
-                    if AutoFarmSystem.AutoReset then
-                        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
-                        if hum then pcall(function() hum.Health = 0 end) end
-                    end
-                end
-                
-                if coin_bags_full() then
-                    finish()
-                    task.wait(1)
-                    continue
-                end
-                
-                if #list > 0 then
-                    -- Получаем позицию убийцы (с кешем 0.3 сек)
-                    local mhrp = nil
-                    local mpos = nil
-                    if AutoFarmSystem.AvoidMurder then
-                        local now = os.clock()
-                        if now - lastMurdererCheck > 0.3 then
-                            lastMurdererCheck = now
-                            mhrp = murderer_hrp()
-                            murderCache.hrp = mhrp
-                            murderCache.pos = mhrp and mhrp.Position or nil
-                        else
-                            mhrp = murderCache.hrp
-                        end
-                        mpos = murderCache.pos
-                    end
-                    
-                    -- Умный выбор монеты
-                    if not AutoFarmSystem.Target or not coin_available(AutoFarmSystem.Target) then
-                        -- Обычный поиск ближайшей
-                        local bestCoin, bestDist = nil, math.huge
-                        for _, coin in ipairs(list) do
-                            local d = (coin.Position - hrp.Position).Magnitude
-                            
-                            -- Если avoid murder — проверяем что монета в стороне от убийцы
-                            if AutoFarmSystem.AvoidMurder and mpos then
-                                local murderToCoin = (mpos - coin.Position).Magnitude
-                                -- Монета слишком близко к убийце — пропускаем
-                                if murderToCoin < AVOID_DIST then
-                                    continue
-                                end
-                                -- Монета на пути к убийце — пропускаем
-                                local myToMurder = (mpos - hrp.Position)
-                                local myToCoin = (coin.Position - hrp.Position)
-                                if myToMurder.Magnitude > 1 and myToCoin.Magnitude > 1 then
-                                    local dot = myToMurder.Unit:Dot(myToCoin.Unit)
-                                    -- Если идём К убийце — пропускаем
-                                    if dot > 0.7 then
-                                        continue
-                                    end
-                                end
-                            end
-                            
-                            if d < bestDist then
-                                bestDist = d
-                                bestCoin = coin
-                            end
-                        end
-                        AutoFarmSystem.Target = bestCoin
-                    end
-                    
-                    -- ПРОВЕРКА: если убийца близко к текущей цели — меняем цель
-                    if AutoFarmSystem.AvoidMurder and mpos and AutoFarmSystem.Target then
-                        local coinToMurder = (mpos - AutoFarmSystem.Target.Position).Magnitude
-                        local myToMurder = (mpos - hrp.Position).Magnitude
-                        
-                        -- Если убийца рядом с монетой ИЛИ очень близко к нам — меняем цель
-                        if coinToMurder < AVOID_DIST * 0.8 or myToMurder < AVOID_DIST * 0.5 then
-                            -- Ищем другую монету подальше от убийцы
-                            local alternative = nil
-                            local altDist = math.huge
-                            for _, coin in ipairs(list) do
-                                if coin == AutoFarmSystem.Target then continue end
-                                local ctm = (mpos - coin.Position).Magnitude
-                                if ctm > AVOID_DIST then
-                                    local myDist = (coin.Position - hrp.Position).Magnitude
-                                    if myDist < altDist then
-                                        altDist = myDist
-                                        alternative = coin
-                                    end
-                                end
-                            end
-                            
-                            if alternative then
-                                AutoFarmSystem.Target = alternative
-                            end
-                        end
-                    end
-                    
-                    -- Двигаемся к цели
-                    if AutoFarmSystem.Target then
-                        set_farm_noclip(true)
-                        local cpos = AutoFarmSystem.Target.Position
-                        AutoFarmSystem.DownRefY = cpos.Y
-                        local dest = cpos
-                        
-                        if AutoFarmSystem.Mode == "Down" then
-                            local xz = flat_dist(hrp.Position, cpos)
-                            local safe_to_rise = (not mpos) or flat_dist(hrp.Position, mpos) > RISE_SAFE_DIST
-                            if xz <= DOWN_RISE_XZ and safe_to_rise then
-                                dest = cpos
-                                fire_touch(AutoFarmSystem.Target)
-                            else
-                                dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
-                            end
-                        elseif (cpos - hrp.Position).Magnitude <= 6 then
-                            fire_touch(AutoFarmSystem.Target)
-                        end
-                        
-                        dest = avoid_steer(hrp.Position, dest, mpos)
-                        farm_move(hrp, dest, 0.016)
-                    elseif mpos then
-                        -- Монет рядом нет, убийца близко — отходим
-                        set_farm_noclip(true)
-                        local away = Vector3.new(hrp.Position.X - mpos.X, 0, hrp.Position.Z - mpos.Z)
-                        if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
-                        away = away.Unit
-                        local y = hrp.Position.Y
-                        if AutoFarmSystem.Mode == "Down" and AutoFarmSystem.DownRefY then
-                            y = AutoFarmSystem.DownRefY - AutoFarmSystem.YDepth
-                        end
-                        farm_move(hrp, hrp.Position + away * 40 + Vector3.new(0, y - hrp.Position.Y, 0), 0.016)
-                    end
-                else
-                    AutoFarmSystem.Target = nil
-                    set_farm_noclip(false)
-                end
-            end
-        end
-        task.wait(0.03)
-    end
-end)
-
+    -- Собираем информацию о движении
+    local velocity = h.AssemblyLinearVelocity or Vector3.zero
+    local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+    local isMoving = speed > 2
+    local isStanding = speed <= 2
+    
+    -- Направление движения убийцы
+    local moveDir = speed > 0.5 and Vector3.new(velocity.X, 0, velocity.Z).Unit or Vector3.zero
+    
+    return {
+        player = m,
+        hrp = h,
+        pos = h.Position,
+        velocity = velocity,
+        speed = speed,
+        isMoving = isMoving,
+        isStanding = isStanding,
+        moveDir = moveDir,
+    }
+end
+         
 -- ─── Touch монеты ──────────────────────────────────────────
 local function touch_targets(coin)
     local list = {}
@@ -3587,7 +3466,6 @@ end
 Players.PlayerAdded:Connect(aaUpdateDropdowns)
 Players.PlayerRemoving:Connect(aaUpdateDropdowns)
 
-
 -- ═══════════════════════════════════════════════════════════════
 -- SPIN BOT (Крутилка как в CS:GO)
 -- ═══════════════════════════════════════════════════════════════
@@ -3754,7 +3632,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
-
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 7: SETTINGS
 -- ═══════════════════════════════════════════════════════════════
@@ -3799,18 +3676,6 @@ task.spawn(function()
     while true do
         task.wait(0.5)
 
-local function GetRole(player, includeSelf)
-    if not player then return "Unknown" end
-    if player == LocalPlayer and not includeSelf then return "Unknown" end
-    local char = SafeGetCharacter(player)
-    if not char then return "Unknown" end
-    local backpack = player:FindFirstChild("Backpack")
-    local hasKnife = (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife")
-    local hasGun = (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun")
-    if hasKnife then return "Murderer" end
-    if hasGun then return "Sheriff" end
-    return "Innocent"
-end
         -- Проверяем показались ли роли
         local murderer = nil
         local sheriff = nil
@@ -4042,6 +3907,200 @@ task.spawn(function()
                 end
             end
         end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO FARM LOOP (Smart Avoid Murder)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    local lastMurdererInfo = nil
+    local lastMurdererUpdate = 0
+    
+    while true do
+        if AutoFarmSystem.Enabled then
+            local hrp = farm_hrp()
+            if hrp then
+                local list = available_coins()
+                
+                local function finish()
+                    AutoFarmSystem.Target = nil
+                    set_farm_noclip(false)
+                    if AutoFarmSystem.AutoReset then
+                        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+                        if hum then pcall(function() hum.Health = 0 end) end
+                    end
+                end
+                
+                if coin_bags_full() then
+                    finish()
+                    task.wait(1)
+                    continue
+                end
+                
+                if #list > 0 then
+                    -- Получаем инфу об убийце (кеш 0.3 сек)
+                    local mInfo = nil
+                    if AutoFarmSystem.AvoidMurder then
+                        local now = os.clock()
+                        if now - lastMurdererUpdate > 0.3 then
+                            lastMurdererUpdate = now
+                            mInfo = smart_murderer_info()
+                            lastMurdererInfo = mInfo
+                        else
+                            mInfo = lastMurdererInfo
+                        end
+                    end
+                    
+                    local mpos = mInfo and mInfo.pos or nil
+                    
+                    -- Умный выбор цели
+                    if not AutoFarmSystem.Target or not coin_available(AutoFarmSystem.Target) then
+                        local bestCoin, bestDist = nil, math.huge
+                        
+                        for _, coin in ipairs(list) do
+                            local d = (coin.Position - hrp.Position).Magnitude
+                            
+                            -- Если avoid включен — фильтруем монеты
+                            if AutoFarmSystem.AvoidMurder and mInfo then
+                                local murderToCoin = (mInfo.pos - coin.Position).Magnitude
+                                
+                                -- 1. Монета слишком близко к убийце — пропускаем
+                                if murderToCoin < AVOID_DIST then
+                                    continue
+                                end
+                                
+                                -- 2. Монета НА ПУТИ движения убийцы — пропускаем
+                                if mInfo.isMoving and mInfo.moveDir.Magnitude > 0.5 then
+                                    local myToCoin = (coin.Position - hrp.Position)
+                                    if myToCoin.Magnitude > 1 then
+                                        local dot = mInfo.moveDir:Dot(myToCoin.Unit)
+                                        -- Если идём в ту же сторону что и убийца — пропускаем
+                                        if dot > 0.6 then
+                                            continue
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            if d < bestDist then
+                                bestDist = d
+                                bestCoin = coin
+                            end
+                        end
+                        
+                        AutoFarmSystem.Target = bestCoin
+                    end
+                    
+                    -- ПРОВЕРКА: убийца идёт/стоит рядом с нашей целью → меняем
+                    if AutoFarmSystem.AvoidMurder and mInfo and AutoFarmSystem.Target then
+                        local coinToMurder = (mInfo.pos - AutoFarmSystem.Target.Position).Magnitude
+                        local myToMurder = (mInfo.pos - hrp.Position).Magnitude
+                        
+                        local needSwitch = false
+                        
+                        -- Убийца СТОИТ рядом с нашей монетой
+                        if mInfo.isStanding and coinToMurder < AVOID_DIST * 0.9 then
+                            needSwitch = true
+                        end
+                        
+                        -- Убийца ИДЁТ к нашей монете
+                        if mInfo.isMoving and coinToMurder < AVOID_DIST then
+                            local murderToCoin = (AutoFarmSystem.Target.Position - mInfo.pos)
+                            if murderToCoin.Magnitude > 1 then
+                                local dot = mInfo.moveDir:Dot(murderToCoin.Unit)
+                                if dot > 0.7 then
+                                    needSwitch = true
+                                end
+                            end
+                        end
+                        
+                        -- Убийца ОЧЕНЬ близко к нам
+                        if myToMurder < AVOID_DIST * 0.6 then
+                            needSwitch = true
+                        end
+                        
+                        if needSwitch then
+                            -- Ищем альтернативную монету
+                            local alternative = nil
+                            local altScore = -math.huge
+                            
+                            for _, coin in ipairs(list) do
+                                if coin == AutoFarmSystem.Target then continue end
+                                
+                                local ctm = (mInfo.pos - coin.Position).Magnitude
+                                local myd = (coin.Position - hrp.Position).Magnitude
+                                
+                                -- Монета должна быть далеко от убийцы
+                                if ctm > AVOID_DIST then
+                                    -- Считаем оценку: ближе к нам + дальше от убийцы = лучше
+                                    local score = (1 / math.max(myd, 1)) * 100 + ctm * 0.5
+                                    
+                                    -- Проверяем направление движения убийцы
+                                    if mInfo.isMoving then
+                                        local myToCoin = (coin.Position - hrp.Position)
+                                        if myToCoin.Magnitude > 1 then
+                                            local dot = mInfo.moveDir:Dot(myToCoin.Unit)
+                                            -- Отрицательный dot = идём в противоположную сторону от убийцы
+                                            score = score + dot * 30
+                                        end
+                                    end
+                                    
+                                    if score > altScore then
+                                        altScore = score
+                                        alternative = coin
+                                    end
+                                end
+                            end
+                            
+                            if alternative then
+                                AutoFarmSystem.Target = alternative
+                            end
+                        end
+                    end
+                    
+                    -- Двигаемся к цели
+                    if AutoFarmSystem.Target then
+                        set_farm_noclip(true)
+                        local cpos = AutoFarmSystem.Target.Position
+                        AutoFarmSystem.DownRefY = cpos.Y
+                        local dest = cpos
+                        
+                        if AutoFarmSystem.Mode == "Down" then
+                            local xz = flat_dist(hrp.Position, cpos)
+                            local safe_to_rise = (not mpos) or flat_dist(hrp.Position, mpos) > RISE_SAFE_DIST
+                            if xz <= DOWN_RISE_XZ and safe_to_rise then
+                                dest = cpos
+                                fire_touch(AutoFarmSystem.Target)
+                            else
+                                dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
+                            end
+                        elseif (cpos - hrp.Position).Magnitude <= 6 then
+                            fire_touch(AutoFarmSystem.Target)
+                        end
+                        
+                        dest = avoid_steer(hrp.Position, dest, mpos)
+                        farm_move(hrp, dest, 0.016)
+                    elseif mpos then
+                        -- Нет монет — отходим от убийцы
+                        set_farm_noclip(true)
+                        local away = Vector3.new(hrp.Position.X - mpos.X, 0, hrp.Position.Z - mpos.Z)
+                        if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
+                        away = away.Unit
+                        local y = hrp.Position.Y
+                        if AutoFarmSystem.Mode == "Down" and AutoFarmSystem.DownRefY then
+                            y = AutoFarmSystem.DownRefY - AutoFarmSystem.YDepth
+                        end
+                        farm_move(hrp, hrp.Position + away * 40 + Vector3.new(0, y - hrp.Position.Y, 0), 0.016)
+                    end
+                else
+                    AutoFarmSystem.Target = nil
+                    set_farm_noclip(false)
+                end
+            end
+        end
+        task.wait(0.03)
     end
 end)
 
