@@ -1,9 +1,8 @@
 --[[
-    Crows Hub | FULL v9.4
+    Crows Hub | FULL v9.5
     GUI: Crows Hub (Fluent)
-    Фиксы: синтаксис JumpSlider ( причина "attempt to call a nil value" )
-    Удалено: Throw Knife (все трекеры/предикт)
-    Новое: вкладка Extra — Anti-Aim (Spinbot, Jitter, Face Away)
+    Новое: Force Shoot / Wallbang — пуля летит из-за спины Murderer и попадает
+    Silent-хук через __namecall + ручной режим + автоскан ремоута гана
 ]]
 
 -- Load Fluent UI
@@ -25,6 +24,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local realFireTouch = (type(firetouchinterest) == "function") and firetouchinterest or nil
+local realHookNamecall = (type(hookmetamethod) == "function") and hookmetamethod or nil
 
 getgenv().CWH_Unloaded = false
 
@@ -128,7 +128,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
-    SubTitle = "v9.4 MM2 by crowshubdev",
+    SubTitle = "v9.5 MM2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = true,
@@ -413,7 +413,6 @@ Tabs.Main:AddToggle("JumpToggle", { Title = "Enable JumpPower", Default = false 
         end
     end)
 
--- ФИКС: здесь была пропущена } — причина ошибки "attempt to call a nil value"
 Tabs.Main:AddSlider("JumpSlider", {
     Title = "JumpPower",
     Default = 60, Min = 50, Max = 300, Rounding = 0,
@@ -862,7 +861,193 @@ Tabs.World:AddToggle("FullBright", { Title = "Full Bright", Default = false })
     end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 4: COMBAT — KILL AURA
+-- GUN HELPERS (общие для Force Shoot)
+-- ═══════════════════════════════════════════════════════════════
+local function getGun()
+    local char = SafeGetCharacter(LocalPlayer)
+    if char then
+        local eq = char:FindFirstChild("Gun")
+        if eq then return eq, true end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local stored = bp:FindFirstChild("Gun")
+        if stored then return stored, false end
+    end
+    return nil, false
+end
+
+-- Автоскан: ищем RemoteEvent выстрела внутри гана
+local discoveredShotRemote = nil
+
+local function scanGunRemote()
+    local gun = getGun()
+    if not gun then return nil end
+    -- прямой ребёнок
+    local direct = gun:FindFirstChildWhichIsA("RemoteEvent")
+    if direct then
+        discoveredShotRemote = direct
+        return direct
+    end
+    -- в подпапках (Events и т.п.)
+    for _, d in ipairs(gun:GetDescendants()) do
+        if d:IsA("RemoteEvent") then
+            discoveredShotRemote = d
+            return d
+        end
+    end
+    return nil
+end
+
+-- Пере-скан при экипировке гана
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        local gun = getGun()
+        if gun and (not discoveredShotRemote or discoveredShotRemote.Parent ~= gun) then
+            local found = scanGunRemote()
+            if found then
+                Notify("Force Shoot", "Ремоут найден: " .. found:GetFullName():match("[^.]+$"), nil, 4)
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- FORCE SHOOT / WALLBANG
+-- Origin = точка ЗА СПИНОЙ Murderer, направление = в его HRP.
+-- Murderer видит/получает пулю "сзади", сервер видит попадание.
+-- ═══════════════════════════════════════════════════════════════
+local ForceShoot = {
+    Enabled = false,     -- Silent: перехват ЛЮБОГО выстрела гана и подмена origin
+    Offset = 6,          -- дистанция за спиной murder
+    UseMurdererBack = true,  -- true = за спиной по LookVector, false = зеркально от меня
+    AutoFire = false,    -- авто-выстрел когда murder в радиусе
+    AutoRange = 100,
+    LastShot = 0,
+}
+
+-- Вычислить origin за спиной murder
+local function getBackOrigin(murHRP)
+    local murPos = murHRP.Position
+    if ForceShoot.UseMurdererBack then
+        -- за спиной = против LookVector murder
+        local look = murHRP.CFrame.LookVector
+        local flatLook = Vector3.new(look.X, 0, look.Z)
+        if flatLook.Magnitude < 0.05 then
+            return murPos + Vector3.new(0, 2, 0)
+        end
+        return murPos - flatLook.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
+    else
+        -- с противоположной от меня стороны
+        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        if not myHRP then return murPos + Vector3.new(0, 2, 0) end
+        local dir = (murPos - myHRP.Position)
+        dir = Vector3.new(dir.X, 0, dir.Z)
+        if dir.Magnitude < 0.05 then return murPos + Vector3.new(0, 2, 0) end
+        return murPos + dir.Unit * ForceShoot.Offset + Vector3.new(0, 1.5, 0)
+    end
+end
+
+-- Ручной force shot
+local function doForceShoot()
+    local gun, equipped = getGun()
+    if not gun then
+        Notify("Force Shoot", "No gun!", nil, 3)
+        return false
+    end
+
+    local remote = discoveredShotRemote or scanGunRemote()
+    if not remote then
+        Notify("Force Shoot", "Ремоут выстрела не найден в Gun", nil, 4)
+        return false
+    end
+
+    local mur = GetMurderer()
+    local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+    if not murHRP then
+        Notify("Force Shoot", "Murderer не найден", nil, 3)
+        return false
+    end
+
+    -- экипируем если надо
+    if not equipped then
+        local hum = SafeGetHumanoid(SafeGetCharacter(LocalPlayer))
+        if hum then
+            pcall(function() hum:EquipTool(gun) end)
+            task.wait(0.15)
+        end
+    end
+
+    local origin = getBackOrigin(murHRP)
+    local targetPos = murHRP.Position
+    local direction = (targetPos - origin).Unit * 500
+
+    -- пробуем типовые форматы аргументов
+    local attempts = {
+        function() remote:FireServer(origin, direction) end,
+        function() remote:FireServer(CFrame.new(origin, targetPos), direction) end,
+        function() remote:FireServer(origin, targetPos) end,
+        function() remote:FireServer(direction, origin) end,
+    }
+
+    for i, attempt in ipairs(attempts) do
+        local ok = pcall(attempt)
+        if ok then
+            Notify("Force Shoot", "Выстрел: " .. mur.Name .. " (формат " .. i .. ")", nil, 2)
+            ForceShoot.LastShot = os.clock()
+            return true
+        end
+    end
+
+    Notify("Force Shoot", "Ни один формат не подошёл — сниффни ремоут", nil, 5)
+    return false
+end
+
+-- Silent-хук: подменяем origin ЛЮБОГО выстрела через найденный ремоут
+if realHookNamecall then
+    local oldNamecall
+    oldNamecall = realHookNamecall(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer"
+            and ForceShoot.Enabled
+            and discoveredShotRemote
+            and self == discoveredShotRemote then
+
+            local mur = GetMurderer()
+            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+            if murHRP then
+                local origin = getBackOrigin(murHRP)
+                local targetPos = murHRP.Position
+                local direction = (targetPos - origin).Unit * 500
+                -- подменяем аргументы: origin/направление на точку за спиной
+                return oldNamecall(self, origin, direction)
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+end
+
+-- Авто-выстрел
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        if ForceShoot.AutoFire and discoveredShotRemote then
+            local mur = GetMurderer()
+            local murHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
+            local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+            if murHRP and myHRP then
+                local dist = (murHRP.Position - myHRP.Position).Magnitude
+                if dist <= ForceShoot.AutoRange and os.clock() - ForceShoot.LastShot > 1 then
+                    doForceShoot()
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 4: COMBAT — KILL AURA + FORCE SHOOT
 -- ═══════════════════════════════════════════════════════════════
 local function getKnife()
     local char = SafeGetCharacter(LocalPlayer)
@@ -1002,6 +1187,60 @@ Tabs.Combat:AddDropdown("KillAuraTarget", {
     Callback = function(Value) KillAuraSystem.Target = Value end
 })
 
+Tabs.Combat:AddSection("Force Shoot / Wallbang")
+
+Tabs.Combat:AddToggle("ForceShootSilent", {
+    Title = "Silent Force Shoot",
+    Description = "Перехватывает твой выстрел и бьёт из-за спины Murderer",
+    Default = false
+}):OnChanged(function(Value)
+    ForceShoot.Enabled = Value
+    if Value and not realHookNamecall then
+        Notify("Force Shoot", "Экзекутор без hookmetamethod — Silent недоступен, юзай кнопку", nil, 5)
+        ForceShoot.Enabled = false
+    elseif Value and not discoveredShotRemote then
+        Notify("Force Shoot", "Возьми Gun в руки — идёт скан ремоута...", nil, 4)
+    end
+end)
+
+Tabs.Combat:AddButton({
+    Title = "🔫 Force Shoot Now",
+    Description = "Ручной выстрел из-за спины Murderer",
+    Callback = doForceShoot
+})
+
+Tabs.Combat:AddToggle("ForceShootAuto", {
+    Title = "Auto Force Shoot",
+    Description = "Сам стреляет когда Murderer в радиусе",
+    Default = false
+}):OnChanged(function(Value) ForceShoot.AutoFire = Value end)
+
+Tabs.Combat:AddSlider("ForceShootAutoRange", {
+    Title = "Auto Range",
+    Default = 100, Min = 20, Max = 300, Rounding = 0,
+    Callback = function(Value) ForceShoot.AutoRange = Value end
+})
+
+Tabs.Combat:AddSlider("ForceShootOffset", {
+    Title = "Offset (за спиной, studs)",
+    Default = 6, Min = 2, Max = 25, Rounding = 0,
+    Callback = function(Value) ForceShoot.Offset = Value end
+})
+
+Tabs.Combat:AddDropdown("ForceShootSide", {
+    Title = "Origin Side",
+    Values = {"Murderer Back (по его взгляду)", "Opposite Side (от меня)"},
+    Default = "Murderer Back (по его взгляду)",
+    Callback = function(Value)
+        ForceShoot.UseMurdererBack = (Value == "Murderer Back (по его взгляду)")
+    end
+})
+
+Tabs.Combat:AddParagraph({
+    Title = "Как работает Force Shoot",
+    Content = "Origin выстрела ставится за спиной Murderer, направление — в него. Он получает пулю 'откуда-то сзади'. Silent перехватывает твой обычный выстрел и подменяет координаты. Кнопка стреляет вручную, Auto — сам при приближении. Если форматы аргументов не подошли — напиши, нужен снифф ремоута."
+})
+
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 5: AUTO FARM + AVOID MURDER
 -- ═══════════════════════════════════════════════════════════════
@@ -1075,7 +1314,6 @@ local function farmGoTo(coin, murPlayer)
             touchGrab(part, r)
         end
 
-        -- AVOID MURDER
         if FarmSystem.AvoidMurder and murPlayer and p then
             local mHRP = SafeGetHRP(SafeGetCharacter(murPlayer))
             if mHRP then
@@ -1209,15 +1447,14 @@ Tabs.Farm:AddParagraph({
 -- ═══════════════════════════════════════════════════════════════
 local AntiAim = {
     Spin = false,
-    SpinSpeed = 720,       -- градусов в секунду
+    SpinSpeed = 720,
     Jitter = false,
-    JitterPower = 8,       -- сила дёрганья (градусы разброса)
+    JitterPower = 8,
     FaceAway = false,
     Rotation = 0,
     LastJitter = 0,
 }
 
--- Анти-аим не крутит персонажа, пока летит твин фарма (чтобы не спорить с ним)
 RunService.Heartbeat:Connect(function(dt)
     if not (AntiAim.Spin or AntiAim.Jitter or AntiAim.FaceAway) then return end
     if FarmSystem.Active then return end
@@ -1227,13 +1464,11 @@ RunService.Heartbeat:Connect(function(dt)
     local hum = SafeGetHumanoid(char)
     if not root or not hum or hum.Health <= 0 then return end
 
-    -- Spinbot: быстрое вращение
     if AntiAim.Spin then
         AntiAim.Rotation = (AntiAim.Rotation + AntiAim.SpinSpeed * dt) % 360
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.rad(AntiAim.Rotation), 0)
     end
 
-    -- Jitter: резкие случайные повороты
     if AntiAim.Jitter then
         local now = os.clock()
         if now - AntiAim.LastJitter > 0.1 then
@@ -1243,7 +1478,6 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
 
-    -- Face Away: всегда смотрит спиной к Murderer
     if AntiAim.FaceAway then
         local mur = GetMurderer()
         local mHRP = mur and SafeGetHRP(SafeGetCharacter(mur))
@@ -1300,7 +1534,7 @@ Tabs.Extra:AddToggle("AAFaceAway", {
 
 Tabs.Extra:AddParagraph({
     Title = "Про Anti-Aim",
-    Content = "Spinbot и Jitter сбивают прицеливание ножом в ближнем бою. Face Away полезен против Sheriff — сложнее попасть. Во время полёта к монете (авто-фарм) вращение приостанавливается, чтобы не конфликтовать с маршрутом."
+    Content = "Spinbot и Jitter сбивают прицеливание ножом в ближнем бою. Face Away полезен против Sheriff — сложнее попасть. Во время полёта к монете (авто-фарм) вращение приостанавливается."
 })
 
 -- ═══════════════════════════════════════════════════════════════
@@ -1342,4 +1576,4 @@ Tabs.Settings:AddButton({
     end
 })
 
-Notify("Crows Hub", "v9.4 загружен", "Throw Knife удалён, Extra/Anti-Aim готов", 5)
+Notify("Crows Hub", "v9.5 загружен", "Force Shoot готов — возьми Gun для скана ремоута", 5)
