@@ -53,38 +53,103 @@ local function SafeGetHRP(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
 end
 
-local function GetRole(player)
-    if not player or player == LocalPlayer then return "Unknown" end
-    local char = SafeGetCharacter(player)
-    if not char then return "Unknown" end
-    local backpack = player:FindFirstChild("Backpack")
-    local hasKnife = (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife")
-    local hasGun = (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun")
-    if hasKnife then return "Murderer" end
-    if hasGun then return "Sheriff" end
-    return "Innocent"
+-- ═══════════════════════════════════════════════════════════════
+-- ROLE DETECTION — SHITARO-style (PlayerDataChanged, без ключей)
+-- ═══════════════════════════════════════════════════════════════
+local ServerRoleData = {}
+
+do
+    task.spawn(function()
+        local ok, remotes = pcall(function()
+            return ReplicatedStorage:WaitForChild("Remotes", 8)
+        end)
+        if ok and remotes then
+            local gameplay = remotes:FindFirstChild("Gameplay") or remotes:FindFirstChild("Gameplay", true)
+            local pd = gameplay and gameplay:FindFirstChild("PlayerDataChanged")
+            if pd and pd:IsA("RemoteEvent") then
+                pd.OnClientEvent:Connect(function(data)
+                    if type(data) == "table" then ServerRoleData = data end
+                end)
+            end
+        end
+    end)
+end
+
+local function getRoundTimer()
+    local ok, t = pcall(function()
+        return ReplicatedStorage.Remotes.Extras.GetTimer:InvokeServer()
+    end)
+    if ok and type(t) == "number" then return t end
+    return nil
+end
+
+local roleCache = {}
+local roleCacheTime = 0
+
+local function getCachedRole(plr)
+    local now = os.clock()
+    if now - roleCacheTime > 0.4 then
+        roleCache = {}
+        roleCacheTime = now
+    end
+    if not roleCache[plr] then
+        local role = "Unknown"
+        -- 1) серверные данные (SHITARO-style)
+        local sd = ServerRoleData[plr.Name]
+        if type(sd) == "table" and sd.Role then
+            if sd.Role == "Hero" then
+                role = "Sheriff"
+            elseif sd.Role == "Sheriff" and sd.Dead then
+                role = "Innocent"
+            else
+                role = sd.Role
+            end
+        else
+            -- 2) фоллбэк: проверка тулзов
+            local char = plr and plr.Character
+            if char then
+                local backpack = plr:FindFirstChild("Backpack")
+                if (backpack and backpack:FindFirstChild("Knife")) or char:FindFirstChild("Knife") then
+                    role = "Murderer"
+                elseif (backpack and backpack:FindFirstChild("Gun")) or char:FindFirstChild("Gun") then
+                    role = "Sheriff"
+                else
+                    role = "Innocent"
+                end
+            end
+        end
+        roleCache[plr] = role
+    end
+    return roleCache[plr]
 end
 
 local function GetRoleColor(role)
     local colors = {
         Murderer = Color3.fromRGB(255, 50, 50),
-        Sheriff = Color3.fromRGB(50, 100, 255),
+        Sheriff  = Color3.fromRGB(50, 100, 255),
         Innocent = Color3.fromRGB(50, 255, 50),
-        Unknown = Color3.fromRGB(150, 150, 150)
+        Unknown  = Color3.fromRGB(150, 150, 150)
     }
     return colors[role] or colors.Unknown
 end
 
+-- FIX: GetRole с includeSelf для Server Status
+local function GetRole(player, includeSelf)
+    if not player then return "Unknown" end
+    if player == LocalPlayer and not includeSelf then return "Unknown" end
+    return getCachedRole(player)
+end
+
 local function GetMurderer()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and GetRole(plr) == "Murderer" then return plr end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and getCachedRole(plr) == "Murderer" then return plr end
     end
     return nil
 end
 
 local function GetSheriff()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and GetRole(plr) == "Sheriff" then return plr end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and getCachedRole(plr) == "Sheriff" then return plr end
     end
     return nil
 end
@@ -264,7 +329,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ROLE DETECTION
+-- ROLE DETECTION LOOP (сброс по таймеру раунда — из SHITARO)
 -- ═══════════════════════════════════════════════════════════════
 local NotifiedRoles = {}
 
@@ -272,21 +337,30 @@ local function ResetRoleNotifications()
     NotifiedRoles = {}
 end
 
-local function DetectRoles()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        local role = GetRole(player)
-        if role == "Murderer" and NotifiedRoles[player] ~= "Murderer" then
-            NotifiedRoles[player] = "Murderer"
-            RoleDetectSound:Play()
-            Notify("🩸 Murderer", player.Name .. " is the Murderer!", nil, 8)
-        elseif role == "Sheriff" and NotifiedRoles[player] ~= "Sheriff" then
-            NotifiedRoles[player] = "Sheriff"
-            RoleDetectSound:Play()
-            Notify("🔫 Sheriff", player.Name .. " is the Sheriff!", nil, 8)
-        end
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        pcall(function()
+            local t = getRoundTimer()
+            if t ~= nil and t <= 1 then
+                NotifiedRoles = {}
+            end
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                local role = getCachedRole(player)
+                if role == "Murderer" and NotifiedRoles[player] ~= "Murderer" then
+                    NotifiedRoles[player] = "Murderer"
+                    RoleDetectSound:Play()
+                    Notify("🩸 Murderer", player.Name .. " is the Murderer!", nil, 8)
+                elseif role == "Sheriff" and NotifiedRoles[player] ~= "Sheriff" then
+                    NotifiedRoles[player] = "Sheriff"
+                    RoleDetectSound:Play()
+                    Notify("🔫 Sheriff", player.Name .. " is the Sheriff!", nil, 8)
+                end
+            end
+        end)
+        task.wait(0.5)
     end
-end
+end)
 
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 1: MAIN (ТВОЙ + ФИКС СКОРОСТИ)
@@ -322,7 +396,7 @@ SmoothFOVToggle:OnChanged(function(Value) SmoothFOV = Value end)
 
 Tabs.Main:AddSlider("FOVSlider", {
     Title = "FOV Value",
-    Default = 120, Min = 30, Max = 140, Rounding = 0,
+    Default = 120, Min = 30, Max = 200, Rounding = 0,
     Callback = function(Value)
         TargetFOV = Value
         if FOVEnabled and not SmoothFOV then Camera.FieldOfView = TargetFOV end
@@ -520,50 +594,38 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS (РАБОЧИЙ ESP)
 -- ═══════════════════════════════════════════════════════════════
--- ═══════════════════════════════════════════════════════════════
--- ESP (взято из Vision Hub)
--- ═══════════════════════════════════════════════════════════════
 
 local ESPConfig = {
-    Players = false,
-    Names = false,
-    Distance = false,
-    Health = false
+    Players = false, Names = false,
+    Distance = false, Health = false,
+    GunDrop = false
 }
 
-local ESPStorage = {}
-
--- Создать Highlight для игрока
 local function createPlayerHighlight(player)
     local char = SafeGetCharacter(player)
     if not char then return end
     if char:FindFirstChild("CrowsESP_HL") then return end
-    
     local hl = Instance.new("Highlight")
     hl.Name = "CrowsESP_HL"
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.FillTransparency = 0.6
     hl.OutlineTransparency = 0.2
-    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
     hl.Parent = char
 end
 
--- Создать Billboard с именем
 local function createPlayerNameTag(player)
     local char = SafeGetCharacter(player)
     if not char then return end
     local hrp = SafeGetHRP(char)
     if not hrp then return end
     if hrp:FindFirstChild("CrowsNameESP") then return end
-    
     local bg = Instance.new("BillboardGui")
     bg.Name = "CrowsNameESP"
     bg.Adornee = hrp
-    bg.Size = UDim2.new(0, 200, 0, 50)
+    bg.Size = UDim2.new(0, 200, 0, 60)
     bg.StudsOffset = Vector3.new(0, 3, 0)
     bg.AlwaysOnTop = true
     bg.Parent = hrp
-    
     local text = Instance.new("TextLabel")
     text.Name = "Label"
     text.BackgroundTransparency = 1
@@ -572,25 +634,30 @@ local function createPlayerNameTag(player)
     text.Font = Enum.Font.GothamBold
     text.TextColor3 = Color3.fromRGB(255, 255, 255)
     text.TextStrokeTransparency = 0
-    text.TextStrokeColor3 = Color3.new(0, 0, 0)
     text.Text = ""
     text.Parent = bg
 end
 
--- Обновление ESP
+local function removeESPFromChar(char)
+    if not char then return end
+    local hl = char:FindFirstChild("CrowsESP_HL")
+    if hl then hl:Destroy() end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+    if hrp then
+        local bg = hrp:FindFirstChild("CrowsNameESP")
+        if bg then bg:Destroy() end
+    end
+end
+
 local function updateESP()
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LocalPlayer then continue end
-        
         local char = SafeGetCharacter(plr)
         if not char then continue end
-        
-        -- Определяем цвет и роль
-        local role = GetRole(plr)
+        local role = getCachedRole(plr)
         local roleColor = GetRoleColor(role)
-        local roleName = role
-        
-        -- Highlight
+
         if ESPConfig.Players then
             createPlayerHighlight(plr)
             local hl = char:FindFirstChild("CrowsESP_HL")
@@ -603,9 +670,8 @@ local function updateESP()
             local hl = char:FindFirstChild("CrowsESP_HL")
             if hl then hl.Enabled = false end
         end
-        
-        -- NameTag
-        if ESPConfig.Names or ESPConfig.Distance then
+
+        if ESPConfig.Names or ESPConfig.Distance or ESPConfig.Health then
             createPlayerNameTag(plr)
             local hrp = SafeGetHRP(char)
             local bg = hrp and hrp:FindFirstChild("CrowsNameESP")
@@ -613,19 +679,20 @@ local function updateESP()
                 bg.Enabled = true
                 local label = bg:FindFirstChild("Label")
                 if label then
-                    local text = ""
+                    local lines = {}
                     if ESPConfig.Names then
-                        text = plr.Name .. " [" .. roleName .. "]"
+                        table.insert(lines, plr.Name .. " [" .. role .. "]")
                     end
-                    if ESPConfig.Distance then
-                        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-                        if myHRP and hrp then
-                            local dist = math.floor((myHRP.Position - hrp.Position).Magnitude)
-                            if text ~= "" then text = text .. "\n" end
-                            text = text .. dist .. " studs"
+                    if ESPConfig.Health then
+                        local hum = SafeGetHumanoid(char)
+                        if hum then
+                            table.insert(lines, "HP: " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth))
                         end
                     end
-                    label.Text = text
+                    if ESPConfig.Distance and myHRP and hrp then
+                        table.insert(lines, math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs")
+                    end
+                    label.Text = table.concat(lines, "\n")
                     label.TextColor3 = roleColor
                 end
             end
@@ -637,65 +704,90 @@ local function updateESP()
     end
 end
 
--- Cleanup при выходе игрока
-local function cleanupPlayer(player)
-    local char = SafeGetCharacter(player)
-    if char then
-        local hl = char:FindFirstChild("CrowsESP_HL")
-        if hl then hl:Destroy() end
-        local hrp = SafeGetHRP(char)
-        if hrp then
-            local bg = hrp:FindFirstChild("CrowsNameESP")
-            if bg then bg:Destroy() end
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        if ESPConfig.Players or ESPConfig.Names or ESPConfig.Distance or ESPConfig.Health then
+            pcall(updateESP)
         end
-    end
-end
-
--- Главный loop
-RunService.RenderStepped:Connect(function()
-    if ESPConfig.Players or ESPConfig.Names or ESPConfig.Distance then
-        pcall(updateESP)
+        task.wait(0.2)
     end
 end)
 
-Players.PlayerRemoving:Connect(cleanupPlayer)
+-- GUN ESP (Adornee в workspace — работает с Model и BasePart)
+local GunHL = nil
 
--- ═══════════════════════════════════════════════════════════════
--- GUI для ESP
--- ═══════════════════════════════════════════════════════════════
+local function getGunDrop()
+    local map = getMap()
+    local drop = map and map:FindFirstChild("GunDrop", true)
+    if drop and (drop:IsA("BasePart") or drop:IsA("Model")) then
+        return drop
+    end
+    return nil
+end
+
+task.spawn(function()
+    while not getgenv().CWH_Unloaded do
+        pcall(function()
+            local drop = getGunDrop()
+            if ESPConfig.GunDrop and drop then
+                if not GunHL or not GunHL.Parent then
+                    GunHL = Instance.new("Highlight")
+                    GunHL.Name = "CrowsGunHL"
+                    GunHL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    GunHL.FillColor = Color3.fromRGB(255, 215, 0)
+                    GunHL.OutlineColor = Color3.fromRGB(255, 215, 0)
+                    GunHL.FillTransparency = 0.4
+                    GunHL.OutlineTransparency = 0
+                end
+                GunHL.Adornee = drop
+                GunHL.Parent = workspace
+            else
+                if GunHL then
+                    GunHL:Destroy()
+                    GunHL = nil
+                end
+            end
+        end)
+        task.wait(0.4)
+    end
+end)
 
 Tabs.Visuals:AddSection("Player ESP")
 
-local PlayerESPToggle = Tabs.Visuals:AddToggle("PlayerESP", { 
-    Title = "Player ESP (Roles)", 
-    Default = false 
-})
-PlayerESPToggle:OnChanged(function(Value)
-    ESPConfig.Players = Value
-    if not Value then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            local char = SafeGetCharacter(plr)
-            if char then
-                local hl = char:FindFirstChild("CrowsESP_HL")
+Tabs.Visuals:AddToggle("PlayerESP", { Title = "Player ESP (Roles)", Default = false })
+    :OnChanged(function(Value)
+        ESPConfig.Players = Value
+        if not Value then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                local char = SafeGetCharacter(plr)
+                local hl = char and char:FindFirstChild("CrowsESP_HL")
                 if hl then hl.Enabled = false end
             end
         end
+    end)
+
+Tabs.Visuals:AddToggle("NameESP", { Title = "Show Names & Roles", Default = false })
+    :OnChanged(function(Value) ESPConfig.Names = Value end)
+
+Tabs.Visuals:AddToggle("HealthESP", { Title = "Show Health", Default = false })
+    :OnChanged(function(Value) ESPConfig.Health = Value end)
+
+Tabs.Visuals:AddToggle("DistESP", { Title = "Show Distance", Default = false })
+    :OnChanged(function(Value) ESPConfig.Distance = Value end)
+
+Tabs.Visuals:AddSection("Gun ESP")
+
+Tabs.Visuals:AddToggle("GunDropESP", {
+    Title = "Gun Drop ESP",
+    Description = "Подсвечивает пушку когда Sheriff умер",
+    Default = false
+}):OnChanged(function(Value)
+    ESPConfig.GunDrop = Value
+    if not Value and GunHL then
+        GunHL:Destroy()
+        GunHL = nil
     end
 end)
-
-local NameESPToggle = Tabs.Visuals:AddToggle("NameESP", { 
-    Title = "Show Names & Roles", 
-    Default = false 
-})
-NameESPToggle:OnChanged(function(Value) ESPConfig.Names = Value end)
-
-local DistESPToggle = Tabs.Visuals:AddToggle("DistESP", { 
-    Title = "Show Distance", 
-    Default = false 
-})
-DistESPToggle:OnChanged(function(Value) ESPConfig.Distance = Value end)
-
- 
 
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 3: WORLD
@@ -3448,20 +3540,6 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ОПТИМИЗАЦИЯ: ESP (вместо RenderStepped → 5 FPS)
--- ═══════════════════════════════════════════════════════════════
-
-local espTick = 0
-RunService.Heartbeat:Connect(function(dt)
-    espTick = espTick + dt
-    if espTick < 0.2 then return end  -- 5 раз/сек
-    espTick = 0
-    if ESPConfig.Players or ESPConfig.Names or ESPConfig.Distance then
-        pcall(updateESP)
-    end
-end)
-
--- ═══════════════════════════════════════════════════════════════
 -- ОПТИМИЗАЦИЯ: Speed/Jump (вместо 2 Heartbeat → 1)
 -- ═══════════════════════════════════════════════════════════════
 
@@ -3583,288 +3661,4 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling | Better auto farm | Optimization", 15)
-
--- ═══════════════════════════════════════════════════════════════
--- CROWS ESP v2 (добавка): мгновенные роли + уведомления + Gun ESP
--- Префикс CWH2_ — не конфликтует с основным ESP
--- ═══════════════════════════════════════════════════════════════
-
-local CWH2_Config = {
-    Players = false, Names = false,
-    Distance = false, Health = false,
-    GunDrop = false
-}
-
--- Серверные роли (SHITARO-style, без ключей) — роли видны СРАЗУ
-local CWH2_ServerRoles = {}
-do
-    task.spawn(function()
-        local ok, remotes = pcall(function()
-            return ReplicatedStorage:WaitForChild("Remotes", 8)
-        end)
-        if ok and remotes then
-            local gameplay = remotes:FindFirstChild("Gameplay") or remotes:FindFirstChild("Gameplay", true)
-            local pd = gameplay and gameplay:FindFirstChild("PlayerDataChanged")
-            if pd and pd:IsA("RemoteEvent") then
-                pd.OnClientEvent:Connect(function(data)
-                    if type(data) == "table" then CWH2_ServerRoles = data end
-                end)
-            end
-        end
-    end)
-end
-
-local CWH2_RoleCache = {}
-local CWH2_RoleCacheTime = 0
-
-local function CWH2_GetRole(plr)
-    local now = os.clock()
-    if now - CWH2_RoleCacheTime > 0.4 then
-        CWH2_RoleCache = {}
-        CWH2_RoleCacheTime = now
-    end
-    if not CWH2_RoleCache[plr] then
-        local role = "Unknown"
-        local sd = CWH2_ServerRoles[plr.Name]
-        if type(sd) == "table" and sd.Role then
-            if sd.Role == "Hero" then
-                role = "Sheriff"
-            elseif sd.Role == "Sheriff" and sd.Dead then
-                role = "Innocent"
-            else
-                role = sd.Role
-            end
-        else
-            local char = plr and plr.Character
-            if char then
-                local bp = plr:FindFirstChild("Backpack")
-                if (bp and bp:FindFirstChild("Knife")) or char:FindFirstChild("Knife") then
-                    role = "Murderer"
-                elseif (bp and bp:FindFirstChild("Gun")) or char:FindFirstChild("Gun") then
-                    role = "Sheriff"
-                else
-                    role = "Innocent"
-                end
-            end
-        end
-        CWH2_RoleCache[plr] = role
-    end
-    return CWH2_RoleCache[plr]
-end
-
-local function CWH2_Highlight(plr)
-    local char = SafeGetCharacter(plr)
-    if not char then return end
-    if char:FindFirstChild("CWH2_HL") then return end
-    local hl = Instance.new("Highlight")
-    hl.Name = "CWH2_HL"
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.FillTransparency = 0.6
-    hl.OutlineTransparency = 0.2
-    hl.Parent = char
-end
-
-local function CWH2_NameTag(plr)
-    local char = SafeGetCharacter(plr)
-    if not char then return end
-    local hrp = SafeGetHRP(char)
-    if not hrp then return end
-    if hrp:FindFirstChild("CWH2_Tag") then return end
-    local bg = Instance.new("BillboardGui")
-    bg.Name = "CWH2_Tag"
-    bg.Adornee = hrp
-    bg.Size = UDim2.new(0, 200, 0, 60)
-    bg.StudsOffset = Vector3.new(0, 3, 0)
-    bg.AlwaysOnTop = true
-    bg.Parent = hrp
-    local text = Instance.new("TextLabel")
-    text.Name = "Label"
-    text.BackgroundTransparency = 1
-    text.Size = UDim2.new(1, 0, 1, 0)
-    text.TextSize = 14
-    text.Font = Enum.Font.GothamBold
-    text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    text.TextStrokeTransparency = 0
-    text.Text = ""
-    text.Parent = bg
-end
-
-local function CWH2_CleanupChar(char)
-    if not char then return end
-    local hl = char:FindFirstChild("CWH2_HL")
-    if hl then hl:Destroy() end
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-    if hrp then
-        local tag = hrp:FindFirstChild("CWH2_Tag")
-        if tag then tag:Destroy() end
-    end
-end
-
--- Главный луп ESP (0.2с — быстро и не жрёт FPS)
-task.spawn(function()
-    while true do
-        if CWH2_Config.Players or CWH2_Config.Names or CWH2_Config.Distance or CWH2_Config.Health then
-            pcall(function()
-                local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr == LocalPlayer then continue end
-                    local char = SafeGetCharacter(plr)
-                    if not char then continue end
-
-                    local role = CWH2_GetRole(plr)
-                    local color = GetRoleColor(role)
-
-                    if CWH2_Config.Players then
-                        CWH2_Highlight(plr)
-                        local hl = char:FindFirstChild("CWH2_HL")
-                        if hl then
-                            hl.FillColor = color
-                            hl.OutlineColor = color
-                            hl.Enabled = true
-                        end
-                    else
-                        local hl = char:FindFirstChild("CWH2_HL")
-                        if hl then hl.Enabled = false end
-                    end
-
-                    if CWH2_Config.Names or CWH2_Config.Distance or CWH2_Config.Health then
-                        CWH2_NameTag(plr)
-                        local hrp = SafeGetHRP(char)
-                        local bg = hrp and hrp:FindFirstChild("CWH2_Tag")
-                        if bg then
-                            bg.Enabled = true
-                            local label = bg:FindFirstChild("Label")
-                            if label then
-                                local lines = {}
-                                if CWH2_Config.Names then
-                                    table.insert(lines, plr.Name .. " [" .. role .. "]")
-                                end
-                                if CWH2_Config.Health then
-                                    local hum = SafeGetHumanoid(char)
-                                    if hum then
-                                        table.insert(lines, "HP: " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth))
-                                    end
-                                end
-                                if CWH2_Config.Distance and myHRP and hrp then
-                                    table.insert(lines, math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs")
-                                end
-                                label.Text = table.concat(lines, "\n")
-                                label.TextColor3 = color
-                            end
-                        end
-                    else
-                        local hrp = SafeGetHRP(char)
-                        local bg = hrp and hrp:FindFirstChild("CWH2_Tag")
-                        if bg then bg.Enabled = false end
-                    end
-                end
-            end)
-        end
-        task.wait(0.2)
-    end
-end)
-
-Players.PlayerRemoving:Connect(function(plr)
-    local char = SafeGetCharacter(plr)
-    if char then CWH2_CleanupChar(char) end
-end)
-
--- GUN DROP ESP (Adornee в workspace — работает с Model и BasePart)
-local CWH2_GunHL = nil
-
-task.spawn(function()
-    while true do
-        pcall(function()
-            local map = getMap()
-            local drop = map and map:FindFirstChild("GunDrop", true)
-            if CWH2_Config.GunDrop and drop and (drop:IsA("BasePart") or drop:IsA("Model")) then
-                if not CWH2_GunHL or not CWH2_GunHL.Parent then
-                    CWH2_GunHL = Instance.new("Highlight")
-                    CWH2_GunHL.Name = "CWH2_GunHL"
-                    CWH2_GunHL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    CWH2_GunHL.FillColor = Color3.fromRGB(255, 215, 0)
-                    CWH2_GunHL.OutlineColor = Color3.fromRGB(255, 215, 0)
-                    CWH2_GunHL.FillTransparency = 0.4
-                    CWH2_GunHL.OutlineTransparency = 0
-                end
-                CWH2_GunHL.Adornee = drop
-                CWH2_GunHL.Parent = workspace
-            else
-                if CWH2_GunHL then
-                    CWH2_GunHL:Destroy()
-                    CWH2_GunHL = nil
-                end
-            end
-        end)
-        task.wait(0.4)
-    end
-end)
-
--- УВЕДОМЛЕНИЯ О РОЛЯХ (мгновенные, сброс по таймеру раунда)
-local CWH2_Notified = {}
-
-task.spawn(function()
-    while true do
-        pcall(function()
-            local ok, t = pcall(function()
-                return ReplicatedStorage.Remotes.Extras.GetTimer:InvokeServer()
-            end)
-            if ok and type(t) == "number" and t <= 1 then
-                CWH2_Notified = {}
-            end
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr == LocalPlayer then continue end
-                local role = CWH2_GetRole(plr)
-                if role == "Murderer" and CWH2_Notified[plr] ~= "Murderer" then
-                    CWH2_Notified[plr] = "Murderer"
-                    RoleDetectSound:Play()
-                    Notify("🩸 Murderer", plr.Name .. " is the Murderer!", nil, 8)
-                elseif role == "Sheriff" and CWH2_Notified[plr] ~= "Sheriff" then
-                    CWH2_Notified[plr] = "Sheriff"
-                    RoleDetectSound:Play()
-                    Notify("🔫 Sheriff", plr.Name .. " is the Sheriff!", nil, 8)
-                end
-            end
-        end)
-        task.wait(0.5)
-    end
-end)
-
--- GUI (вкладка Visuals, отдельная секция)
-Tabs.Visuals:AddSection("Player ESP v2 (Crows)")
-
-Tabs.Visuals:AddToggle("CWH2_PlayerESP", { Title = "ESP v2: Roles Highlight", Default = false })
-    :OnChanged(function(Value)
-        CWH2_Config.Players = Value
-        if not Value then
-            for _, plr in ipairs(Players:GetPlayers()) do
-                local char = SafeGetCharacter(plr)
-                local hl = char and char:FindFirstChild("CWH2_HL")
-                if hl then hl.Enabled = false end
-            end
-        end
-    end)
-
-Tabs.Visuals:AddToggle("CWH2_NameESP", { Title = "ESP v2: Names & Roles", Default = false })
-    :OnChanged(function(Value) CWH2_Config.Names = Value end)
-
-Tabs.Visuals:AddToggle("CWH2_HealthESP", { Title = "ESP v2: Health", Default = false })
-    :OnChanged(function(Value) CWH2_Config.Health = Value end)
-
-Tabs.Visuals:AddToggle("CWH2_DistESP", { Title = "ESP v2: Distance", Default = false })
-    :OnChanged(function(Value) CWH2_Config.Distance = Value end)
-
-Tabs.Visuals:AddToggle("CWH2_GunESP", {
-    Title = "ESP v2: Gun Drop",
-    Description = "Подсветка пушки когда Sheriff умер",
-    Default = false
-}):OnChanged(function(Value)
-    CWH2_Config.GunDrop = Value
-    if not Value and CWH2_GunHL then
-        CWH2_GunHL:Destroy()
-        CWH2_GunHL = nil
-    end
-end)
-
-Notify("ESP v2", "Добавлен! Мгновенные роли + Gun ESP", nil, 5)
+Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling |New esp | Better auto farm | Optimization", 15)
