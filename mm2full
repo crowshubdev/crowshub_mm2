@@ -2720,13 +2720,14 @@ Tabs.Combat:AddButton({
     end
 }) 
 
-Tabs.Combat:AddSection("Dodge throw knife ")
 
 -- ═══════════════════════════════════════════════════════════════
 -- DODGE THROW KNIFE v2 (FIXED)
 -- Фикс: детекция ножей через пул + DescendantAdded (тега
 -- "ThrowingKnife" в MM2 нет), скорость через дельту позиций
 -- ═══════════════════════════════════════════════════════════════
+
+Tabs.Combat:AddSection("Dodge throw knife")
 
 local DodgeSystem = {
     AutoEnabled = false,
