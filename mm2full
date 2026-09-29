@@ -4,8 +4,51 @@
     Логика: SHITARO (без ключа/HWID) + Vision Hub
 ]]
 
--- Load Fluent UI
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+-- ═══════════════════════════════════════════════════════════════
+-- ЗАЩИЩЁННАЯ ЗАГРУЗКА FLUENT (ретраи + зеркала + проверка ответа)
+-- ═══════════════════════════════════════════════════════════════
+local Fluent = nil
+
+local CWH_FLUENT_URLS = {
+    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua",
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/main.lua",
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/main/main.lua",
+}
+
+for attempt = 1, 3 do
+    local loaded, result = pcall(function()
+        for _, url in ipairs(CWH_FLUENT_URLS) do
+            local ok, source = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if ok and type(source) == "string" and #source > 500
+                and not source:find("<!DOCTYPE", 1, true)
+                and not source:find("<html", 1, true) then
+                local chunk, err = loadstring(source, "Fluent")
+                if chunk then
+                    return chunk()
+                end
+                warn("[CWH] Fluent compile error: " .. tostring(err))
+            else
+                warn("[CWH] Fluent mirror failed: " .. url)
+            end
+        end
+        error("все зеркала Fluent недоступны")
+    end)
+
+    if loaded and type(result) == "table" then
+        Fluent = result
+        break
+    end
+
+    warn("[CWH] Попытка " .. attempt .. "/3 не удалась: " .. tostring(result))
+    task.wait(2)
+end
+
+if not Fluent or type(Fluent.CreateWindow) ~= "function" then
+    warn("[CWH] НЕ УДАЛОСЬ ЗАГРУЗИТЬ FLUENT. Причины: нет интернета / GitHub блокируется / экзекутор без HttpGet. Скрипт не запущен — но без краша.")
+    return
+end
 
 -- ═══════════════════════════════════════════════════════════════
 -- SERVICES
