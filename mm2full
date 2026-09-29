@@ -2198,6 +2198,297 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
+-- DODGE THROW KNIFE (уклонение от летящего ножа)
+-- ═══════════════════════════════════════════════════════════════
+
+local DodgeSystem = {
+    AutoEnabled = false,           -- Автоматическое уклонение
+    ManualEnabled = false,         -- Ручной режим (кнопка)
+    DodgeDistance = 40,            -- Дистанция телепорта (30-50)
+    DetectRadius = 100,            -- Радиус обнаружения ножей
+    Cooldown = 0.5,                -- Задержка между уклонениями
+    LastDodge = 0,
+    Connection = nil,
+}
+
+-- Получить все летящие ножи
+local function getThrowingKnives()
+    local cs = game:GetService("CollectionService")
+    local knives = {}
+    local ok, tagged = pcall(function() return cs:GetTagged("ThrowingKnife") end)
+    if not ok or type(tagged) ~= "table" then return knives end
+    
+    for _, inst in ipairs(tagged) do
+        if inst and inst.Parent then
+            table.insert(knives, inst)
+        end
+    end
+    return knives
+end
+
+-- Получить позицию ножа
+local function getKnifePosition(knife)
+    if not knife or not knife.Parent then return nil end
+    if knife:IsA("BasePart") then return knife.Position end
+    
+    local blade = knife:FindFirstChild("BladePosition")
+    if blade and blade:IsA("BasePart") then return blade.Position end
+    
+    local ok, pivot = pcall(function() return knife:GetPivot() end)
+    if ok and typeof(pivot) == "CFrame" then return pivot.Position end
+    
+    local first = knife:FindFirstChildWhichIsA("BasePart")
+    if first then return first.Position end
+    
+    return nil
+end
+
+-- Получить скорость ножа
+local function getKnifeVelocity(knife)
+    if not knife or not knife.Parent then return Vector3.zero end
+    if knife:IsA("BasePart") then
+        return knife.AssemblyLinearVelocity or knife.Velocity or Vector3.zero
+    end
+    local first = knife:FindFirstChildWhichIsA("BasePart")
+    if first then
+        return first.AssemblyLinearVelocity or first.Velocity or Vector3.zero
+    end
+    return Vector3.zero
+end
+
+-- Проверка что нож летит К НАМ
+local function isKnifeComingAtMe(knife, myPos)
+    local knifePos = getKnifePosition(knife)
+    if not knifePos then return false, nil end
+    
+    local knifeVel = getKnifeVelocity(knife)
+    if knifeVel.Magnitude < 5 then return false, nil end
+    
+    -- Вектор от ножа к нам
+    local toMe = myPos - knifePos
+    local dist = toMe.Magnitude
+    if dist < 3 or dist > DodgeSystem.DetectRadius then return false, nil end
+    
+    -- Направление движения ножа
+    local knifeDir = knifeVel.Unit
+    local toMeDir = toMe.Unit
+    
+    -- Dot product > 0.7 значит нож летит примерно к нам
+    local dot = knifeDir:Dot(toMeDir)
+    if dot < 0.7 then return false, nil end
+    
+    -- Расстояние от нашей позиции до линии траектории ножа
+    -- Если маленькое — нож летит прямо в нас
+    local perpDist = (toMe - knifeDir * (toMe:Dot(knifeDir))).Magnitude
+    if perpDist > 6 then return false, nil end
+    
+    return true, knifePos
+end
+
+-- Получить направление для уклонения
+local function getDodgeDirection(knife, myPos)
+    local knifePos = getKnifePosition(knife)
+    if not knifePos then return Vector3.zero end
+    
+    local knifeVel = getKnifeVelocity(knife)
+    local knifeDir = knifeVel.Magnitude > 1 and knifeVel.Unit or Vector3.new(0, 0, 1)
+    
+    -- Перпендикуляр к направлению ножа (в сторону от него)
+    local perp = Vector3.new(-knifeDir.Z, 0, knifeDir.X)
+    if perp.Magnitude < 0.1 then
+        perp = Vector3.new(1, 0, 0)
+    end
+    perp = perp.Unit
+    
+    -- Выбираем сторону которая дальше от ножа
+    local toKnife = (knifePos - myPos)
+    local sideA = myPos + perp * DodgeSystem.DodgeDistance
+    local sideB = myPos - perp * DodgeSystem.DodgeDistance
+    
+    local distA = (sideA - knifePos).Magnitude
+    local distB = (sideB - knifePos).Magnitude
+    
+    if distA > distB then
+        return perp * DodgeSystem.DodgeDistance
+    else
+        return -perp * DodgeSystem.DodgeDistance
+    end
+end
+
+-- Уклонение от ножа
+local function doDodge()
+    local char = SafeGetCharacter(LocalPlayer)
+    local hrp = SafeGetHRP(char)
+    local hum = SafeGetHumanoid(char)
+    if not hrp or not hum then return false end
+    
+    -- Проверка кулдауна
+    local now = os.clock()
+    if now - DodgeSystem.LastDodge < DodgeSystem.Cooldown then return false end
+    
+    local myPos = hrp.Position
+    local knives = getThrowingKnives()
+    
+    for _, knife in ipairs(knives) do
+        local isComing, knifePos = isKnifeComingAtMe(knife, myPos)
+        if isComing then
+            -- Нашли опасный нож
+            local dodgeDir = getDodgeDirection(knife, myPos)
+            if dodgeDir.Magnitude > 0.1 then
+                -- Телепорт в сторону
+                hrp.CFrame = CFrame.new(myPos + dodgeDir)
+                DodgeSystem.LastDodge = now
+                Notify("Dodge", "🌀 Dodged knife!", nil, 2)
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Главный loop (для Auto)
+local function startDodgeLoop()
+    if DodgeSystem.Connection then
+        DodgeSystem.Connection:Disconnect()
+    end
+    
+    DodgeSystem.Connection = RunService.Heartbeat:Connect(function()
+        if not DodgeSystem.AutoEnabled then return end
+        pcall(doDodge)
+    end)
+end
+
+local function stopDodgeLoop()
+    if DodgeSystem.Connection then
+        DodgeSystem.Connection:Disconnect()
+        DodgeSystem.Connection = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════════════════════════════════
+
+Tabs.Combat:AddSection("Dodge Throw Knife")
+
+-- AUTO MODE
+local DodgeAutoToggle = Tabs.Combat:AddToggle("DodgeAutoToggle", {
+    Title = "🌀 Auto Dodge Throw Knife",
+    Description = "Автоматически уклоняется от летящего ножа",
+    Default = false
+})
+DodgeAutoToggle:OnChanged(function(Value)
+    DodgeSystem.AutoEnabled = Value
+    if Value then
+        startDodgeLoop()
+        Notify("Dodge", "🟢 Auto Dodge: ON", nil, 3)
+    else
+        stopDodgeLoop()
+        Notify("Dodge", "🔴 Auto Dodge: OFF", nil, 2)
+    end
+end)
+
+-- MANUAL MODE
+local DodgeManualToggle = Tabs.Combat:AddToggle("DodgeManualToggle", {
+    Title = "🎯 Enable Dodge (Manual)",
+    Description = "Показывает кнопку для ручного уклонения",
+    Default = false
+})
+DodgeManualToggle:OnChanged(function(Value)
+    DodgeSystem.ManualEnabled = Value
+    if Value then
+        Notify("Dodge", "🟢 Manual Dodge: ON", nil, 3)
+    else
+        Notify("Dodge", "🔴 Manual Dodge: OFF", nil, 2)
+    end
+end)
+
+-- DISTANCE SLIDER
+Tabs.Combat:AddSlider("DodgeDistance", {
+    Title = "Dodge Distance",
+    Description = "На сколько studs телепортироваться (30-50)",
+    Default = 40, Min = 30, Max = 50, Rounding = 0,
+    Callback = function(Value)
+        DodgeSystem.DodgeDistance = Value
+    end
+})
+
+-- DETECT RADIUS
+Tabs.Combat:AddSlider("DodgeDetectRadius", {
+    Title = "Detect Radius",
+    Description = "Радиус обнаружения летящих ножей",
+    Default = 100, Min = 30, Max = 200, Rounding = 0,
+    Callback = function(Value)
+        DodgeSystem.DetectRadius = Value
+    end
+})
+
+-- COOLDOWN
+Tabs.Combat:AddSlider("DodgeCooldown", {
+    Title = "Cooldown",
+    Description = "Задержка между уклонениями (сек)",
+    Default = 0.5, Min = 0.1, Max = 2, Rounding = 2,
+    Callback = function(Value)
+        DodgeSystem.Cooldown = Value
+    end
+})
+
+-- MANUAL BUTTON (плавающая кнопка на экране)
+local DodgeBtn = Instance.new("TextButton")
+DodgeBtn.Name = "CWH_DodgeBtn"
+DodgeBtn.Size = UDim2.new(0, 60, 0, 60)
+DodgeBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
+DodgeBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+DodgeBtn.BackgroundTransparency = 0.2
+DodgeBtn.Text = "🌀"
+DodgeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+DodgeBtn.TextSize = 25
+DodgeBtn.Font = Enum.Font.GothamBold
+DodgeBtn.Active = true
+DodgeBtn.Draggable = true
+DodgeBtn.Visible = false
+DodgeBtn.Parent = ScreenGui
+
+local DodgeBtnCorner = Instance.new("UICorner")
+DodgeBtnCorner.CornerRadius = UDim.new(1, 0)
+DodgeBtnCorner.Parent = DodgeBtn
+
+local DodgeBtnStroke = Instance.new("UIStroke")
+DodgeBtnStroke.Color = Color3.fromRGB(100, 200, 255)
+DodgeBtnStroke.Thickness = 2
+DodgeBtnStroke.Parent = DodgeBtn
+
+DodgeBtn.MouseButton1Click:Connect(function()
+    local ok = doDodge()
+    if not ok then
+        Notify("Dodge", "No incoming knife!", nil, 2)
+    end
+end)
+
+-- Loop отображения кнопки
+RunService.Heartbeat:Connect(function()
+    DodgeBtn.Visible = DodgeSystem.ManualEnabled
+end)
+
+-- Кнопка в GUI (альтернатива)
+Tabs.Combat:AddButton({
+    Title = "🌀 Dodge Now (Manual)",
+    Description = "Немедленно уклониться от летящего ножа",
+    Callback = function()
+        local ok = doDodge()
+        if not ok then
+            Notify("Dodge", "No incoming knife detected!", nil, 3)
+        end
+    end
+})
+
+-- Сброс при респавне
+LocalPlayer.CharacterAdded:Connect(function()
+    DodgeSystem.LastDodge = 0
+end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- FLING (взято из SHITARO)
 -- ═══════════════════════════════════════════════════════════════
 
