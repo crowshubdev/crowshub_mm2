@@ -2549,175 +2549,6 @@ LocalPlayer.CharacterAdded:Connect(function()
     getgenv().FLING_ACTIVE = 0
     fling_original_pos = nil
 end) 
--- ═══════════════════════════════════════════════════════════════
--- ANTI-FLING (улучшенный, отдельный модуль)
--- ═══════════════════════════════════════════════════════════════
-
-local AntiFling = {
-    Enabled = false,
-    ClearBodyMovers = true,     -- Удалять BodyVelocity у себя
-    DisableEnemyCollide = true, -- Убирать CanCollide у чужих
-    ResetVelocity = true,       -- Обнулять свою скорость при спайке
-    MaxVelocity = 500,          -- Порог скорости (если больше — спайк)
-    CheckInterval = 0.05,       -- Проверка 20 раз/сек
-    LastCheck = 0
-}
-
--- Основной loop
-RunService.Heartbeat:Connect(function(dt)
-    if not AntiFling.Enabled then return end
-    
-    AntiFling.LastCheck = AntiFling.LastCheck + dt
-    if AntiFling.LastCheck < AntiFling.CheckInterval then return end
-    AntiFling.LastCheck = 0
-    
-    local char = SafeGetCharacter(LocalPlayer)
-    if not char then return end
-    
-    local hrp = SafeGetHRP(char)
-    local hum = SafeGetHumanoid(char)
-    if not hrp then return end
-    
-    -- ═══ Защита 1: очистка BodyMovers у себя ═══
-    if AntiFling.ClearBodyMovers then
-        for _, obj in pairs(char:GetDescendants()) do
-            if obj:IsA("BodyVelocity") 
-                or obj:IsA("BodyAngularVelocity")
-                or obj:IsA("BodyThrust") 
-                or obj:IsA("BodyGyro")
-                or obj:IsA("LinearVelocity") 
-                or obj:IsA("AngularVelocity")
-                or obj:IsA("VectorForce") 
-                or obj:IsA("Torque") then
-                pcall(function() obj:Destroy() end)
-            end
-        end
-    end
-    
-    -- ═══ Защита 2: убираем CanCollide у чужих ═══
-    if AntiFling.DisableEnemyCollide then
-        for _, other in ipairs(Players:GetPlayers()) do
-            if other ~= LocalPlayer then
-                local oChar = SafeGetCharacter(other)
-                if oChar then
-                    for _, part in ipairs(oChar:GetChildren()) do
-                        if part:IsA("BasePart") and part.CanCollide then
-                            part.CanCollide = false
-                            -- Обнуляем скорость HRP чужого
-                            if part.Name == "HumanoidRootPart" then
-                                part.Velocity = Vector3.zero
-                                part.RotVelocity = Vector3.zero
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    -- ═══ Защита 3: сброс своей скорости при спайке ═══
-    if AntiFling.ResetVelocity and hrp then
-        local vel = hrp.AssemblyLinearVelocity or hrp.Velocity
-        local rot = hrp.AssemblyAngularVelocity or hrp.RotVelocity
-        
-        if vel and vel.Magnitude > AntiFling.MaxVelocity then
-            pcall(function()
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.Velocity = Vector3.zero
-            end)
-        end
-        
-        if rot and rot.Magnitude > AntiFling.MaxVelocity then
-            pcall(function()
-                hrp.AssemblyAngularVelocity = Vector3.zero
-                hrp.RotVelocity = Vector3.zero
-            end)
-        end
-    end
-    
-    -- ═══ Защита 4: если стоим на месте но двигаемся — фикс ═══
-    if hum and hrp then
-        local humanoidVel = hrp.Velocity
-        if humanoidVel and humanoidVel.Magnitude > 1000 then
-            pcall(function()
-                hrp.CFrame = CFrame.new(hrp.Position)
-                hrp.Velocity = Vector3.zero
-                hrp.RotVelocity = Vector3.zero
-            end)
-        end
-    end
-end)
-
--- ═══════════════════════════════════════════════════════════════
--- GUI для Anti-Fling
--- ═══════════════════════════════════════════════════════════════
-
-Tabs.Combat:AddSection("Anti-Fling (Защита)")
-
-local AntiFlingToggle = Tabs.Combat:AddToggle("AntiFlingToggle", {
-    Title = "Enable Anti-Fling",
-    Default = false
-})
-AntiFlingToggle:OnChanged(function(Value)
-    AntiFling.Enabled = Value
-    if Value then
-        Notify("Anti-Fling", "Enabled! You are protected.", nil, 3)
-    else
-        Notify("Anti-Fling", "Disabled.", nil, 2)
-    end
-end)
-
-Tabs.Combat:AddToggle("AntiFlingClearBodyMovers", {
-    Title = "Clear BodyMovers",
-    Description = "Удалять BodyVelocity/LinearVelocity у себя",
-    Default = true
-}):OnChanged(function(Value)
-    AntiFling.ClearBodyMovers = Value
-end)
-
-Tabs.Combat:AddToggle("AntiFlingDisableCollide", {
-    Title = "Disable Enemy Collide",
-    Description = "Убирать CanCollide у чужих частей",
-    Default = true
-}):OnChanged(function(Value)
-    AntiFling.DisableEnemyCollide = Value
-end)
-
-Tabs.Combat:AddToggle("AntiFlingResetVel", {
-    Title = "Reset Velocity Spike",
-    Description = "Обнулять скорость если она аномально высокая",
-    Default = true
-}):OnChanged(function(Value)
-    AntiFling.ResetVelocity = Value
-end)
-
-Tabs.Combat:AddSlider("AntiFlingMaxVel", {
-    Title = "Max Velocity Threshold",
-    Description = "Если скорость > этого значения — сброс",
-    Default = 500, Min = 100, Max = 2000, Rounding = 0,
-    Callback = function(Value)
-        AntiFling.MaxVelocity = Value
-    end
-})
-
--- Кнопка ручного сброса
-Tabs.Combat:AddButton({
-    Title = "🛑 Force Reset Velocity",
-    Description = "Мгновенно обнулить свою скорость (если флингнуло)",
-    Callback = function()
-        local char = SafeGetCharacter(LocalPlayer)
-        local hrp = SafeGetHRP(char)
-        if hrp then
-            pcall(function()
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.AssemblyAngularVelocity = Vector3.zero
-                hrp.Velocity = Vector3.zero
-                hrp.RotVelocity = Vector3.zero
-            end)
-            Notify("Anti-Fling", "Velocity reset!", nil, 2)
-        end
-    end
-}) 
 
 -- ═══════════════════════════════════════════════════════════════
 -- DODGE THROW KNIFE v2 (FIXED)
@@ -3043,6 +2874,176 @@ Tabs.Combat:AddButton({
 LocalPlayer.CharacterAdded:Connect(function()
     DodgeSystem.LastDodge = 0
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-FLING (улучшенный, отдельный модуль)
+-- ═══════════════════════════════════════════════════════════════
+
+local AntiFling = {
+    Enabled = false,
+    ClearBodyMovers = true,     -- Удалять BodyVelocity у себя
+    DisableEnemyCollide = true, -- Убирать CanCollide у чужих
+    ResetVelocity = true,       -- Обнулять свою скорость при спайке
+    MaxVelocity = 500,          -- Порог скорости (если больше — спайк)
+    CheckInterval = 0.05,       -- Проверка 20 раз/сек
+    LastCheck = 0
+}
+
+-- Основной loop
+RunService.Heartbeat:Connect(function(dt)
+    if not AntiFling.Enabled then return end
+    
+    AntiFling.LastCheck = AntiFling.LastCheck + dt
+    if AntiFling.LastCheck < AntiFling.CheckInterval then return end
+    AntiFling.LastCheck = 0
+    
+    local char = SafeGetCharacter(LocalPlayer)
+    if not char then return end
+    
+    local hrp = SafeGetHRP(char)
+    local hum = SafeGetHumanoid(char)
+    if not hrp then return end
+    
+    -- ═══ Защита 1: очистка BodyMovers у себя ═══
+    if AntiFling.ClearBodyMovers then
+        for _, obj in pairs(char:GetDescendants()) do
+            if obj:IsA("BodyVelocity") 
+                or obj:IsA("BodyAngularVelocity")
+                or obj:IsA("BodyThrust") 
+                or obj:IsA("BodyGyro")
+                or obj:IsA("LinearVelocity") 
+                or obj:IsA("AngularVelocity")
+                or obj:IsA("VectorForce") 
+                or obj:IsA("Torque") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+    
+    -- ═══ Защита 2: убираем CanCollide у чужих ═══
+    if AntiFling.DisableEnemyCollide then
+        for _, other in ipairs(Players:GetPlayers()) do
+            if other ~= LocalPlayer then
+                local oChar = SafeGetCharacter(other)
+                if oChar then
+                    for _, part in ipairs(oChar:GetChildren()) do
+                        if part:IsA("BasePart") and part.CanCollide then
+                            part.CanCollide = false
+                            -- Обнуляем скорость HRP чужого
+                            if part.Name == "HumanoidRootPart" then
+                                part.Velocity = Vector3.zero
+                                part.RotVelocity = Vector3.zero
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- ═══ Защита 3: сброс своей скорости при спайке ═══
+    if AntiFling.ResetVelocity and hrp then
+        local vel = hrp.AssemblyLinearVelocity or hrp.Velocity
+        local rot = hrp.AssemblyAngularVelocity or hrp.RotVelocity
+        
+        if vel and vel.Magnitude > AntiFling.MaxVelocity then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.Velocity = Vector3.zero
+            end)
+        end
+        
+        if rot and rot.Magnitude > AntiFling.MaxVelocity then
+            pcall(function()
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+        end
+    end
+    
+    -- ═══ Защита 4: если стоим на месте но двигаемся — фикс ═══
+    if hum and hrp then
+        local humanoidVel = hrp.Velocity
+        if humanoidVel and humanoidVel.Magnitude > 1000 then
+            pcall(function()
+                hrp.CFrame = CFrame.new(hrp.Position)
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUI для Anti-Fling
+-- ═══════════════════════════════════════════════════════════════
+
+Tabs.Combat:AddSection("Anti-Fling (Защита)")
+
+local AntiFlingToggle = Tabs.Combat:AddToggle("AntiFlingToggle", {
+    Title = "Enable Anti-Fling",
+    Default = false
+})
+AntiFlingToggle:OnChanged(function(Value)
+    AntiFling.Enabled = Value
+    if Value then
+        Notify("Anti-Fling", "Enabled! You are protected.", nil, 3)
+    else
+        Notify("Anti-Fling", "Disabled.", nil, 2)
+    end
+end)
+
+Tabs.Combat:AddToggle("AntiFlingClearBodyMovers", {
+    Title = "Clear BodyMovers",
+    Description = "Удалять BodyVelocity/LinearVelocity у себя",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.ClearBodyMovers = Value
+end)
+
+Tabs.Combat:AddToggle("AntiFlingDisableCollide", {
+    Title = "Disable Enemy Collide",
+    Description = "Убирать CanCollide у чужих частей",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.DisableEnemyCollide = Value
+end)
+
+Tabs.Combat:AddToggle("AntiFlingResetVel", {
+    Title = "Reset Velocity Spike",
+    Description = "Обнулять скорость если она аномально высокая",
+    Default = true
+}):OnChanged(function(Value)
+    AntiFling.ResetVelocity = Value
+end)
+
+Tabs.Combat:AddSlider("AntiFlingMaxVel", {
+    Title = "Max Velocity Threshold",
+    Description = "Если скорость > этого значения — сброс",
+    Default = 500, Min = 100, Max = 2000, Rounding = 0,
+    Callback = function(Value)
+        AntiFling.MaxVelocity = Value
+    end
+})
+
+-- Кнопка ручного сброса
+Tabs.Combat:AddButton({
+    Title = "🛑 Force Reset Velocity",
+    Description = "Мгновенно обнулить свою скорость (если флингнуло)",
+    Callback = function()
+        local char = SafeGetCharacter(LocalPlayer)
+        local hrp = SafeGetHRP(char)
+        if hrp then
+            pcall(function()
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+            Notify("Anti-Fling", "Velocity reset!", nil, 2)
+        end
+    end
+}) 
 
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 5: AUTO FARM
