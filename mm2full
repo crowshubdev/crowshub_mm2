@@ -2721,295 +2721,327 @@ Tabs.Combat:AddButton({
 }) 
 
 -- ═══════════════════════════════════════════════════════════════
--- DODGE THROW KNIFE (уклонение от летящего ножа)
+-- SILENT AIM v2 — режимы Simple / Pro / Hacker (wallbang)
+-- ВАЖНО: не включать одновременно со старым SilentSystem!
 -- ═══════════════════════════════════════════════════════════════
-Tabs.Comabt:AddSection("Dodge throw knife")
 
-local DodgeSystem = {
-    AutoEnabled = false,           -- Автоматическое уклонение
-    ManualEnabled = false,         -- Ручной режим (кнопка)
-    DodgeDistance = 40,            -- Дистанция телепорта (30-50)
-    DetectRadius = 100,            -- Радиус обнаружения ножей
-    Cooldown = 0.5,                -- Задержка между уклонениями
-    LastDodge = 0,
-    Connection = nil,
+local SilentAimV2 = {
+    Enabled = false,
+    Mode = "Simple",      -- Simple / Pro / Hacker
+    Target = "Murderer",  -- Murderer / Sheriff / Closest
+    Predict = true,
+    Range = 300,
 }
 
--- Получить все летящие ножи
-local function getThrowingKnives()
-    local cs = game:GetService("CollectionService")
-    local knives = {}
-    local ok, tagged = pcall(function() return cs:GetTagged("ThrowingKnife") end)
-    if not ok or type(tagged) ~= "table" then return knives end
-    
-    for _, inst in ipairs(tagged) do
-        if inst and inst.Parent then
-            table.insert(knives, inst)
-        end
-    end
-    return knives
+local CWH3_WS = nil
+local CWH3_OrigMouse = nil
+local CWH3_OrigTarget = nil
+local CWH3_Hooked = false
+
+local function CWH3_GetWeaponService()
+    if CWH3_WS then return CWH3_WS end
+    local ok, m = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("ClientServices", 10):WaitForChild("WeaponService", 10))
+    end)
+    if ok and type(m) == "table" then CWH3_WS = m end
+    return CWH3_WS
 end
 
--- Получить позицию ножа
-local function getKnifePosition(knife)
-    if not knife or not knife.Parent then return nil end
-    if knife:IsA("BasePart") then return knife.Position end
-    
-    local blade = knife:FindFirstChild("BladePosition")
-    if blade and blade:IsA("BasePart") then return blade.Position end
-    
-    local ok, pivot = pcall(function() return knife:GetPivot() end)
-    if ok and typeof(pivot) == "CFrame" then return pivot.Position end
-    
-    local first = knife:FindFirstChildWhichIsA("BasePart")
-    if first then return first.Position end
-    
-    return nil
-end
-
--- Получить скорость ножа
-local function getKnifeVelocity(knife)
-    if not knife or not knife.Parent then return Vector3.zero end
-    if knife:IsA("BasePart") then
-        return knife.AssemblyLinearVelocity or knife.Velocity or Vector3.zero
+local function CWH3_PickTarget()
+    if SilentAimV2.Target == "Murderer" then
+        return GetMurderer()
+    elseif SilentAimV2.Target == "Sheriff" then
+        return GetSheriff()
     end
-    local first = knife:FindFirstChildWhichIsA("BasePart")
-    if first then
-        return first.AssemblyLinearVelocity or first.Velocity or Vector3.zero
-    end
-    return Vector3.zero
-end
-
--- Проверка что нож летит К НАМ
-local function isKnifeComingAtMe(knife, myPos)
-    local knifePos = getKnifePosition(knife)
-    if not knifePos then return false, nil end
-    
-    local knifeVel = getKnifeVelocity(knife)
-    if knifeVel.Magnitude < 5 then return false, nil end
-    
-    -- Вектор от ножа к нам
-    local toMe = myPos - knifePos
-    local dist = toMe.Magnitude
-    if dist < 3 or dist > DodgeSystem.DetectRadius then return false, nil end
-    
-    -- Направление движения ножа
-    local knifeDir = knifeVel.Unit
-    local toMeDir = toMe.Unit
-    
-    -- Dot product > 0.7 значит нож летит примерно к нам
-    local dot = knifeDir:Dot(toMeDir)
-    if dot < 0.7 then return false, nil end
-    
-    -- Расстояние от нашей позиции до линии траектории ножа
-    -- Если маленькое — нож летит прямо в нас
-    local perpDist = (toMe - knifeDir * (toMe:Dot(knifeDir))).Magnitude
-    if perpDist > 6 then return false, nil end
-    
-    return true, knifePos
-end
-
--- Получить направление для уклонения
-local function getDodgeDirection(knife, myPos)
-    local knifePos = getKnifePosition(knife)
-    if not knifePos then return Vector3.zero end
-    
-    local knifeVel = getKnifeVelocity(knife)
-    local knifeDir = knifeVel.Magnitude > 1 and knifeVel.Unit or Vector3.new(0, 0, 1)
-    
-    -- Перпендикуляр к направлению ножа (в сторону от него)
-    local perp = Vector3.new(-knifeDir.Z, 0, knifeDir.X)
-    if perp.Magnitude < 0.1 then
-        perp = Vector3.new(1, 0, 0)
-    end
-    perp = perp.Unit
-    
-    -- Выбираем сторону которая дальше от ножа
-    local toKnife = (knifePos - myPos)
-    local sideA = myPos + perp * DodgeSystem.DodgeDistance
-    local sideB = myPos - perp * DodgeSystem.DodgeDistance
-    
-    local distA = (sideA - knifePos).Magnitude
-    local distB = (sideB - knifePos).Magnitude
-    
-    if distA > distB then
-        return perp * DodgeSystem.DodgeDistance
-    else
-        return -perp * DodgeSystem.DodgeDistance
-    end
-end
-
--- Уклонение от ножа
-local function doDodge()
-    local char = SafeGetCharacter(LocalPlayer)
-    local hrp = SafeGetHRP(char)
-    local hum = SafeGetHumanoid(char)
-    if not hrp or not hum then return false end
-    
-    -- Проверка кулдауна
-    local now = os.clock()
-    if now - DodgeSystem.LastDodge < DodgeSystem.Cooldown then return false end
-    
-    local myPos = hrp.Position
-    local knives = getThrowingKnives()
-    
-    for _, knife in ipairs(knives) do
-        local isComing, knifePos = isKnifeComingAtMe(knife, myPos)
-        if isComing then
-            -- Нашли опасный нож
-            local dodgeDir = getDodgeDirection(knife, myPos)
-            if dodgeDir.Magnitude > 0.1 then
-                -- Телепорт в сторону
-                hrp.CFrame = CFrame.new(myPos + dodgeDir)
-                DodgeSystem.LastDodge = now
-                Notify("Dodge", "🌀 Dodged knife!", nil, 2)
-                return true
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not myHRP then return nil end
+    local best, bd = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local h = p.Character and SafeGetHumanoid(p.Character)
+            local hrp = p.Character and SafeGetHRP(p.Character)
+            if h and h.Health > 0 and hrp then
+                local d = (hrp.Position - myHRP.Position).Magnitude
+                if d < bd then bd = d best = p end
             end
         end
     end
-    
-    return false
+    return best
 end
 
--- Главный loop (для Auto)
-local function startDodgeLoop()
-    if DodgeSystem.Connection then
-        DodgeSystem.Connection:Disconnect()
+local function CWH3_LosClear(from, tChar, to)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { LocalPlayer.Character }
+    local hit = workspace:Raycast(from, to - from, params)
+    if not hit then return true end
+    return hit.Instance and tChar and hit.Instance:IsDescendantOf(tChar)
+end
+
+local function CWH3_AimCFrame()
+    local target = CWH3_PickTarget()
+    if not target or not target.Character then return nil end
+    local tChar = target.Character
+    local part = tChar:FindFirstChild("Head")
+        or tChar:FindFirstChild("UpperTorso")
+        or tChar:FindFirstChild("Torso")
+        or tChar:FindFirstChild("HumanoidRootPart")
+    if not part then return nil end
+
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not myHRP then return nil end
+
+    local pos = part.Position
+    local dist = (pos - myHRP.Position).Magnitude
+
+    -- гейты по режимам
+    if SilentAimV2.Mode == "Simple" then
+        if dist > SilentAimV2.Range then return nil end
+        if not CWH3_LosClear(myHRP.Position, tChar, pos) then return nil end
+    elseif SilentAimV2.Mode == "Pro" then
+        if dist > SilentAimV2.Range then return nil end
     end
-    
-    DodgeSystem.Connection = RunService.Heartbeat:Connect(function()
-        if not DodgeSystem.AutoEnabled then return end
-        pcall(doDodge)
+    -- Hacker: без ограничений
+
+    if SilentAimV2.Predict then
+        local root = SafeGetHRP(tChar)
+        if root then
+            local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
+            local ping = 0
+            pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
+            if type(ping) ~= "number" then ping = 0 end
+            if ping > 1 then ping = ping / 1000 end
+            pos = pos + vel * (ping + 0.05)
+        end
+    end
+
+    return CFrame.new(pos)
+end
+
+-- ─── Хуки WeaponService ───────────────────────────────────────
+local function CWH3_InstallHooks()
+    local m = CWH3_GetWeaponService()
+    if not m then return false end
+    if CWH3_Hooked then return true end
+    pcall(function() setreadonly(m, false) end)
+
+    if type(m.GetMouseTargetCFrame) == "function" then
+        CWH3_OrigMouse = m.GetMouseTargetCFrame
+        m.GetMouseTargetCFrame = function(self, ...)
+            if SilentAimV2.Enabled then
+                local cf = CWH3_AimCFrame()
+                if cf then return cf end
+            end
+            return CWH3_OrigMouse(self, ...)
+        end
+    end
+
+    if type(m.GetTargetPosition) == "function" then
+        CWH3_OrigTarget = m.GetTargetPosition
+        m.GetTargetPosition = function(self, ...)
+            if SilentAimV2.Enabled then
+                local cf = CWH3_AimCFrame()
+                if cf then return cf.Position end
+            end
+            return CWH3_OrigTarget(self, ...)
+        end
+    end
+
+    CWH3_Hooked = true
+    return true
+end
+
+local function CWH3_RemoveHooks()
+    local m = CWH3_WS
+    if m and CWH3_Hooked then
+        pcall(function() setreadonly(m, false) end)
+        if CWH3_OrigMouse then pcall(function() m.GetMouseTargetCFrame = CWH3_OrigMouse end) end
+        if CWH3_OrigTarget then pcall(function() m.GetTargetPosition = CWH3_OrigTarget end) end
+    end
+    CWH3_Hooked = false
+end
+
+-- ─── Hacker: пуш GunRaycastAttachment за стену ────────────────
+local CWH3_PushConn = nil
+local CWH3_SavedAtt = nil
+
+local function CWH3_GetAttachment()
+    local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not hrp then return nil end
+    return hrp:FindFirstChild("GunRaycastAttachment")
+end
+
+local function CWH3_RestoreAttachment()
+    local att = CWH3_GetAttachment()
+    if att and CWH3_SavedAtt then
+        pcall(function() att.WorldCFrame = CWH3_SavedAtt end)
+    end
+    CWH3_SavedAtt = nil
+end
+
+local function CWH3_StartPush()
+    if CWH3_PushConn then CWH3_PushConn:Disconnect() end
+    CWH3_PushConn = RunService.Heartbeat:Connect(function()
+        if not SilentAimV2.Enabled or SilentAimV2.Mode ~= "Hacker" then return end
+        local target = CWH3_PickTarget()
+        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        local tHRP = target and target.Character and SafeGetHRP(target.Character)
+        if not (target and myHRP and tHRP) then
+            CWH3_RestoreAttachment()
+            return
+        end
+        local att = CWH3_GetAttachment()
+        if not att then return end
+        if not CWH3_SavedAtt then
+            pcall(function() CWH3_SavedAtt = att.WorldCFrame end)
+        end
+        local dir = (tHRP.Position - myHRP.Position)
+        if dir.Magnitude < 1 then return end
+        dir = dir.Unit
+        -- origin почти у цели (за любой стеной на пути)
+        local pushDist = math.max(dir.Magnitude - 5, 8)
+        pcall(function()
+            att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
+        end)
     end)
 end
 
-local function stopDodgeLoop()
-    if DodgeSystem.Connection then
-        DodgeSystem.Connection:Disconnect()
-        DodgeSystem.Connection = nil
+local function CWH3_StopPush()
+    if CWH3_PushConn then
+        CWH3_PushConn:Disconnect()
+        CWH3_PushConn = nil
     end
+    CWH3_RestoreAttachment()
 end
 
--- ═══════════════════════════════════════════════════════════════
--- GUI
--- ═══════════════════════════════════════════════════════════════
-
-Tabs.Combat:AddSection("Dodge Throw Knife")
-
--- AUTO MODE
-local DodgeAutoToggle = Tabs.Combat:AddToggle("DodgeAutoToggle", {
-    Title = "🌀 Auto Dodge Throw Knife",
-    Description = "Автоматически уклоняется от летящего ножа",
-    Default = false
-})
-DodgeAutoToggle:OnChanged(function(Value)
-    DodgeSystem.AutoEnabled = Value
-    if Value then
-        startDodgeLoop()
-        Notify("Dodge", "🟢 Auto Dodge: ON", nil, 3)
-    else
-        stopDodgeLoop()
-        Notify("Dodge", "🔴 Auto Dodge: OFF", nil, 2)
+-- ─── Один выстрел через стены ─────────────────────────────────
+local function CWH3_ForceShot()
+    local char = SafeGetCharacter(LocalPlayer)
+    local gun = char and char:FindFirstChild("Gun")
+    if not gun then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        gun = bp and bp:FindFirstChild("Gun")
+        if gun then
+            local hum = SafeGetHumanoid(char)
+            if hum then
+                pcall(function() hum:EquipTool(gun) end)
+                task.wait(0.15)
+                gun = SafeGetCharacter(LocalPlayer):FindFirstChild("Gun")
+            end
+        end
     end
-end)
-
--- MANUAL MODE
-local DodgeManualToggle = Tabs.Combat:AddToggle("DodgeManualToggle", {
-    Title = "🎯 Enable Dodge (Manual)",
-    Description = "Показывает кнопку для ручного уклонения",
-    Default = false
-})
-DodgeManualToggle:OnChanged(function(Value)
-    DodgeSystem.ManualEnabled = Value
-    if Value then
-        Notify("Dodge", "🟢 Manual Dodge: ON", nil, 3)
-    else
-        Notify("Dodge", "🔴 Manual Dodge: OFF", nil, 2)
+    if not gun then
+        Notify("Silent Aim v2", "Нет Gun!", nil, 3)
+        return
     end
-end)
+    local att = CWH3_GetAttachment()
+    if not att then
+        Notify("Silent Aim v2", "GunRaycastAttachment не найден", nil, 4)
+        return
+    end
+    local target = CWH3_PickTarget()
+    local tHRP = target and target.Character and SafeGetHRP(target.Character)
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not (tHRP and myHRP) then
+        Notify("Silent Aim v2", "Нет цели", nil, 3)
+        return
+    end
+    local dir = (tHRP.Position - myHRP.Position)
+    if dir.Magnitude < 1 then return end
+    dir = dir.Unit
+    local pushDist = math.max(dir.Magnitude - 5, 8)
+    local saved = att.WorldCFrame
+    pcall(function()
+        att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
+    end)
+    pcall(function() gun:Activate() end)
+    task.wait(0.15)
+    pcall(function() att.WorldCFrame = saved end)
+    Notify("Silent Aim v2", "Force Shot → " .. target.Name, nil, 2)
+end
 
--- DISTANCE SLIDER
-Tabs.Combat:AddSlider("DodgeDistance", {
-    Title = "Dodge Distance",
-    Description = "На сколько studs телепортироваться (30-50)",
-    Default = 40, Min = 30, Max = 50, Rounding = 0,
+-- ─── GUI ──────────────────────────────────────────────────────
+Tabs.Combat:AddSection("Silent Aim v2 (Simple → Hacker)")
+
+Tabs.Combat:AddToggle("CWH3_SAEnable", { Title = "Enable Silent Aim v2", Default = false })
+    :OnChanged(function(Value)
+        SilentAimV2.Enabled = Value
+        if Value then
+            if CWH3_InstallHooks() then
+                CWH3_StartPush()
+                Notify("Silent Aim v2", "ON | Mode: " .. SilentAimV2.Mode, nil, 3)
+            else
+                SilentAimV2.Enabled = false
+                Notify("Silent Aim v2", "WeaponService не найден — нажми Debug", nil, 5)
+            end
+        else
+            CWH3_StopPush()
+            CWH3_RemoveHooks()
+        end
+    end)
+
+Tabs.Combat:AddDropdown("CWH3_SAMode", {
+    Title = "Mode",
+    Description = "Simple — только видимые цели. Hacker — через стены",
+    Values = {"Simple", "Pro", "Hacker"},
+    Default = "Simple",
     Callback = function(Value)
-        DodgeSystem.DodgeDistance = Value
-    end
-})
-
--- DETECT RADIUS
-Tabs.Combat:AddSlider("DodgeDetectRadius", {
-    Title = "Detect Radius",
-    Description = "Радиус обнаружения летящих ножей",
-    Default = 100, Min = 30, Max = 200, Rounding = 0,
-    Callback = function(Value)
-        DodgeSystem.DetectRadius = Value
-    end
-})
-
--- COOLDOWN
-Tabs.Combat:AddSlider("DodgeCooldown", {
-    Title = "Cooldown",
-    Description = "Задержка между уклонениями (сек)",
-    Default = 0.5, Min = 0.1, Max = 2, Rounding = 2,
-    Callback = function(Value)
-        DodgeSystem.Cooldown = Value
-    end
-})
-
--- MANUAL BUTTON (плавающая кнопка на экране)
-local DodgeBtn = Instance.new("TextButton")
-DodgeBtn.Name = "CWH_DodgeBtn"
-DodgeBtn.Size = UDim2.new(0, 60, 0, 60)
-DodgeBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
-DodgeBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-DodgeBtn.BackgroundTransparency = 0.2
-DodgeBtn.Text = "🌀"
-DodgeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-DodgeBtn.TextSize = 25
-DodgeBtn.Font = Enum.Font.GothamBold
-DodgeBtn.Active = true
-DodgeBtn.Draggable = true
-DodgeBtn.Visible = false
-DodgeBtn.Parent = ScreenGui
-
-local DodgeBtnCorner = Instance.new("UICorner")
-DodgeBtnCorner.CornerRadius = UDim.new(1, 0)
-DodgeBtnCorner.Parent = DodgeBtn
-
-local DodgeBtnStroke = Instance.new("UIStroke")
-DodgeBtnStroke.Color = Color3.fromRGB(100, 200, 255)
-DodgeBtnStroke.Thickness = 2
-DodgeBtnStroke.Parent = DodgeBtn
-
-DodgeBtn.MouseButton1Click:Connect(function()
-    local ok = doDodge()
-    if not ok then
-        Notify("Dodge", "No incoming knife!", nil, 2)
-    end
-end)
-
--- Loop отображения кнопки
-RunService.Heartbeat:Connect(function()
-    DodgeBtn.Visible = DodgeSystem.ManualEnabled
-end)
-
--- Кнопка в GUI (альтернатива)
-Tabs.Combat:AddButton({
-    Title = "🌀 Dodge Now (Manual)",
-    Description = "Немедленно уклониться от летящего ножа",
-    Callback = function()
-        local ok = doDodge()
-        if not ok then
-            Notify("Dodge", "No incoming knife detected!", nil, 3)
+        SilentAimV2.Mode = Value
+        if SilentAimV2.Enabled then
+            Notify("Silent Aim v2", "Mode: " .. Value, nil, 2)
         end
     end
 })
 
--- Сброс при респавне
-LocalPlayer.CharacterAdded:Connect(function()
-    DodgeSystem.LastDodge = 0
+Tabs.Combat:AddDropdown("CWH3_SATarget", {
+    Title = "Target",
+    Values = {"Murderer", "Sheriff", "Closest"},
+    Default = "Murderer",
+    Callback = function(Value) SilentAimV2.Target = Value end
+})
+
+Tabs.Combat:AddToggle("CWH3_SAPredict", { Title = "Prediction", Default = true })
+    :OnChanged(function(Value) SilentAimV2.Predict = Value end)
+
+Tabs.Combat:AddSlider("CWH3_SARange", {
+    Title = "Range (Simple/Pro)",
+    Default = 300, Min = 50, Max = 1000, Rounding = 0,
+    Callback = function(Value) SilentAimV2.Range = Value end
+})
+
+Tabs.Combat:AddButton({
+    Title = "🎯 Force Shot Now",
+    Description = "Один выстрел через стены прямо сейчас",
+    Callback = CWH3_ForceShot
+})
+
+Tabs.Combat:AddButton({
+    Title = "🔍 Debug WeaponService",
+    Description = "Если Silent Aim не работает — нажми и скинь консоль (F9)",
+    Callback = function()
+        local m = CWH3_GetWeaponService()
+        if not m then
+            Notify("Debug", "ClientServices.WeaponService не найден!", nil, 5)
+            return
+        end
+        local names = {}
+        for k, v in pairs(m) do
+            if type(v) == "function" then table.insert(names, k) end
+        end
+        table.sort(names)
+        print("[CWH3] WeaponService functions:", table.concat(names, ", "))
+        Notify("Debug", "Функций: " .. #names .. " — список в консоли (F9)", nil, 5)
+    end
+})
+
+-- переустановка хуков если слетели
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if SilentAimV2.Enabled and not CWH3_Hooked then
+            pcall(CWH3_InstallHooks)
+        end
+    end
 end)
 
 -- ═══════════════════════════════════════════════════════════════
