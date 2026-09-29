@@ -1,7 +1,6 @@
 --[[
     Crows Hub | FULL v9.2.2 beta
-    GUI: Crows Hub (твой Fluent)
-    Кнопки: Vision Hub (orialdev)
+    GUI: Crows Hub (Fluent)
     Логика: SHITARO (без ключа/HWID) + Vision Hub
 ]]
 
@@ -94,7 +93,6 @@ local function getCachedRole(plr)
     end
     if not roleCache[plr] then
         local role = "Unknown"
-        -- 1) серверные данные (SHITARO-style)
         local sd = ServerRoleData[plr.Name]
         if type(sd) == "table" and sd.Role then
             if sd.Role == "Hero" then
@@ -105,7 +103,6 @@ local function getCachedRole(plr)
                 role = sd.Role
             end
         else
-            -- 2) фоллбэк: проверка тулзов
             local char = plr and plr.Character
             if char then
                 local backpack = plr:FindFirstChild("Backpack")
@@ -133,7 +130,6 @@ local function GetRoleColor(role)
     return colors[role] or colors.Unknown
 end
 
--- FIX: GetRole с includeSelf для Server Status
 local function GetRole(player, includeSelf)
     if not player then return "Unknown" end
     if player == LocalPlayer and not includeSelf then return "Unknown" end
@@ -182,7 +178,7 @@ local function getLobby()
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- WINDOW (ТВОЙ GUI)
+-- WINDOW
 -- ═══════════════════════════════════════════════════════════════
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub | FULL",
@@ -329,7 +325,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ROLE DETECTION LOOP (сброс по таймеру раунда — из SHITARO)
+-- ROLE DETECTION LOOP
 -- ═══════════════════════════════════════════════════════════════
 local NotifiedRoles = {}
 
@@ -363,7 +359,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 1: MAIN (ТВОЙ + ФИКС СКОРОСТИ)
+-- TAB 1: MAIN
 -- ═══════════════════════════════════════════════════════════════
 local DefaultFOV = Camera.FieldOfView
 local TargetFOV = 120
@@ -378,10 +374,9 @@ local NoclipEnabled = false
 local InfiniteJumpEnabled = false
 local GodModeEnabled = false
 
--- ФИКС: запоминаем оригинальные значения
 local originalWalkSpeed = 16
 local originalJumpPower = 50
-local speedLocked = true -- БЛОКИРУЕМ изменение игры
+local speedLocked = true
 
 Tabs.Main:AddSection("Field of View")
 
@@ -405,7 +400,6 @@ Tabs.Main:AddSlider("FOVSlider", {
 
 Tabs.Main:AddSection("Movement")
 
--- ФИКС: скорость всегда контролируется слайдером когда включено
 local SpeedToggle = Tabs.Main:AddToggle("SpeedToggle", { Title = "Enable WalkSpeed", Default = false })
 SpeedToggle:OnChanged(function(Value)
     WalkSpeedEnabled = Value
@@ -473,10 +467,10 @@ Tabs.Main:AddSection("Misc")
 
 local AntiAFKToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Enable Anti-AFK", Default = false })
 AntiAFKToggle:OnChanged(function(Value) AntiAFKEnabled = Value end)
--- ═══════════════════════════════════════════════════════════════
--- NOCLIP (простой и надёжный)
--- ═══════════════════════════════════════════════════════════════
 
+-- ═══════════════════════════════════════════════════════════════
+-- NOCLIP
+-- ═══════════════════════════════════════════════════════════════
 local noclipOn = false
 
 Tabs.Main:AddSection("Noclip")
@@ -503,8 +497,9 @@ end)
 LocalPlayer.CharacterAdded:Connect(function()
     noclipOn = false
 end)
+
 -- ═══════════════════════════════════════════════════════════════
--- GOD MODE (из Vision Hub)
+-- GOD MODE
 -- ═══════════════════════════════════════════════════════════════
 local _godConn = nil
 local function protectHumanoid(h)
@@ -543,7 +538,7 @@ GodToggle:OnChanged(function(Value)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ANTI-FLING (из Vision Hub - рабочий)
+-- ANTI-FLING (из Vision Hub)
 -- ═══════════════════════════════════════════════════════════════
 local antiFlingEnabled = false
 local antiFlingConn = nil
@@ -576,13 +571,12 @@ AntiFlingToggle:OnChanged(function(Value)
     end
 end)
 
--- Anti-Fling из SHITARO (второй слой защиты)
 RunService.Heartbeat:Connect(function()
     if not antiFlingEnabled then return end
     local char = SafeGetCharacter(LocalPlayer)
     if char then
         for _, obj in pairs(char:GetDescendants()) do
-            if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity") 
+            if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity")
                 or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity") then
                 pcall(function() obj:Destroy() end)
             end
@@ -591,9 +585,8 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 2: VISUALS (РАБОЧИЙ ESP)
+-- TAB 2: VISUALS (ESP)
 -- ═══════════════════════════════════════════════════════════════
-
 local ESPConfig = {
     Players = false, Names = false,
     Distance = false, Health = false,
@@ -712,7 +705,6 @@ task.spawn(function()
     end
 end)
 
--- GUN ESP (Adornee в workspace — работает с Model и BasePart)
 local GunHL = nil
 
 local function getGunDrop()
@@ -818,7 +810,6 @@ Tabs.World:AddButton({
 local AutoGrabToggle = Tabs.World:AddToggle("AutoGrabGun", { Title = "Auto Grab Gun", Default = false })
 AutoGrabToggle:OnChanged(function(Value) AutoGrabGun = Value end)
 
--- Auto Grab loop
 RunService.Heartbeat:Connect(function()
     if not AutoGrabGun then return end
     local map = getMap()
@@ -906,6 +897,7 @@ Tabs.World:AddButton({
 })
 
 Tabs.World:AddSection("Environment")
+
 local FullBrightToggle = Tabs.World:AddToggle("FullBright", { Title = "Full Bright", Default = false })
 FullBrightToggle:OnChanged(function(Value)
     FullBrightEnabled = Value
@@ -926,13 +918,105 @@ workspace.ChildAdded:Connect(function(child)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB 4: COMBAT
+-- WORLD: ROUND TIMER v3 (из Thunder Hub)
 -- ═══════════════════════════════════════════════════════════════
--- ═══════════════════════════════════════════════════════════════
--- KNIFE THROW SILENT AIM (Аура летящего ножа)
--- Взято из SHITARO
--- ═══════════════════════════════════════════════════════════════
+local CWH3_TimerGui = Instance.new("ScreenGui")
+CWH3_TimerGui.Name = "CWH3_Timer"
+CWH3_TimerGui.Parent = gethui and gethui() or CoreGui
+CWH3_TimerGui.ResetOnSpawn = false
+CWH3_TimerGui.Enabled = false
 
+local CWH3_TFrame = Instance.new("Frame")
+CWH3_TFrame.Size = UDim2.new(0, 130, 0, 38)
+CWH3_TFrame.Position = UDim2.new(0.5, -65, 0.13, 0)
+CWH3_TFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+CWH3_TFrame.BackgroundTransparency = 0.3
+CWH3_TFrame.BorderSizePixel = 0
+CWH3_TFrame.Active = true
+CWH3_TFrame.Parent = CWH3_TimerGui
+
+local CWH3_TCorner = Instance.new("UICorner")
+CWH3_TCorner.CornerRadius = UDim.new(0, 6)
+CWH3_TCorner.Parent = CWH3_TFrame
+
+local CWH3_TStroke = Instance.new("UIStroke")
+CWH3_TStroke.Color = Color3.fromRGB(0, 150, 200)
+CWH3_TStroke.Thickness = 1.5
+CWH3_TStroke.Parent = CWH3_TFrame
+
+local CWH3_TLabel = Instance.new("TextLabel")
+CWH3_TLabel.Size = UDim2.new(1, 0, 1, 0)
+CWH3_TLabel.BackgroundTransparency = 1
+CWH3_TLabel.Text = "⏱ --:--"
+CWH3_TLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+CWH3_TLabel.Font = Enum.Font.GothamBold
+CWH3_TLabel.TextSize = 16
+CWH3_TLabel.Parent = CWH3_TFrame
+
+local CWH3_TClose = Instance.new("TextButton")
+CWH3_TClose.Size = UDim2.new(0, 20, 0, 20)
+CWH3_TClose.Position = UDim2.new(1, -22, 0, 2)
+CWH3_TClose.BackgroundTransparency = 1
+CWH3_TClose.Text = "✕"
+CWH3_TClose.TextColor3 = Color3.fromRGB(255, 100, 100)
+CWH3_TClose.TextSize = 12
+CWH3_TClose.Font = Enum.Font.GothamBold
+CWH3_TClose.Parent = CWH3_TFrame
+
+CWH3_TClose.MouseButton1Click:Connect(function()
+    CWH3_TimerGui.Enabled = false
+end)
+
+do
+    local dragging, dragStart, startPos = false, nil, nil
+    CWH3_TFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = CWH3_TFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            CWH3_TFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+task.spawn(function()
+    while CWH3_TimerGui.Parent do
+        task.wait(0.5)
+        local ok, t = pcall(function()
+            return ReplicatedStorage.Remotes.Extras.GetTimer:InvokeServer()
+        end)
+        if ok and type(t) == "number" and t >= 0 then
+            CWH3_TLabel.Text = string.format("⏱ %d:%02d", math.floor(t / 60), t % 60)
+        else
+            CWH3_TLabel.Text = "⏱ --:--"
+        end
+    end
+end)
+
+Tabs.World:AddSection("Round Timer")
+
+Tabs.World:AddToggle("CWH3_TimerShow", {
+    Title = "Round Timer GUI",
+    Description = "Таймер раунда (GetTimer remote)",
+    Default = false
+}):OnChanged(function(Value) CWH3_TimerGui.Enabled = Value end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- TAB 4: COMBAT — KNIFE THROW SILENT AIM
+-- ═══════════════════════════════════════════════════════════════
 local KnifeSystem = {
     Silent = false,
     Predict = true,
@@ -1411,10 +1495,10 @@ Tabs.Combat:AddButton({
     Description = "Кидает нож в ближайшего с аимом",
     Callback = throwKnifeAtNearest
 })
--- ═══════════════════════════════════════════════════════════════
--- KILL AURA (взято из SHITARO, адаптировано под Fluent)
--- ═══════════════════════════════════════════════════════════════
 
+-- ═══════════════════════════════════════════════════════════════
+-- KILL AURA
+-- ═══════════════════════════════════════════════════════════════
 local KillAuraSystem = {
     Enabled = false,
     Range = 50,
@@ -1565,9 +1649,8 @@ Tabs.Combat:AddToggle("KillAuraFireTouch", {
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- KILL EVERYONE (убить всех, включая невидимок)
+-- KILL EVERYONE
 -- ═══════════════════════════════════════════════════════════════
-
 local KillEveryone = {
     Enabled = false,
     Range = 99999,
@@ -1774,9 +1857,8 @@ Tabs.Combat:AddButton({
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- SILENT AIM + FORCE SHOOT v2 (ИСПРАВЛЕННЫЙ)
+-- SILENT AIM + FORCE SHOOT (старый, не тронут)
 -- ═══════════════════════════════════════════════════════════════
-
 local SilentSystem = {
     Enabled = false,
     Predict = true,
@@ -2105,9 +2187,323 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- FLING v2 (ИСПРАВЛЕННЫЙ + Stop Fling)
+-- COMBAT: SILENT AIM v2 — режимы Simple / Pro / Hacker (wallbang)
+-- НОВОЕ. НЕ включать одновременно со старым Silent Aim!
 -- ═══════════════════════════════════════════════════════════════
+local SilentAimV2 = {
+    Enabled = false,
+    Mode = "Simple",
+    Target = "Murderer",
+    Predict = true,
+    Range = 300,
+}
 
+local CWH3_WS = nil
+local CWH3_OrigMouse = nil
+local CWH3_OrigTarget = nil
+local CWH3_Hooked = false
+
+local function CWH3_GetWeaponService()
+    if CWH3_WS then return CWH3_WS end
+    local ok, m = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("ClientServices", 10):WaitForChild("WeaponService", 10))
+    end)
+    if ok and type(m) == "table" then CWH3_WS = m end
+    return CWH3_WS
+end
+
+local function CWH3_PickTarget()
+    if SilentAimV2.Target == "Murderer" then
+        return GetMurderer()
+    elseif SilentAimV2.Target == "Sheriff" then
+        return GetSheriff()
+    end
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not myHRP then return nil end
+    local best, bd = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local h = p.Character and SafeGetHumanoid(p.Character)
+            local hrp = p.Character and SafeGetHRP(p.Character)
+            if h and h.Health > 0 and hrp then
+                local d = (hrp.Position - myHRP.Position).Magnitude
+                if d < bd then bd = d best = p end
+            end
+        end
+    end
+    return best
+end
+
+local function CWH3_LosClear(from, tChar, to)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { LocalPlayer.Character }
+    local hit = workspace:Raycast(from, to - from, params)
+    if not hit then return true end
+    return hit.Instance and tChar and hit.Instance:IsDescendantOf(tChar)
+end
+
+local function CWH3_AimCFrame()
+    local target = CWH3_PickTarget()
+    if not target or not target.Character then return nil end
+    local tChar = target.Character
+    local part = tChar:FindFirstChild("Head")
+        or tChar:FindFirstChild("UpperTorso")
+        or tChar:FindFirstChild("Torso")
+        or tChar:FindFirstChild("HumanoidRootPart")
+    if not part then return nil end
+
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not myHRP then return nil end
+
+    local pos = part.Position
+    local dist = (pos - myHRP.Position).Magnitude
+
+    if SilentAimV2.Mode == "Simple" then
+        if dist > SilentAimV2.Range then return nil end
+        if not CWH3_LosClear(myHRP.Position, tChar, pos) then return nil end
+    elseif SilentAimV2.Mode == "Pro" then
+        if dist > SilentAimV2.Range then return nil end
+    end
+
+    if SilentAimV2.Predict then
+        local root = SafeGetHRP(tChar)
+        if root then
+            local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
+            local ping = 0
+            pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
+            if type(ping) ~= "number" then ping = 0 end
+            if ping > 1 then ping = ping / 1000 end
+            pos = pos + vel * (ping + 0.05)
+        end
+    end
+
+    return CFrame.new(pos)
+end
+
+local function CWH3_InstallHooks()
+    local m = CWH3_GetWeaponService()
+    if not m then return false end
+    if CWH3_Hooked then return true end
+    pcall(function() setreadonly(m, false) end)
+
+    if type(m.GetMouseTargetCFrame) == "function" then
+        CWH3_OrigMouse = m.GetMouseTargetCFrame
+        m.GetMouseTargetCFrame = function(self, ...)
+            if SilentAimV2.Enabled then
+                local cf = CWH3_AimCFrame()
+                if cf then return cf end
+            end
+            return CWH3_OrigMouse(self, ...)
+        end
+    end
+
+    if type(m.GetTargetPosition) == "function" then
+        CWH3_OrigTarget = m.GetTargetPosition
+        m.GetTargetPosition = function(self, ...)
+            if SilentAimV2.Enabled then
+                local cf = CWH3_AimCFrame()
+                if cf then return cf.Position end
+            end
+            return CWH3_OrigTarget(self, ...)
+        end
+    end
+
+    CWH3_Hooked = true
+    return true
+end
+
+local function CWH3_RemoveHooks()
+    local m = CWH3_WS
+    if m and CWH3_Hooked then
+        pcall(function() setreadonly(m, false) end)
+        if CWH3_OrigMouse then pcall(function() m.GetMouseTargetCFrame = CWH3_OrigMouse end) end
+        if CWH3_OrigTarget then pcall(function() m.GetTargetPosition = CWH3_OrigTarget end) end
+    end
+    CWH3_Hooked = false
+end
+
+local CWH3_PushConn = nil
+local CWH3_SavedAtt = nil
+
+local function CWH3_GetAttachment()
+    local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not hrp then return nil end
+    return hrp:FindFirstChild("GunRaycastAttachment")
+end
+
+local function CWH3_RestoreAttachment()
+    local att = CWH3_GetAttachment()
+    if att and CWH3_SavedAtt then
+        pcall(function() att.WorldCFrame = CWH3_SavedAtt end)
+    end
+    CWH3_SavedAtt = nil
+end
+
+local function CWH3_StartPush()
+    if CWH3_PushConn then CWH3_PushConn:Disconnect() end
+    CWH3_PushConn = RunService.Heartbeat:Connect(function()
+        if not SilentAimV2.Enabled or SilentAimV2.Mode ~= "Hacker" then return end
+        local target = CWH3_PickTarget()
+        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+        local tHRP = target and target.Character and SafeGetHRP(target.Character)
+        if not (target and myHRP and tHRP) then
+            CWH3_RestoreAttachment()
+            return
+        end
+        local att = CWH3_GetAttachment()
+        if not att then return end
+        if not CWH3_SavedAtt then
+            pcall(function() CWH3_SavedAtt = att.WorldCFrame end)
+        end
+        local dir = (tHRP.Position - myHRP.Position)
+        if dir.Magnitude < 1 then return end
+        dir = dir.Unit
+        local pushDist = math.max(dir.Magnitude - 5, 8)
+        pcall(function()
+            att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
+        end)
+    end)
+end
+
+local function CWH3_StopPush()
+    if CWH3_PushConn then
+        CWH3_PushConn:Disconnect()
+        CWH3_PushConn = nil
+    end
+    CWH3_RestoreAttachment()
+end
+
+local function CWH3_ForceShot()
+    local char = SafeGetCharacter(LocalPlayer)
+    local gun = char and char:FindFirstChild("Gun")
+    if not gun then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        gun = bp and bp:FindFirstChild("Gun")
+        if gun then
+            local hum = SafeGetHumanoid(char)
+            if hum then
+                pcall(function() hum:EquipTool(gun) end)
+                task.wait(0.15)
+                gun = SafeGetCharacter(LocalPlayer):FindFirstChild("Gun")
+            end
+        end
+    end
+    if not gun then
+        Notify("Silent Aim v2", "Нет Gun!", nil, 3)
+        return
+    end
+    local att = CWH3_GetAttachment()
+    if not att then
+        Notify("Silent Aim v2", "GunRaycastAttachment не найден", nil, 4)
+        return
+    end
+    local target = CWH3_PickTarget()
+    local tHRP = target and target.Character and SafeGetHRP(target.Character)
+    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
+    if not (tHRP and myHRP) then
+        Notify("Silent Aim v2", "Нет цели", nil, 3)
+        return
+    end
+    local dir = (tHRP.Position - myHRP.Position)
+    if dir.Magnitude < 1 then return end
+    dir = dir.Unit
+    local pushDist = math.max(dir.Magnitude - 5, 8)
+    local saved = att.WorldCFrame
+    pcall(function()
+        att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
+    end)
+    pcall(function() gun:Activate() end)
+    task.wait(0.15)
+    pcall(function() att.WorldCFrame = saved end)
+    Notify("Silent Aim v2", "Force Shot → " .. target.Name, nil, 2)
+end
+
+Tabs.Combat:AddSection("Silent Aim v2 (Simple → Hacker)")
+
+Tabs.Combat:AddToggle("CWH3_SAEnable", { Title = "Enable Silent Aim v2", Default = false })
+    :OnChanged(function(Value)
+        SilentAimV2.Enabled = Value
+        if Value then
+            if CWH3_InstallHooks() then
+                CWH3_StartPush()
+                Notify("Silent Aim v2", "ON | Mode: " .. SilentAimV2.Mode, nil, 3)
+            else
+                SilentAimV2.Enabled = false
+                Notify("Silent Aim v2", "WeaponService не найден — нажми Debug", nil, 5)
+            end
+        else
+            CWH3_StopPush()
+            CWH3_RemoveHooks()
+        end
+    end)
+
+Tabs.Combat:AddDropdown("CWH3_SAMode", {
+    Title = "Mode",
+    Description = "Simple — только видимые. Hacker — через стены (wallbang)",
+    Values = {"Simple", "Pro", "Hacker"},
+    Default = "Simple",
+    Callback = function(Value)
+        SilentAimV2.Mode = Value
+        if SilentAimV2.Enabled then
+            Notify("Silent Aim v2", "Mode: " .. Value, nil, 2)
+        end
+    end
+})
+
+Tabs.Combat:AddDropdown("CWH3_SATarget", {
+    Title = "Target",
+    Values = {"Murderer", "Sheriff", "Closest"},
+    Default = "Murderer",
+    Callback = function(Value) SilentAimV2.Target = Value end
+})
+
+Tabs.Combat:AddToggle("CWH3_SAPredict", { Title = "Prediction", Default = true })
+    :OnChanged(function(Value) SilentAimV2.Predict = Value end)
+
+Tabs.Combat:AddSlider("CWH3_SARange", {
+    Title = "Range (Simple/Pro)",
+    Default = 300, Min = 50, Max = 1000, Rounding = 0,
+    Callback = function(Value) SilentAimV2.Range = Value end
+})
+
+Tabs.Combat:AddButton({
+    Title = "🎯 Force Shot Now (v2)",
+    Description = "Один выстрел через стены прямо сейчас",
+    Callback = CWH3_ForceShot
+})
+
+Tabs.Combat:AddButton({
+    Title = "🔍 Debug WeaponService",
+    Description = "Если Silent Aim не работает — нажми и скинь консоль (F9)",
+    Callback = function()
+        local m = CWH3_GetWeaponService()
+        if not m then
+            Notify("Debug", "ClientServices.WeaponService не найден!", nil, 5)
+            return
+        end
+        local names = {}
+        for k, v in pairs(m) do
+            if type(v) == "function" then table.insert(names, k) end
+        end
+        table.sort(names)
+        print("[CWH3] WeaponService functions:", table.concat(names, ", "))
+        Notify("Debug", "Функций: " .. #names .. " — список в консоли (F9)", nil, 5)
+    end
+})
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        if SilentAimV2.Enabled and not CWH3_Hooked then
+            pcall(CWH3_InstallHooks)
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- FLING v2
+-- ═══════════════════════════════════════════════════════════════
 local FlingSystem = {
     Murderer = false,
     Sheriff = false,
@@ -2326,7 +2722,6 @@ local function RefreshPlayerList()
     end
     pcall(function()
         flingDropdown:SetValues(names)
-        flingDropdown:Generate()
     end)
     Notify("Fling", "Refreshed! (" .. (#names - 1) .. " players)", nil, 3)
 end
@@ -2426,9 +2821,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ANTI-FLING (улучшенный, отдельный модуль)
+-- ANTI-FLING (улучшенный)
 -- ═══════════════════════════════════════════════════════════════
-
 local AntiFling = {
     Enabled = false,
     ClearBodyMovers = true,
@@ -2587,7 +2981,6 @@ Tabs.Combat:AddButton({
 -- ═══════════════════════════════════════════════════════════════
 -- TAB 5: AUTO FARM
 -- ═══════════════════════════════════════════════════════════════
-
 local AutoFarmSystem = {
     Enabled = false,
     Mode = "Basic",
@@ -2950,9 +3343,8 @@ local ResetToggle = Tabs.Farm:AddToggle("AutoReset", {
 ResetToggle:OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
 
 -- ═══════════════════════════════════════════════════════════════
--- COIN AURA v2 (УЛУЧШЕННАЯ)
+-- COIN AURA v2
 -- ═══════════════════════════════════════════════════════════════
-
 local CoinAura = {
     Enabled = false,
     Radius = 15,
@@ -3154,130 +3546,9 @@ Tabs.Settings:AddDropdown("ThemeSelector", {
 Tabs.Settings:AddSection("System")
 
 Tabs.Settings:AddButton({
-    Title = "Destroy UI",
-    Callback = function()
-        for player, _ in pairs(ESPObjects or {}) do
-            if type(ClearPlayerESP) == "function" then ClearPlayerESP(player) end
-        end
-        ESPObjects = {}
-        remove_silent_hooks()
-        ScreenGui:Destroy()
-        SoundGui:Destroy()
-        if TimerGui then TimerGui:Destroy() end
-        Window:Destroy()
-    end
-})
-
-Tabs.Settings:AddButton({
     Title = "Rejoin",
     Callback = function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end
 })
-
--- ═══════════════════════════════════════════════════════════════
--- ROUND TIMER v2 (ИСПРАВЛЕННЫЙ)
--- ═══════════════════════════════════════════════════════════════
-
-local TimerGui = Instance.new("ScreenGui")
-TimerGui.Name = "CWH_Timer"
-TimerGui.Parent = gethui and gethui() or CoreGui
-TimerGui.ResetOnSpawn = false
-TimerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local TimerFrame = Instance.new("Frame")
-TimerFrame.Name = "TimerFrame"
-TimerFrame.Size = UDim2.new(0, 140, 0, 45)
-TimerFrame.Position = UDim2.new(0.5, -70, 0.05, 0)
-TimerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-TimerFrame.BackgroundTransparency = 0.3
-TimerFrame.BorderSizePixel = 0
-TimerFrame.Active = true
-TimerFrame.Parent = TimerGui
-
-local TimerCorner = Instance.new("UICorner")
-TimerCorner.CornerRadius = UDim.new(0, 6)
-TimerCorner.Parent = TimerFrame
-
-local TimerStroke = Instance.new("UIStroke")
-TimerStroke.Color = Color3.fromRGB(0, 150, 200)
-TimerStroke.Thickness = 1.5
-TimerStroke.Parent = TimerFrame
-
-local TimerLabel = Instance.new("TextLabel")
-TimerLabel.Size = UDim2.new(1, 0, 1, 0)
-TimerLabel.BackgroundTransparency = 1
-TimerLabel.Text = "Round: --:--"
-TimerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TimerLabel.Font = Enum.Font.GothamBold
-TimerLabel.TextSize = 16
-TimerLabel.Parent = TimerFrame
-
-local TimerCloseBtn = Instance.new("TextButton")
-TimerCloseBtn.Size = UDim2.new(0, 20, 0, 20)
-TimerCloseBtn.Position = UDim2.new(1, -22, 0, 2)
-TimerCloseBtn.BackgroundTransparency = 1
-TimerCloseBtn.Text = "✕"
-TimerCloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-TimerCloseBtn.TextSize = 12
-TimerCloseBtn.Font = Enum.Font.GothamBold
-TimerCloseBtn.Parent = TimerFrame
-
-TimerCloseBtn.MouseButton1Click:Connect(function()
-    TimerGui.Enabled = false
-end)
-
-task.spawn(function()
-    local function getTimerFromRemote()
-        local ok, timeLeft = pcall(function()
-            return game:GetService("ReplicatedStorage").Remotes.Extras.GetTimer:InvokeServer()
-        end)
-        if ok and type(timeLeft) == "number" and timeLeft >= 0 then
-            return timeLeft
-        end
-        return nil
-    end
-
-    local function getTimerFromGui()
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then return nil end
-
-        local mainGui = pg:FindFirstChild("MainGUI")
-        if mainGui then
-            local gameGui = mainGui:FindFirstChild("Game")
-            if gameGui then
-                for _, obj in pairs(gameGui:GetDescendants()) do
-                    if obj:IsA("TextLabel") then
-                        local name = obj.Name:lower()
-                        if name:find("timer") or name:find("time") or name:find("round") then
-                            local text = obj.Text
-                            if text and text ~= "" and text ~= "--:--" then
-                                return text
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        return nil
-    end
-
-    while true do
-        task.wait(0.5)
-
-        local seconds = getTimerFromRemote()
-        if seconds then
-            local mins = math.floor(seconds / 60)
-            local secs = seconds % 60
-            TimerLabel.Text = string.format("Round: %02d:%02d", mins, secs)
-        else
-            local text = getTimerFromGui()
-            if text then
-                TimerLabel.Text = "Round: " .. text
-            else
-                TimerLabel.Text = "Round: --:--"
-            end
-        end
-    end
-end)
 
 -- ═══════════════════════════════════════════════════════════════
 -- MAIN LOOPS
@@ -3381,421 +3652,4 @@ task.spawn(function()
     end
 end)
 
-Notify("Crows Hub v9.2.2 beta", "Loaded!", "Added auto farm speed | Anti-Fling | New esp | Better auto farm | Optimization", 15)
-
--- ═══════════════════════════════════════════════════════════════
--- ДОБАВЛЕНО: SILENT AIM v2 — режимы Simple / Pro / Hacker (wallbang)
--- Префикс CWH3_. НЕ включать одновременно со старым Silent Aim!
--- ═══════════════════════════════════════════════════════════════
-
-local SilentAimV2 = {
-    Enabled = false,
-    Mode = "Simple",      -- Simple / Pro / Hacker
-    Target = "Murderer",  -- Murderer / Sheriff / Closest
-    Predict = true,
-    Range = 300,
-}
-
-local CWH3_WS = nil
-local CWH3_OrigMouse = nil
-local CWH3_OrigTarget = nil
-local CWH3_Hooked = false
-
-local function CWH3_GetWeaponService()
-    if CWH3_WS then return CWH3_WS end
-    local ok, m = pcall(function()
-        return require(ReplicatedStorage:WaitForChild("ClientServices", 10):WaitForChild("WeaponService", 10))
-    end)
-    if ok and type(m) == "table" then CWH3_WS = m end
-    return CWH3_WS
-end
-
-local function CWH3_PickTarget()
-    if SilentAimV2.Target == "Murderer" then
-        return GetMurderer()
-    elseif SilentAimV2.Target == "Sheriff" then
-        return GetSheriff()
-    end
-    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-    if not myHRP then return nil end
-    local best, bd = nil, math.huge
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local h = p.Character and SafeGetHumanoid(p.Character)
-            local hrp = p.Character and SafeGetHRP(p.Character)
-            if h and h.Health > 0 and hrp then
-                local d = (hrp.Position - myHRP.Position).Magnitude
-                if d < bd then bd = d best = p end
-            end
-        end
-    end
-    return best
-end
-
-local function CWH3_LosClear(from, tChar, to)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { LocalPlayer.Character }
-    local hit = workspace:Raycast(from, to - from, params)
-    if not hit then return true end
-    return hit.Instance and tChar and hit.Instance:IsDescendantOf(tChar)
-end
-
-local function CWH3_AimCFrame()
-    local target = CWH3_PickTarget()
-    if not target or not target.Character then return nil end
-    local tChar = target.Character
-    local part = tChar:FindFirstChild("Head")
-        or tChar:FindFirstChild("UpperTorso")
-        or tChar:FindFirstChild("Torso")
-        or tChar:FindFirstChild("HumanoidRootPart")
-    if not part then return nil end
-
-    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-    if not myHRP then return nil end
-
-    local pos = part.Position
-    local dist = (pos - myHRP.Position).Magnitude
-
-    if SilentAimV2.Mode == "Simple" then
-        if dist > SilentAimV2.Range then return nil end
-        if not CWH3_LosClear(myHRP.Position, tChar, pos) then return nil end
-    elseif SilentAimV2.Mode == "Pro" then
-        if dist > SilentAimV2.Range then return nil end
-    end
-    -- Hacker: без ограничений (wallbang)
-
-    if SilentAimV2.Predict then
-        local root = SafeGetHRP(tChar)
-        if root then
-            local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
-            local ping = 0
-            pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
-            if type(ping) ~= "number" then ping = 0 end
-            if ping > 1 then ping = ping / 1000 end
-            pos = pos + vel * (ping + 0.05)
-        end
-    end
-
-    return CFrame.new(pos)
-end
-
-local function CWH3_InstallHooks()
-    local m = CWH3_GetWeaponService()
-    if not m then return false end
-    if CWH3_Hooked then return true end
-    pcall(function() setreadonly(m, false) end)
-
-    if type(m.GetMouseTargetCFrame) == "function" then
-        CWH3_OrigMouse = m.GetMouseTargetCFrame
-        m.GetMouseTargetCFrame = function(self, ...)
-            if SilentAimV2.Enabled then
-                local cf = CWH3_AimCFrame()
-                if cf then return cf end
-            end
-            return CWH3_OrigMouse(self, ...)
-        end
-    end
-
-    if type(m.GetTargetPosition) == "function" then
-        CWH3_OrigTarget = m.GetTargetPosition
-        m.GetTargetPosition = function(self, ...)
-            if SilentAimV2.Enabled then
-                local cf = CWH3_AimCFrame()
-                if cf then return cf.Position end
-            end
-            return CWH3_OrigTarget(self, ...)
-        end
-    end
-
-    CWH3_Hooked = true
-    return true
-end
-
-local function CWH3_RemoveHooks()
-    local m = CWH3_WS
-    if m and CWH3_Hooked then
-        pcall(function() setreadonly(m, false) end)
-        if CWH3_OrigMouse then pcall(function() m.GetMouseTargetCFrame = CWH3_OrigMouse end) end
-        if CWH3_OrigTarget then pcall(function() m.GetTargetPosition = CWH3_OrigTarget end) end
-    end
-    CWH3_Hooked = false
-end
-
--- Hacker: подтвигаем GunRaycastAttachment за стену
-local CWH3_PushConn = nil
-local CWH3_SavedAtt = nil
-
-local function CWH3_GetAttachment()
-    local hrp = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-    if not hrp then return nil end
-    return hrp:FindFirstChild("GunRaycastAttachment")
-end
-
-local function CWH3_RestoreAttachment()
-    local att = CWH3_GetAttachment()
-    if att and CWH3_SavedAtt then
-        pcall(function() att.WorldCFrame = CWH3_SavedAtt end)
-    end
-    CWH3_SavedAtt = nil
-end
-
-local function CWH3_StartPush()
-    if CWH3_PushConn then CWH3_PushConn:Disconnect() end
-    CWH3_PushConn = RunService.Heartbeat:Connect(function()
-        if not SilentAimV2.Enabled or SilentAimV2.Mode ~= "Hacker" then return end
-        local target = CWH3_PickTarget()
-        local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-        local tHRP = target and target.Character and SafeGetHRP(target.Character)
-        if not (target and myHRP and tHRP) then
-            CWH3_RestoreAttachment()
-            return
-        end
-        local att = CWH3_GetAttachment()
-        if not att then return end
-        if not CWH3_SavedAtt then
-            pcall(function() CWH3_SavedAtt = att.WorldCFrame end)
-        end
-        local dir = (tHRP.Position - myHRP.Position)
-        if dir.Magnitude < 1 then return end
-        dir = dir.Unit
-        local pushDist = math.max(dir.Magnitude - 5, 8)
-        pcall(function()
-            att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
-        end)
-    end)
-end
-
-local function CWH3_StopPush()
-    if CWH3_PushConn then
-        CWH3_PushConn:Disconnect()
-        CWH3_PushConn = nil
-    end
-    CWH3_RestoreAttachment()
-end
-
--- Один выстрел через стены
-local function CWH3_ForceShot()
-    local char = SafeGetCharacter(LocalPlayer)
-    local gun = char and char:FindFirstChild("Gun")
-    if not gun then
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        gun = bp and bp:FindFirstChild("Gun")
-        if gun then
-            local hum = SafeGetHumanoid(char)
-            if hum then
-                pcall(function() hum:EquipTool(gun) end)
-                task.wait(0.15)
-                gun = SafeGetCharacter(LocalPlayer):FindFirstChild("Gun")
-            end
-        end
-    end
-    if not gun then
-        Notify("Silent Aim v2", "Нет Gun!", nil, 3)
-        return
-    end
-    local att = CWH3_GetAttachment()
-    if not att then
-        Notify("Silent Aim v2", "GunRaycastAttachment не найден", nil, 4)
-        return
-    end
-    local target = CWH3_PickTarget()
-    local tHRP = target and target.Character and SafeGetHRP(target.Character)
-    local myHRP = SafeGetHRP(SafeGetCharacter(LocalPlayer))
-    if not (tHRP and myHRP) then
-        Notify("Silent Aim v2", "Нет цели", nil, 3)
-        return
-    end
-    local dir = (tHRP.Position - myHRP.Position)
-    if dir.Magnitude < 1 then return end
-    dir = dir.Unit
-    local pushDist = math.max(dir.Magnitude - 5, 8)
-    local saved = att.WorldCFrame
-    pcall(function()
-        att.WorldCFrame = CFrame.new(myHRP.Position + dir * pushDist, tHRP.Position)
-    end)
-    pcall(function() gun:Activate() end)
-    task.wait(0.15)
-    pcall(function() att.WorldCFrame = saved end)
-    Notify("Silent Aim v2", "Force Shot → " .. target.Name, nil, 2)
-end
-
-Tabs.Combat:AddSection("Silent Aim v2 (Simple → Hacker)")
-
-Tabs.Combat:AddToggle("CWH3_SAEnable", { Title = "Enable Silent Aim v2", Default = false })
-    :OnChanged(function(Value)
-        SilentAimV2.Enabled = Value
-        if Value then
-            if CWH3_InstallHooks() then
-                CWH3_StartPush()
-                Notify("Silent Aim v2", "ON | Mode: " .. SilentAimV2.Mode, nil, 3)
-            else
-                SilentAimV2.Enabled = false
-                Notify("Silent Aim v2", "WeaponService не найден — нажми Debug", nil, 5)
-            end
-        else
-            CWH3_StopPush()
-            CWH3_RemoveHooks()
-        end
-    end)
-
-Tabs.Combat:AddDropdown("CWH3_SAMode", {
-    Title = "Mode",
-    Description = "Simple — только видимые. Hacker — через стены (wallbang)",
-    Values = {"Simple", "Pro", "Hacker"},
-    Default = "Simple",
-    Callback = function(Value)
-        SilentAimV2.Mode = Value
-        if SilentAimV2.Enabled then
-            Notify("Silent Aim v2", "Mode: " .. Value, nil, 2)
-        end
-    end
-})
-
-Tabs.Combat:AddDropdown("CWH3_SATarget", {
-    Title = "Target",
-    Values = {"Murderer", "Sheriff", "Closest"},
-    Default = "Murderer",
-    Callback = function(Value) SilentAimV2.Target = Value end
-})
-
-Tabs.Combat:AddToggle("CWH3_SAPredict", { Title = "Prediction", Default = true })
-    :OnChanged(function(Value) SilentAimV2.Predict = Value end)
-
-Tabs.Combat:AddSlider("CWH3_SARange", {
-    Title = "Range (Simple/Pro)",
-    Default = 300, Min = 50, Max = 1000, Rounding = 0,
-    Callback = function(Value) SilentAimV2.Range = Value end
-})
-
-Tabs.Combat:AddButton({
-    Title = "🎯 Force Shot Now (v2)",
-    Description = "Один выстрел через стены прямо сейчас",
-    Callback = CWH3_ForceShot
-})
-
-Tabs.Combat:AddButton({
-    Title = "🔍 Debug WeaponService",
-    Description = "Если Silent Aim не работает — нажми и скинь консоль (F9)",
-    Callback = function()
-        local m = CWH3_GetWeaponService()
-        if not m then
-            Notify("Debug", "ClientServices.WeaponService не найден!", nil, 5)
-            return
-        end
-        local names = {}
-        for k, v in pairs(m) do
-            if type(v) == "function" then table.insert(names, k) end
-        end
-        table.sort(names)
-        print("[CWH3] WeaponService functions:", table.concat(names, ", "))
-        Notify("Debug", "Функций: " .. #names .. " — список в консоли (F9)", nil, 5)
-    end
-})
-
-task.spawn(function()
-    while true do
-        task.wait(5)
-        if SilentAimV2.Enabled and not CWH3_Hooked then
-            pcall(CWH3_InstallHooks)
-        end
-    end
-end)
-
--- ═══════════════════════════════════════════════════════════════
--- ДОБАВЛЕНО: ROUND TIMER v3 (доп. таймер, ВЫКЛ по умолчанию)
--- Внимание: в файле уже есть таймер CWH_Timer — этот включай
--- только если хочешь второй. Позиция ниже, чтобы не перекрывались.
--- ═══════════════════════════════════════════════════════════════
-
-local CWH3_TimerGui = Instance.new("ScreenGui")
-CWH3_TimerGui.Name = "CWH3_Timer"
-CWH3_TimerGui.Parent = gethui and gethui() or CoreGui
-CWH3_TimerGui.ResetOnSpawn = false
-CWH3_TimerGui.Enabled = false
-
-local CWH3_TFrame = Instance.new("Frame")
-CWH3_TFrame.Size = UDim2.new(0, 130, 0, 38)
-CWH3_TFrame.Position = UDim2.new(0.5, -65, 0.13, 0)
-CWH3_TFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-CWH3_TFrame.BackgroundTransparency = 0.3
-CWH3_TFrame.BorderSizePixel = 0
-CWH3_TFrame.Active = true
-CWH3_TFrame.Parent = CWH3_TimerGui
-
-local CWH3_TCorner = Instance.new("UICorner")
-CWH3_TCorner.CornerRadius = UDim.new(0, 6)
-CWH3_TCorner.Parent = CWH3_TFrame
-
-local CWH3_TStroke = Instance.new("UIStroke")
-CWH3_TStroke.Color = Color3.fromRGB(0, 150, 200)
-CWH3_TStroke.Thickness = 1.5
-CWH3_TStroke.Parent = CWH3_TFrame
-
-local CWH3_TLabel = Instance.new("TextLabel")
-CWH3_TLabel.Size = UDim2.new(1, 0, 1, 0)
-CWH3_TLabel.BackgroundTransparency = 1
-CWH3_TLabel.Text = "⏱ --:--"
-CWH3_TLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-CWH3_TLabel.Font = Enum.Font.GothamBold
-CWH3_TLabel.TextSize = 16
-CWH3_TLabel.Parent = CWH3_TFrame
-
-local CWH3_TClose = Instance.new("TextButton")
-CWH3_TClose.Size = UDim2.new(0, 20, 0, 20)
-CWH3_TClose.Position = UDim2.new(1, -22, 0, 2)
-CWH3_TClose.BackgroundTransparency = 1
-CWH3_TClose.Text = "✕"
-CWH3_TClose.TextColor3 = Color3.fromRGB(255, 100, 100)
-CWH3_TClose.TextSize = 12
-CWH3_TClose.Font = Enum.Font.GothamBold
-CWH3_TClose.Parent = CWH3_TFrame
-
-CWH3_TClose.MouseButton1Click:Connect(function()
-    CWH3_TimerGui.Enabled = false
-end)
-
-do
-    local dragging, dragStart, startPos = false, nil, nil
-    CWH3_TFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = CWH3_TFrame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            CWH3_TFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
-task.spawn(function()
-    while CWH3_TimerGui.Parent do
-        task.wait(0.5)
-        local ok, t = pcall(function()
-            return ReplicatedStorage.Remotes.Extras.GetTimer:InvokeServer()
-        end)
-        if ok and type(t) == "number" and t >= 0 then
-            CWH3_TLabel.Text = string.format("⏱ %d:%02d", math.floor(t / 60), t % 60)
-        else
-            CWH3_TLabel.Text = "⏱ --:--"
-        end
-    end
-end)
-
-Tabs.Settings:AddToggle("CWH3_TimerShow", {
-    Title = "Timer v3 GUI (второй таймер)",
-    Description = "В старом таймере уже есть — включай только если нужен второй",
-    Default = false
-}):OnChanged(function(Value) CWH3_TimerGui.Enabled = Value end)
+Notify("Crows Hub v9.2.2 beta", "Loaded!", "Silent Aim v2 в Combat | Round Timer в World | Remastered base", 15)
