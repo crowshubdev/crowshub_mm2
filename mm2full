@@ -1,67 +1,39 @@
---[[
-    Crows Hub | FULL v9.2.2 beta
-    GUI: Crows Hub (Fluent)
-    Логика: SHITARO (без ключа/HWID) + Vision Hub
-]]
 
--- ═══════════════════════════════════════════════════════════════
--- FLUENT LOADER (Delta-safe): один рабочий URL + полный вывод ошибок
--- ═══════════════════════════════════════════════════════════════
+-- CWH Fluent Loader (Delta-safe, retry)
 local Fluent = nil
 
-do
-    print("[CWH] Загрузка Fluent...")
+for attempt = 1, 10 do
+    print("[CWH] Попытка загрузки Fluent " .. attempt .. "/10")
     local ok, source = pcall(function()
         return game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
     end)
 
-    if not ok or type(source) ~= "string" or #source < 1000 then
-        warn("[CWH] FAIL: HttpGet не сработал: " .. tostring(source))
-    else
-        print("[CWH] Скачано: " .. #source .. " байт")
-        local chunk, compErr = loadstring(source)
-        if not chunk then
-            warn("[CWH] FAIL: loadstring не скомпилил: " .. tostring(compErr))
-        else
-            print("[CWH] Скомпилировано, выполняю...")
-            local runOk, runErr = pcall(chunk)
-            if not runOk then
-                warn("[CWH] FAIL: Fluent упал при выполнении: " .. tostring(runErr))
+    if ok and type(source) == "string" and #source > 10000
+        and source:sub(1, 4) == "--[[" then
+        print("[CWH] Скачано " .. #source .. " байт, компилирую...")
+        local chunk, cerr = loadstring(source, "Fluent")
+        if chunk then
+            local ok2, res = pcall(chunk)
+            if ok2 and type(res) == "table" and type(res.CreateWindow) == "function" then
+                Fluent = res
+                print("[CWH] Fluent загружен OK")
+                break
             end
+            warn("[CWH] Fluent выполнился но вернул не таблицу: " .. tostring(res))
+        else
+            warn("[CWH] Ошибка компиляции: " .. tostring(cerr))
         end
+    else
+        warn("[CWH] Скачивание не удалось: " .. tostring(source))
     end
 
-    -- Fluent кладёт себя в разные места в зависимости от версии
-    if type(getgenv) == "function" then
-        Fluent = rawget(getgenv(), "Fluent") or nil
-    end
-    Fluent = Fluent or _G.Fluent
+    task.wait(2)
 end
 
 if not Fluent then
-    warn("[CWH] Перебираю результат напрямую...")
-    local ok2, source2 = pcall(function()
-        return game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
-    end)
-    if ok2 and type(source2) == "string" and #source2 > 1000 then
-        local chunk2 = loadstring(source2)
-        if chunk2 then
-            local okF, resF = pcall(chunk2)
-            if okF and type(resF) == "table" then
-                Fluent = resF
-            end
-        end
-    end
-end
-
-if type(Fluent) ~= "table" or type(Fluent.CreateWindow) ~= "function" then
-    warn("====================================")
-    warn("[CWH] FLUENT НЕ ЗАГРУЗИЛСЯ. Читай строки FAIL выше в консоли и скинь их мне.")
-    warn("====================================")
+    warn("[CWH] Fluent не загрузился за 10 попыток. Проверь интернет/переподключи Delta.")
     return
 end
-
-print("[CWH] Fluent загружен OK")
 
 -- ═══════════════════════════════════════════════════════════════
 -- SERVICES
