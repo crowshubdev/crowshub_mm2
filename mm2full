@@ -5,50 +5,63 @@
 ]]
 
 -- ═══════════════════════════════════════════════════════════════
--- ЗАЩИЩЁННАЯ ЗАГРУЗКА FLUENT (ретраи + зеркала + проверка ответа)
+-- FLUENT LOADER (Delta-safe): один рабочий URL + полный вывод ошибок
 -- ═══════════════════════════════════════════════════════════════
 local Fluent = nil
 
-local CWH_FLUENT_URLS = {
-    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua",
-    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/main.lua",
-    "https://raw.githubusercontent.com/dawid-scripts/Fluent/main/main.lua",
-}
-
-for attempt = 1, 3 do
-    local loaded, result = pcall(function()
-        for _, url in ipairs(CWH_FLUENT_URLS) do
-            local ok, source = pcall(function()
-                return game:HttpGet(url)
-            end)
-            if ok and type(source) == "string" and #source > 500
-                and not source:find("<!DOCTYPE", 1, true)
-                and not source:find("<html", 1, true) then
-                local chunk, err = loadstring(source, "Fluent")
-                if chunk then
-                    return chunk()
-                end
-                warn("[CWH] Fluent compile error: " .. tostring(err))
-            else
-                warn("[CWH] Fluent mirror failed: " .. url)
-            end
-        end
-        error("все зеркала Fluent недоступны")
+do
+    print("[CWH] Загрузка Fluent...")
+    local ok, source = pcall(function()
+        return game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
     end)
 
-    if loaded and type(result) == "table" then
-        Fluent = result
-        break
+    if not ok or type(source) ~= "string" or #source < 1000 then
+        warn("[CWH] FAIL: HttpGet не сработал: " .. tostring(source))
+    else
+        print("[CWH] Скачано: " .. #source .. " байт")
+        local chunk, compErr = loadstring(source)
+        if not chunk then
+            warn("[CWH] FAIL: loadstring не скомпилил: " .. tostring(compErr))
+        else
+            print("[CWH] Скомпилировано, выполняю...")
+            local runOk, runErr = pcall(chunk)
+            if not runOk then
+                warn("[CWH] FAIL: Fluent упал при выполнении: " .. tostring(runErr))
+            end
+        end
     end
 
-    warn("[CWH] Попытка " .. attempt .. "/3 не удалась: " .. tostring(result))
-    task.wait(2)
+    -- Fluent кладёт себя в разные места в зависимости от версии
+    if type(getgenv) == "function" then
+        Fluent = rawget(getgenv(), "Fluent") or nil
+    end
+    Fluent = Fluent or _G.Fluent
 end
 
-if not Fluent or type(Fluent.CreateWindow) ~= "function" then
-    warn("[CWH] НЕ УДАЛОСЬ ЗАГРУЗИТЬ FLUENT. Причины: нет интернета / GitHub блокируется / экзекутор без HttpGet. Скрипт не запущен — но без краша.")
+if not Fluent then
+    warn("[CWH] Перебираю результат напрямую...")
+    local ok2, source2 = pcall(function()
+        return game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
+    end)
+    if ok2 and type(source2) == "string" and #source2 > 1000 then
+        local chunk2 = loadstring(source2)
+        if chunk2 then
+            local okF, resF = pcall(chunk2)
+            if okF and type(resF) == "table" then
+                Fluent = resF
+            end
+        end
+    end
+end
+
+if type(Fluent) ~= "table" or type(Fluent.CreateWindow) ~= "function" then
+    warn("====================================")
+    warn("[CWH] FLUENT НЕ ЗАГРУЗИЛСЯ. Читай строки FAIL выше в консоли и скинь их мне.")
+    warn("====================================")
     return
 end
+
+print("[CWH] Fluent загружен OK")
 
 -- ═══════════════════════════════════════════════════════════════
 -- SERVICES
