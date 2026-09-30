@@ -858,7 +858,7 @@ end)
 
 -- Fling
 
--- ═══ FLING (SkidFling из Vision Hub — возвращает на место, не убивает) ═══
+-- ═══ FLING (SkidFling из Vision Hub + Stop + Refresh списка) ═══
 local function SkidFling(TargetPlayer)
     if not TargetPlayer or not TargetPlayer.Character then return end
 
@@ -886,6 +886,9 @@ local function SkidFling(TargetPlayer)
     end
 
     if Character and Humanoid and RootPart then
+        -- флаг остановки: Stop Fling прерывает на любом шаге
+        getgenv().CWH_FlingStop = false
+
         if RootPart.Velocity.Magnitude < 50 then
             getgenv().CWH_OldPos = RootPart.CFrame
         end
@@ -903,6 +906,7 @@ local function SkidFling(TargetPlayer)
         end
 
         local FPos = function(BasePart, Pos, Ang)
+            if getgenv().CWH_FlingStop then return end
             RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
             pcall(function()
                 if Character and Character.PrimaryPart then
@@ -918,40 +922,55 @@ local function SkidFling(TargetPlayer)
             local Time = tick()
             local Angle = 0
             repeat
+                if getgenv().CWH_FlingStop then break end
                 if RootPart and THumanoid then
                     if BasePart.Velocity.Magnitude < 50 then
                         Angle = Angle + 100
                         FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
                         task.wait()
                     else
                         FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, 1.5, TRootPart and TRootPart.Velocity.Magnitude / 1.25 or 0), CFrame.Angles(math.rad(90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, -(TRootPart and TRootPart.Velocity.Magnitude / 1.25 or 0)), CFrame.Angles(0, 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, 1.5, TRootPart and TRootPart.Velocity.Magnitude / 1.25 or 0), CFrame.Angles(math.rad(90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
                         task.wait()
+                        if getgenv().CWH_FlingStop then break end
                         FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
                         task.wait()
                     end
@@ -993,10 +1012,13 @@ local function SkidFling(TargetPlayer)
 
         if BV and BV.Parent then BV:Destroy() end
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        workspace.CurrentCamera.CameraSubject = Humanoid
+        if workspace.CurrentCamera and Humanoid then
+            workspace.CurrentCamera.CameraSubject = Humanoid
+        end
 
-        -- возврат на исходную позицию (вот почему ты не умираешь)
+        -- возврат на исходную позицию (прерывается Stop-ом)
         repeat
+            if getgenv().CWH_FlingStop then break end
             if getgenv().CWH_OldPos then
                 RootPart.CFrame = getgenv().CWH_OldPos * CFrame.new(0, .5, 0)
                 pcall(function()
@@ -1017,14 +1039,18 @@ local function SkidFling(TargetPlayer)
         if getgenv().CWH_FPDH then
             workspace.FallenPartsDestroyHeight = getgenv().CWH_FPDH
         end
+
+        getgenv().CWH_OldPos = nil
     end
 end
 
 local flinging = false
+
 local function doFling(plr)
-    if flinging then Notify("Fling", "Уже идёт флинг", nil, 2) return end
+    if flinging then Notify("Fling", "Уже идёт флинг — жми Stop", nil, 2) return end
     if not plr or plr == LocalPlayer then return end
     flinging = true
+    getgenv().CWH_FlingStop = false
     Notify("Fling", "Флинг: " .. plr.Name, nil, 3)
     task.spawn(function()
         pcall(SkidFling, plr)
@@ -1032,7 +1058,44 @@ local function doFling(plr)
     end)
 end
 
+local function stopFling()
+    getgenv().CWH_FlingStop = true
+    flinging = false
+    -- мгновенная зачистка: скорость, BodyMovers, камера
+    task.spawn(function()
+        local char = getChar(LocalPlayer)
+        local hrp = getHRP(char)
+        local hum = getHum(char)
+        if hrp then
+            pcall(function()
+                for _, obj in pairs(char:GetDescendants()) do
+                    if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity")
+                        or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity") then
+                        obj:Destroy()
+                    end
+                end
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.Velocity = Vector3.zero
+                hrp.RotVelocity = Vector3.zero
+            end)
+        end
+        if hum then
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                hum.PlatformStand = false
+            end)
+        end
+        if workspace.CurrentCamera and hum then
+            pcall(function() workspace.CurrentCamera.CameraSubject = hum end)
+        end
+    end)
+    Notify("Fling", "Stopped", nil, 2)
+end
+
+-- ─── GUI ───
 Tabs.Combat:AddSection("Fling (Vision Hub)")
+
 Tabs.Combat:AddButton({
     Title = "🌪 Fling Murderer",
     Callback = function()
@@ -1040,6 +1103,7 @@ Tabs.Combat:AddButton({
         if m then doFling(m) else Notify("Fling", "Murderer не найден", nil, 3) end
     end
 })
+
 Tabs.Combat:AddButton({
     Title = "🌪 Fling Sheriff",
     Callback = function()
@@ -1047,18 +1111,72 @@ Tabs.Combat:AddButton({
         if s then doFling(s) else Notify("Fling", "Sheriff не найден", nil, 3) end
     end
 })
+
 local flingSel = nil
-Tabs.Combat:AddDropdown("FlingSel", {
-    Title = "Player", Values = { "None" }, Default = "None",
-    Callback = function(v) flingSel = (v ~= "None") and v or nil end
-})
-Tabs.Combat:AddButton({
-    Title = "💨 Fling Selected",
-    Callback = function()
-        if not flingSel then Notify("Fling", "Выбери игрока", nil, 3) return end
-        doFling(Players:FindFirstChild(flingSel))
+local flingDropdown = Tabs.Combat:AddDropdown("FlingPlayerSelect", {
+    Title = "Player List",
+    Values = { "None" },
+    Default = "None",
+    Callback = function(v)
+        flingSel = (v ~= "None") and v or nil
     end
 })
+
+local function refreshFlingList()
+    local names = { "None" }
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(names, p.Name) end
+    end
+    table.sort(names)
+    pcall(function() flingDropdown:SetValues(names) end)
+end
+
+Tabs.Combat:AddButton({
+    Title = "🔄 Refresh Player List",
+    Description = "Обновить список игроков на сервере",
+    Callback = function()
+        refreshFlingList()
+        Notify("Fling", "Список обновлён (" .. (#Players:GetPlayers() - 1) .. " игроков)", nil, 2)
+    end
+})
+
+Tabs.Combat:AddButton({
+    Title = "💨 Fling Selected",
+    Description = "Флинг выбранного игрока",
+    Callback = function()
+        if not flingSel then
+            Notify("Fling", "Сначала выбери игрока в списке", nil, 3)
+            return
+        end
+        local p = Players:FindFirstChild(flingSel)
+        if p then
+            doFling(p)
+        else
+            Notify("Fling", "Игрок не найден (вышел?) — Refresh", nil, 3)
+        end
+    end
+})
+
+Tabs.Combat:AddButton({
+    Title = "🛑 Stop Fling",
+    Description = "Немедленно остановить флинг",
+    Callback = stopFling
+})
+
+-- автозаполнение списка при входе/выходе игроков
+Players.PlayerAdded:Connect(function()
+    task.wait(1)
+    pcall(refreshFlingList)
+end)
+Players.PlayerRemoving:Connect(function()
+    task.wait(1)
+    pcall(refreshFlingList)
+end)
+
+-- и первичное заполнение при загрузке
+task.delay(3, function()
+    pcall(refreshFlingList)
+end)
 
 -- ═══ FARM ═══
 
