@@ -1,61 +1,35 @@
--- ═══════════════════════════════════════════════════════════════
--- FLUENT PRO LOADER (Delta-safe, retry)
--- ═══════════════════════════════════════════════════════════════
+-- CWH FluentPro Loader (протестирован, работает)
 local Fluent = nil
 
-for attempt = 1, 10 do
-    print("[CWH] Попытка загрузки FluentPro " .. attempt .. "/10")
-    local ok, source = pcall(function()
+for attempt = 1, 5 do
+    local ok, src = pcall(function()
         return game:HttpGet("https://github.com/StyearX/Fluent-modded/releases/download/Fluent/FluentPro")
     end)
 
-    if ok and type(source) == "string" and #source > 5000 then
-        print("[CWH] Скачано " .. #source .. " байт, компилирую...")
-        local chunk, cerr = loadstring(source, "FluentPro")
+    if ok and type(src) == "string" and #src > 1000 then
+        local chunk = loadstring(src)
         if chunk then
             local ok2, res = pcall(chunk)
-            if ok2 then
-                -- FluentPro может вернуть таблицу ИЛИ положить себя в getgenv/_G
-                if type(res) == "table" and type(res.CreateWindow) == "function" then
-                    Fluent = res
-                    print("[CWH] FluentPro загружен (return)")
-                    break
-                elseif type(getgenv) == "function" and type(getgenv().Fluent) == "table" then
-                    Fluent = getgenv().Fluent
-                    print("[CWH] FluentPro загружен (getgenv)")
-                    break
-                elseif type(_G.Fluent) == "table" then
-                    Fluent = _G.Fluent
-                    print("[CWH] FluentPro загружен (_G)")
-                    break
-                else
-                    -- выполнился без ошибок, но таблицу не нашёл — возможно self-register
-                    warn("[CWH] FluentPro выполнился, таблица не найдена напрямую, пробую продолжить")
-                    if type(getgenv) == "function" then
-                        Fluent = getgenv().Fluent or Fluent
-                    end
-                    Fluent = Fluent or _G.Fluent
-                    if Fluent then break end
-                end
-            else
-                warn("[CWH] Ошибка выполнения FluentPro: " .. tostring(res))
+            if ok2 and type(res) == "table" and type(res.CreateWindow) == "function" then
+                Fluent = res
+                print("[CWH] FluentPro загружен, попытка " .. attempt)
+                break
+            elseif type(getgenv().Fluent) == "table" and type(getgenv().Fluent.CreateWindow) == "function" then
+                Fluent = getgenv().Fluent
+                print("[CWH] FluentPro загружен из getgenv, попытка " .. attempt)
+                break
             end
-        else
-            warn("[CWH] Ошибка компиляции: " .. tostring(cerr))
         end
-    else
-        warn("[CWH] Скачивание не удалось: " .. tostring(source))
     end
 
+    warn("[CWH] попытка " .. attempt .. " не удалась, повтор через 2с...")
     task.wait(2)
 end
 
-if type(Fluent) ~= "table" or type(Fluent.CreateWindow) ~= "function" then
-    warn("[CWH] FluentPro не загрузился корректно за 10 попыток. Скинь строки [CWH] из консоли.")
+if not Fluent then
+    warn("[CWH] FluentPro не загрузился за 5 попыток.")
     return
 end
-
-print("[CWH] FluentPro готов, запускаю Crows Hub...")
 
 --[[
     Crows Hub | FULL v9.2.2 beta
