@@ -1,3 +1,4 @@
+print("[PROBE] выполняется правильный скрипт")
 -- CWH FluentPro Loader (протестирован, работает)
 local Fluent = nil
 
