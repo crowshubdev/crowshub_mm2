@@ -31,12 +31,6 @@ if not Fluent then
     return
 end
 
---[[
-    Crows Hub | FULL v9.2.2 beta
-    GUI: FluentPro (StyearX modded)
-    Логика: SHITARO (без ключа/HWID) + Vision Hub
-]]
-
 -- ═══════════════════════════════════════════════════════════════
 -- SERVICES
 -- ═══════════════════════════════════════════════════════════════
