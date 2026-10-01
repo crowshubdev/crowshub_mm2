@@ -164,7 +164,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2",
+    SubTitle = "Remastered MM2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -177,9 +177,11 @@ local Tabs = {
     World = Window:AddTab({ Title = "World", Icon = "globe" }),
     Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
     Farm = Window:AddTab({ Title = "Auto Farm", Icon = "coins" }),
+    Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
+    Changelog = Window:AddTab({ Title = "Changelog", Icon = "info" }),  -- НОВОЕ
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
-
+ 
 -- ═══ MAIN ═══
 local DefaultFOV = Camera.FieldOfView
 local TargetFOV, FOVOn, FOVSmooth = 120, false, true
@@ -1379,6 +1381,8 @@ local function doFling(plr)
     end)
 end
 
+getgenv().CWH_DoFling = doFling
+
 local function stopFling()
     getgenv().CWH_FlingStop = true
     flinging = false
@@ -1499,244 +1503,6 @@ task.delay(3, function()
     pcall(refreshFlingList)
 end)
 
--- ═══════════════════════════════════════════════════════════════
--- DODGE THROW KNIFE (телепорт от летящего ножа)
--- ═══════════════════════════════════════════════════════════════
-local DodgeKnife = {
-    On = false, Distance = 40, Detect = 100, Cooldown = 0.5, Last = 0,
-}
-
--- пул летящих ножей
-local knifePool = {}
-local knifeVelTrack = {}
-
-local function tryAddKnife(inst)
-    if inst and inst:IsA("BasePart") then
-        local n = inst.Name:lower()
-        if n:find("knife") or n:find("throw") or n:find("blade") then
-            knifePool[inst] = true
-        end
-    end
-end
-for _, obj in ipairs(workspace:GetDescendants()) do tryAddKnife(obj) end
-workspace.DescendantAdded:Connect(tryAddKnife)
-
-local function getFlyingKnives()
-    local list = {}
-    for inst in pairs(knifePool) do
-        if inst and inst.Parent then
-            local inChar = false
-            local p = inst
-            while p and p ~= workspace do
-                if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then
-                    inChar = true
-                    break
-                end
-                p = p.Parent
-            end
-            if not inChar then
-                table.insert(list, inst)
-            else
-                knifePool[inst] = nil
-            end
-        else
-            knifePool[inst] = nil
-        end
-    end
-    return list
-end
-
-local function knifePos(k)
-    if not k or not k.Parent then return nil end
-    if k:IsA("BasePart") then return k.Position end
-    local ok, pv = pcall(function() return k:GetPivot() end)
-    if ok and typeof(pv) == "CFrame" then return pv.Position end
-    local f = k:FindFirstChildWhichIsA("BasePart")
-    return f and f.Position
-end
-
-local function knifeVel(k)
-    local part = k:IsA("BasePart") and k or k:FindFirstChildWhichIsA("BasePart")
-    if part then
-        local ok, v = pcall(function() return part.AssemblyLinearVelocity end)
-        if ok and v and v.Magnitude >= 5 then return v end
-    end
-    -- фоллбэк: дельта позиций (CFrame-анимация)
-    local pos = knifePos(k)
-    if not pos then return Vector3.zero end
-    local now = os.clock()
-    local tr = knifeVelTrack[k]
-    if tr then
-        local dt = now - tr.t
-        if dt > 0.01 then
-            local v = (pos - tr.p) / dt
-            knifeVelTrack[k] = { p = pos, t = now }
-            if v.Magnitude >= 5 then return v end
-        end
-    else
-        knifeVelTrack[k] = { p = pos, t = now }
-    end
-    return Vector3.zero
-end
-
-local function doDodgeKnife()
-    local char = getChar(LocalPlayer)
-    local hrp = getHRP(char)
-    if not hrp then return false end
-
-    local now = os.clock()
-    if now - DodgeKnife.Last < DodgeKnife.Cooldown then return false end
-
-    local myPos = hrp.Position
-
-    for _, knife in ipairs(getFlyingKnives()) do
-        local kPos = knifePos(knife)
-        if kPos then
-            local kVel = knifeVel(knife)
-            if kVel.Magnitude >= 5 then
-                local toMe = myPos - kPos
-                local dist = toMe.Magnitude
-                if dist > 3 and dist < DodgeKnife.Detect then
-                    local kDir = kVel.Unit
-                    local dot = kDir:Dot(toMe.Unit)
-                    if dot > 0.7 then
-                        -- нож летит в нас — уклоняемся
-                        local perp = Vector3.new(-kDir.Z, 0, kDir.X)
-                        if perp.Magnitude < 0.1 then perp = Vector3.new(1, 0, 0) end
-                        perp = perp.Unit
-                        -- случайная сторона + случайный сдвиг вдоль ножа
-                        local side = math.random(0, 1) == 0 and 1 or -1
-                        local along = (math.random() - 0.5) * DodgeKnife.Distance * 0.6
-                        local dodge = perp * side * DodgeKnife.Distance
-                            + kDir * along
-                        local target = myPos + dodge
-                        -- держим ту же высоту (не телепортируем в пол/небо)
-                        target = Vector3.new(target.X, myPos.Y, target.Z)
-
-                        hrp.CFrame = CFrame.new(target)
-                        DodgeKnife.Last = now
-                        Notify("Dodge", "🌀 Уклонение от ножа!", nil, 2)
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
-task.spawn(function()
-    while task.wait(0.05) do
-        if DodgeKnife.On then
-            pcall(doDodgeKnife)
-        end
-    end
-end)
-
-Tabs.Combat:AddSection("Dodge Throw Knife")
-Tabs.Combat:AddToggle("DodgeKnifeOn", {
-    Title = "🌀 Auto Dodge Knife",
-    Description = "Телепорт в сторону от летящего ножа",
-    Default = false
-}):OnChanged(function(v) DodgeKnife.On = v end)
-Tabs.Combat:AddSlider("DodgeKnifeDist", {
-    Title = "Dodge Distance", Default = 40, Min = 20, Max = 60, Rounding = 0,
-    Callback = function(v) DodgeKnife.Distance = v end
-})
-Tabs.Combat:AddSlider("DodgeKnifeDetect", {
-    Title = "Detect Radius", Default = 100, Min = 30, Max = 200, Rounding = 0,
-    Callback = function(v) DodgeKnife.Detect = v end
-})
-Tabs.Combat:AddSlider("DodgeKnifeCD", {
-    Title = "Cooldown (сек)", Default = 0.5, Min = 0.1, Max = 2, Rounding = 1,
-    Callback = function(v) DodgeKnife.Cooldown = v end
-})
-Tabs.Combat:AddButton({
-    Title = "🌀 Dodge Now",
-    Description = "Ручное уклонение прямо сейчас",
-    Callback = function()
-        if not doDodgeKnife() then
-            Notify("Dodge", "Летящих ножей нет", nil, 2)
-        end
-    end
-})
-
--- ═══════════════════════════════════════════════════════════════
--- DODGE MURDER (телепорт от убийцы при опасной дистанции)
--- ═══════════════════════════════════════════════════════════════
-local DodgeMurder = {
-    On = false, TriggerDist = 25, TeleportDist = 70, Cooldown = 2, Last = 0,
-}
-
-local function doDodgeMurder()
-    local char = getChar(LocalPlayer)
-    local hrp = getHRP(char)
-    local hum = getHum(char)
-    if not (hrp and hum and hum.Health > 0) then return false end
-
-    local now = os.clock()
-    if now - DodgeMurder.Last < DodgeMurder.Cooldown then return false end
-
-    local mur = getMurderer()
-    local mHRP = mur and getHRP(getChar(mur))
-    if not mHRP then return false end
-
-    local dist = (mHRP.Position - hrp.Position).Magnitude
-    if dist > DodgeMurder.TriggerDist then return false end
-
-    -- телепорт на случайную точку на окружности TeleportDist от меня
-    local angle = math.random() * math.pi * 2
-    local r = DodgeMurder.TeleportDist
-    local target = hrp.Position + Vector3.new(
-        math.cos(angle) * r,
-        0,
-        math.sin(angle) * r
-    )
-
-    -- если murder оказался ближе к новой точке чем мы — разворачиваем на 180
-    if (target - mHRP.Position).Magnitude < (hrp.Position - mHRP.Position).Magnitude then
-        target = hrp.Position - Vector3.new(
-            math.cos(angle) * r,
-            0,
-            math.sin(angle) * r
-        )
-    end
-
-    hrp.CFrame = CFrame.new(target)
-    DodgeMurder.Last = now
-    Notify("Dodge Murder", "💨 Телепорт от " .. mur.Name .. "!", nil, 2)
-    return true
-end
-
-task.spawn(function()
-    while task.wait(0.1) do
-        if DodgeMurder.On then
-            pcall(doDodgeMurder)
-        end
-    end
-end)
-
-Tabs.Combat:AddSection("Dodge Murder")
-Tabs.Combat:AddToggle("DodgeMurderOn", {
-    Title = "💨 Auto Dodge Murder",
-    Description = "Телепорт когда убийца подошёл близко",
-    Default = false
-}):OnChanged(function(v) DodgeMurder.On = v end)
-Tabs.Combat:AddSlider("DodgeMurderTrig", {
-    Title = "Trigger Distance", Description = "Murderer ближе — телепорт",
-    Default = 25, Min = 10, Max = 60, Rounding = 0,
-    Callback = function(v) DodgeMurder.TriggerDist = v end
-})
-Tabs.Combat:AddSlider("DodgeMurderTP", {
-    Title = "Teleport Distance", Description = "Насколько далеко убегать",
-    Default = 70, Min = 30, Max = 150, Rounding = 0,
-    Callback = function(v) DodgeMurder.TeleportDist = v end
-})
-Tabs.Combat:AddSlider("DodgeMurderCD", {
-    Title = "Cooldown (сек)", Default = 2, Min = 0.5, Max = 5, Rounding = 1,
-    Callback = function(v) DodgeMurder.Cooldown = v end
-})
-
 -- ═══ FARM ═══
 
 -- ═══ FARM (исправленный: без джиттера, мгновенный ретаргет) ═══
@@ -1746,6 +1512,8 @@ local AutoFarmSystem = {
     Target = nil, LastTouch = 0, NoclipCache = {},
     Speed = 23, TweenMode = false, TweenSpeed = 35, YDepth = 4,
 }
+getgenv().CWH_FarmRef = AutoFarmSystem
+
 local FARM_SPEED = 23
 local DOWN_RISE_XZ = 4
 local AVOID_DIST = 40
@@ -2073,6 +1841,441 @@ Tabs.Farm:AddToggle("AutoReset", {
     Title = "Auto Reset (когда сумки полные)", Default = false
 }):OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO KILL EVERYONE (когда собрал монеты) + AUTO FLING ON DEATH
+-- ═══════════════════════════════════════════════════════════════
+
+-- проверка полных сумок (локальная копия)
+local function bagsFullCheck()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    local main = pg and pg:FindFirstChild("MainGUI")
+    local gg = main and main:FindFirstChild("Game")
+    local bags = gg and gg:FindFirstChild("CoinBags")
+    local container = bags and bags:FindFirstChild("Container")
+    if not container then return false end
+    local any = false
+    for _, v in ipairs(container:GetChildren()) do
+        if v:IsA("Frame") and v.Visible then
+            any = true
+            local full = v:FindFirstChild("Full")
+            if not (full and full.Visible) then return false end
+        end
+    end
+    return any
+end
+
+-- murder-проверка + экип ножа (локальные копии)
+local function keGetKnife()
+    local c = getChar(LocalPlayer)
+    if c and c:FindFirstChild("Knife") then return c:FindFirstChild("Knife") end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    return bp and bp:FindFirstChild("Knife")
+end
+
+local function keKillAll()
+    local knife = keGetKnife()
+    if not knife then return 0 end
+    -- экипируем если в рюкзаке
+    local c = getChar(LocalPlayer)
+    if knife.Parent ~= c then
+        local hum = getHum(c)
+        if hum then
+            pcall(function() hum:EquipTool(knife) end)
+            task.wait(0.2)
+            knife = keGetKnife()
+        end
+    end
+    if not knife then return 0 end
+
+    local ev = knife:FindFirstChild("Events")
+    local st = ev and ev:FindFirstChild("KnifeStabbed")
+    local to = ev and ev:FindFirstChild("HandleTouched")
+    local handle = knife:FindFirstChild("Handle")
+
+    local n = 0
+    if st then pcall(function() st:FireServer() end) end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local pc = getChar(plr)
+        local ph = getHum(pc)
+        local phrp = pc and getHRP(pc)
+        if ph and ph.Health > 0 and phrp then
+            if to then pcall(function() to:FireServer(phrp) end) end
+            if handle then
+                pcall(function()
+                    realFireTouch(handle, phrp, 1)
+                    realFireTouch(handle, phrp, 0)
+                end)
+            end
+            n += 1
+        end
+    end
+    return n
+end
+
+-- ─── AUTO KILL на монетах ───
+local AutoKE = { On = false, Target = 50, DoneThisRound = false }
+
+-- сброс триггера в новом раунде
+task.spawn(function()
+    local ok, remote = pcall(function()
+        return ReplicatedStorage:WaitForChild("Remotes", 15):WaitForChild("Gameplay", 15):WaitForChild("CoinsStarted", 15)
+    end)
+    if ok and remote then
+        remote.OnClientEvent:Connect(function()
+            AutoKE.DoneThisRound = false
+        end)
+    end
+end)
+LocalPlayer.CharacterAdded:Connect(function()
+    AutoKE.DoneThisRound = false
+end)
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if AutoKE.On and not AutoKE.DoneThisRound then
+            local farmRef = getgenv().CWH_FarmRef
+            local collected = farmRef and farmRef.CollectedCount or 0
+            local amMurd = keGetKnife() ~= nil
+
+            if amMurd and (collected >= AutoKE.Target or bagsFullCheck()) then
+                AutoKE.DoneThisRound = true
+                Notify("Auto KE", "Монеты собраны — убиваю всех!", nil, 4)
+                task.wait(0.3)
+                local n = keKillAll()
+                Notify("Auto KE", "Атаковано: " .. n, nil, 3)
+            end
+        end
+    end
+end)
+
+Tabs.Farm:AddSection("Auto Kill (на монетах)")
+Tabs.Farm:AddToggle("AutoKEOn", {
+    Title = "💀 Auto Kill Everyone",
+    Description = "Собрал монеты → убиваешь всех (ты Murderer)",
+    Default = false
+}):OnChanged(function(v) AutoKE.On = v end)
+Tabs.Farm:AddDropdown("AutoKETarget", {
+    Title = "Coin Target",
+    Description = "Сколько собрать перед убийством",
+    Values = { "40", "50" },
+    Default = "50",
+    Callback = function(v) AutoKE.Target = tonumber(v) or 50 end
+})
+
+-- ─── AUTO FLING MURDERER ПОСЛЕ СМЕРТИ ───
+local AutoFlingDeath = { On = false }
+local deathFlingPending = false
+
+local function hookHumanoid(char)
+    task.spawn(function()
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum then
+            hum.Died:Connect(function()
+                if AutoFlingDeath.On then
+                    deathFlingPending = true
+                    Notify("Auto Fling", "☠️ Умер — подготовлю флинг убийцы", nil, 3)
+                end
+            end)
+        end
+    end)
+end
+
+if LocalPlayer.Character then hookHumanoid(LocalPlayer.Character) end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if deathFlingPending and AutoFlingDeath.On then
+        deathFlingPending = false
+        -- даём нормально заспавниться
+        task.delay(2.5, function()
+            if not AutoFlingDeath.On then return end
+            local mur = getMurderer()
+            if mur and getgenv().CWH_DoFling then
+                Notify("Auto Fling", "🌪 Флинг убийцы: " .. mur.Name, nil, 3)
+                getgenv().CWH_DoFling(mur)
+            else
+                Notify("Auto Fling", "Murderer не найден", nil, 3)
+            end
+        end)
+    end
+    hookHumanoid(char)
+end)
+
+Tabs.Other:AddSection("Auto Fling on Death")
+Tabs.Other:AddToggle("AutoFlingDeath", {
+    Title = "🌪 Auto Fling Murderer",
+    Description = "Умер → респавн → сразу флинг убийцы",
+    Default = false
+}):OnChanged(function(v)
+    AutoFlingDeath.On = v
+    if not v then deathFlingPending = false end
+end)
+
+–– ==== OTHER ====
+Tabs.Other:AddSection("Dodge Throw Knife")
+-- ═══════════════════════════════════════════════════════════════
+-- DODGE THROW KNIFE (телепорт от летящего ножа)
+-- ═══════════════════════════════════════════════════════════════
+local DodgeKnife = {
+    On = false, Distance = 40, Detect = 100, Cooldown = 0.5, Last = 0,
+}
+
+-- пул летящих ножей
+local knifePool = {}
+local knifeVelTrack = {}
+
+local function tryAddKnife(inst)
+    if inst and inst:IsA("BasePart") then
+        local n = inst.Name:lower()
+        if n:find("knife") or n:find("throw") or n:find("blade") then
+            knifePool[inst] = true
+        end
+    end
+end
+for _, obj in ipairs(workspace:GetDescendants()) do tryAddKnife(obj) end
+workspace.DescendantAdded:Connect(tryAddKnife)
+
+local function getFlyingKnives()
+    local list = {}
+    for inst in pairs(knifePool) do
+        if inst and inst.Parent then
+            local inChar = false
+            local p = inst
+            while p and p ~= workspace do
+                if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then
+                    inChar = true
+                    break
+                end
+                p = p.Parent
+            end
+            if not inChar then
+                table.insert(list, inst)
+            else
+                knifePool[inst] = nil
+            end
+        else
+            knifePool[inst] = nil
+        end
+    end
+    return list
+end
+
+local function knifePos(k)
+    if not k or not k.Parent then return nil end
+    if k:IsA("BasePart") then return k.Position end
+    local ok, pv = pcall(function() return k:GetPivot() end)
+    if ok and typeof(pv) == "CFrame" then return pv.Position end
+    local f = k:FindFirstChildWhichIsA("BasePart")
+    return f and f.Position
+end
+
+local function knifeVel(k)
+    local part = k:IsA("BasePart") and k or k:FindFirstChildWhichIsA("BasePart")
+    if part then
+        local ok, v = pcall(function() return part.AssemblyLinearVelocity end)
+        if ok and v and v.Magnitude >= 5 then return v end
+    end
+    -- фоллбэк: дельта позиций (CFrame-анимация)
+    local pos = knifePos(k)
+    if not pos then return Vector3.zero end
+    local now = os.clock()
+    local tr = knifeVelTrack[k]
+    if tr then
+        local dt = now - tr.t
+        if dt > 0.01 then
+            local v = (pos - tr.p) / dt
+            knifeVelTrack[k] = { p = pos, t = now }
+            if v.Magnitude >= 5 then return v end
+        end
+    else
+        knifeVelTrack[k] = { p = pos, t = now }
+    end
+    return Vector3.zero
+end
+
+local function doDodgeKnife()
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    if not hrp then return false end
+
+    local now = os.clock()
+    if now - DodgeKnife.Last < DodgeKnife.Cooldown then return false end
+
+    local myPos = hrp.Position
+
+    for _, knife in ipairs(getFlyingKnives()) do
+        local kPos = knifePos(knife)
+        if kPos then
+            local kVel = knifeVel(knife)
+            if kVel.Magnitude >= 5 then
+                local toMe = myPos - kPos
+                local dist = toMe.Magnitude
+                if dist > 3 and dist < DodgeKnife.Detect then
+                    local kDir = kVel.Unit
+                    local dot = kDir:Dot(toMe.Unit)
+                    if dot > 0.7 then
+                        -- нож летит в нас — уклоняемся
+                        local perp = Vector3.new(-kDir.Z, 0, kDir.X)
+                        if perp.Magnitude < 0.1 then perp = Vector3.new(1, 0, 0) end
+                        perp = perp.Unit
+                        -- случайная сторона + случайный сдвиг вдоль ножа
+                        local side = math.random(0, 1) == 0 and 1 or -1
+                        local along = (math.random() - 0.5) * DodgeKnife.Distance * 0.6
+                        local dodge = perp * side * DodgeKnife.Distance
+                            + kDir * along
+                        local target = myPos + dodge
+                        -- держим ту же высоту (не телепортируем в пол/небо)
+                        target = Vector3.new(target.X, myPos.Y, target.Z)
+
+                        hrp.CFrame = CFrame.new(target)
+                        DodgeKnife.Last = now
+                        Notify("Dodge", "🌀 Уклонение от ножа!", nil, 2)
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if DodgeKnife.On then
+            pcall(doDodgeKnife)
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Dodge Throw Knife")
+Tabs.Combat:AddToggle("DodgeKnifeOn", {
+    Title = "🌀 Auto Dodge Knife",
+    Description = "Телепорт в сторону от летящего ножа",
+    Default = false
+}):OnChanged(function(v) DodgeKnife.On = v end)
+Tabs.Combat:AddSlider("DodgeKnifeDist", {
+    Title = "Dodge Distance", Default = 40, Min = 20, Max = 60, Rounding = 0,
+    Callback = function(v) DodgeKnife.Distance = v end
+})
+Tabs.Combat:AddSlider("DodgeKnifeDetect", {
+    Title = "Detect Radius", Default = 100, Min = 30, Max = 200, Rounding = 0,
+    Callback = function(v) DodgeKnife.Detect = v end
+})
+Tabs.Combat:AddSlider("DodgeKnifeCD", {
+    Title = "Cooldown (сек)", Default = 0.5, Min = 0.1, Max = 2, Rounding = 1,
+    Callback = function(v) DodgeKnife.Cooldown = v end
+})
+Tabs.Combat:AddButton({
+    Title = "🌀 Dodge Now",
+    Description = "Ручное уклонение прямо сейчас",
+    Callback = function()
+        if not doDodgeKnife() then
+            Notify("Dodge", "Летящих ножей нет", nil, 2)
+        end
+    end
+})
+
+Tabs.Other:AddSection("Dodge Murder")
+
+-- ═══════════════════════════════════════════════════════════════
+-- DODGE MURDER (телепорт от убийцы при опасной дистанции)
+-- ═══════════════════════════════════════════════════════════════
+local DodgeMurder = {
+    On = false, TriggerDist = 25, TeleportDist = 70, Cooldown = 2, Last = 0,
+}
+
+local function doDodgeMurder()
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    local hum = getHum(char)
+    if not (hrp and hum and hum.Health > 0) then return false end
+
+    local now = os.clock()
+    if now - DodgeMurder.Last < DodgeMurder.Cooldown then return false end
+
+    local mur = getMurderer()
+    local mHRP = mur and getHRP(getChar(mur))
+    if not mHRP then return false end
+
+    local dist = (mHRP.Position - hrp.Position).Magnitude
+    if dist > DodgeMurder.TriggerDist then return false end
+
+    -- телепорт на случайную точку на окружности TeleportDist от меня
+    local angle = math.random() * math.pi * 2
+    local r = DodgeMurder.TeleportDist
+    local target = hrp.Position + Vector3.new(
+        math.cos(angle) * r,
+        0,
+        math.sin(angle) * r
+    )
+
+    -- если murder оказался ближе к новой точке чем мы — разворачиваем на 180
+    if (target - mHRP.Position).Magnitude < (hrp.Position - mHRP.Position).Magnitude then
+        target = hrp.Position - Vector3.new(
+            math.cos(angle) * r,
+            0,
+            math.sin(angle) * r
+        )
+    end
+
+    hrp.CFrame = CFrame.new(target)
+    DodgeMurder.Last = now
+    Notify("Dodge Murder", "💨 Телепорт от " .. mur.Name .. "!", nil, 2)
+    return true
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if DodgeMurder.On then
+            pcall(doDodgeMurder)
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Dodge Murder")
+Tabs.Combat:AddToggle("DodgeMurderOn", {
+    Title = "💨 Auto Dodge Murder",
+    Description = "Телепорт когда убийца подошёл близко",
+    Default = false
+}):OnChanged(function(v) DodgeMurder.On = v end)
+Tabs.Combat:AddSlider("DodgeMurderTrig", {
+    Title = "Trigger Distance", Description = "Murderer ближе — телепорт",
+    Default = 25, Min = 10, Max = 60, Rounding = 0,
+    Callback = function(v) DodgeMurder.TriggerDist = v end
+})
+Tabs.Combat:AddSlider("DodgeMurderTP", {
+    Title = "Teleport Distance", Description = "Насколько далеко убегать",
+    Default = 70, Min = 30, Max = 150, Rounding = 0,
+    Callback = function(v) DodgeMurder.TeleportDist = v end
+})
+Tabs.Combat:AddSlider("DodgeMurderCD", {
+    Title = "Cooldown (сек)", Default = 2, Min = 0.5, Max = 5, Rounding = 1,
+    Callback = function(v) DodgeMurder.Cooldown = v end
+})
+
+–– ===== CHANGELOG ====
+
+-- ═══════════════════════════════════════════════════════════════
+-- CHANGELOG
+-- ═══════════════════════════════════════════════════════════════
+Tabs.Changelog:AddParagraph({
+    Title = "Remastered v3",
+    Content = "• Ping/FPS Checker (World)\n• Round Status: Murderer / Sheriff-Hero / Gun Drop\n• Dodge Throw Knife + Dodge Murder (Other)\n• Anti-Fling (Combat)\n• Auto Kill Everyone на монетах (Farm)\n• Auto Fling Murderer после смерти (Other)\n• Fling: Stop + Refresh списка игроков\n• Silent Aim v2: Simple / Pro / Hacker"
+})
+Tabs.Changelog:AddParagraph({
+    Title = "Remastered v2",
+    Content = "• FluentPro загрузчик с ретраями (фикс запуска в Delta)\n• Кнопка открытия меню (drag + tap)\n• Фарм без джиттера + мгновенный ретаргет\n• Fling из Vision Hub (возврат на место)\n• Round Timer (World)"
+})
+Tabs.Changelog:AddParagraph({
+    Title = "Remastered v1",
+    Content = "• Полная пересборка: вырезаны крашащие блоки (Destroy UI, Server Status)\n• ESP с мгновенными ролями через PlayerDataChanged\n• Gun Drop ESP\n• Coin Aura, Farm Basic/Down\n• Kill Aura / Kill Everyone\n• Speed Lock (скорость не слетает от ножа)"
+})
+Tabs.Changelog:AddParagraph({
+Title = "1 version script ",
+Content = "• Был создан скрипт было добавлено: авто фарм , есп "
+})
+Notify("Update", "v3: Other + Changelog + Auto KE + Auto Fling", nil, 5)
+
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
 Tabs.Settings:AddDropdown("Theme", {
@@ -2162,4 +2365,4 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 6)
+Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 15)
