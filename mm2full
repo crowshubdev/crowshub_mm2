@@ -809,6 +809,62 @@ Tabs.World:AddToggle("StatusShow", {
 }):OnChanged(function(v) statusGui.Enabled = v end)
 
 -- ═══════════════════════════════════════════════════════════════
+-- FPS BOOSTER
+-- ═══════════════════════════════════════════════════════════════
+local FPSBoost = { On = false }
+
+-- пропускаем декали на персонажах (иначе лица отвалятся)
+local function isOnPlayerCharacter(o)
+    local m = o:FindFirstAncestorOfClass("Model")
+    return m and Players:GetPlayerFromCharacter(m) ~= nil
+end
+
+workspace.DescendantAdded:Connect(function(o)
+    if not FPSBoost.On then return end
+    pcall(function()
+        if o:IsA("Decal") or o:IsA("Texture") then
+            if not isOnPlayerCharacter(o) then o:Destroy() end
+        elseif o:IsA("ParticleEmitter") or o:IsA("Smoke")
+            or o:IsA("Fire") or o:IsA("Sparkles") then
+            o.Enabled = false
+        end
+    end)
+end)
+
+local function cleanWorkspaceFPS()
+    local n = 0
+    for _, o in ipairs(workspace:GetDescendants()) do
+        pcall(function()
+            if o:IsA("Decal") or o:IsA("Texture") then
+                if not isOnPlayerCharacter(o) then o:Destroy() n += 1 end
+            elseif o:IsA("ParticleEmitter") or o:IsA("Smoke")
+                or o:IsA("Fire") or o:IsA("Sparkles") then
+                if o.Enabled then o.Enabled = false n += 1 end
+            end
+        end)
+    end
+    return n
+end
+
+Tabs.World:AddSection("FPS Boost")
+Tabs.World:AddToggle("FPSBoostOn", {
+    Title = "FPS Booster",
+    Description = "Сносит текстуры и частицы карты. Обратно — только реджойн",
+    Default = false
+}):OnChanged(function(v)
+    FPSBoost.On = v
+    if v then
+        local n = cleanWorkspaceFPS()
+        Lighting.GlobalShadows = false
+        local bloom = Lighting:FindFirstChildWhichIsA("BloomEffect")
+        if bloom then bloom.Enabled = false end
+        local sun = Lighting:FindFirstChildWhichIsA("SunRaysEffect")
+        if sun then sun.Enabled = false end
+        Notify("FPS Boost", "Очищено объектов: " .. n, nil, 4)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- ANTI-FLING (защита от выброса)
 -- ═══════════════════════════════════════════════════════════════
 local AntiFling = {
@@ -2009,6 +2065,131 @@ Tabs.Other:AddToggle("AutoFlingDeath", {
 end)
 
 -- ════ OTHER ════
+Tabs.Other:AddSection("Cursor custom")
+-- ═══════════════════════════════════════════════════════════════
+-- CUSTOM CURSOR (картинка/прицел вместо серого кружка + вращение)
+-- ═══════════════════════════════════════════════════════════════
+local CC = {
+    On = false, Size = 40, Speed = 180, Mode = "Right",
+    rot = 0, pingpong = 1,
+}
+
+local ccGui = Instance.new("ScreenGui")
+ccGui.Name = "CWH_Cursor"
+ccGui.Parent = gethui and gethui() or CoreGui
+ccGui.ResetOnSpawn = false
+ccGui.IgnoreGuiInset = true
+ccGui.DisplayOrder = 9999
+ccGui.Enabled = false
+
+local ccHolder = Instance.new("Frame")
+ccHolder.BackgroundTransparency = 1
+ccHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+ccHolder.Size = UDim2.fromOffset(CC.Size, CC.Size)
+ccHolder.Parent = ccGui
+
+-- встроенный прицел (пока не вписана картинка)
+local function ccLine(pos)
+    local f = Instance.new("Frame")
+    f.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    f.BorderSizePixel = 0
+    f.Parent = ccHolder
+    if pos == "t" then
+        f.Size = UDim2.new(0, 2, 0.4, 0) f.Position = UDim2.new(0.5, -1, 0, 0)
+    elseif pos == "b" then
+        f.Size = UDim2.new(0, 2, 0.4, 0) f.Position = UDim2.new(0.5, -1, 0.6, 0)
+    elseif pos == "l" then
+        f.Size = UDim2.new(0.4, 0, 0, 2) f.Position = UDim2.new(0, 0, 0.5, -1)
+    else
+        f.Size = UDim2.new(0.4, 0, 0, 2) f.Position = UDim2.new(0.6, 0, 0.5, -1)
+    end
+end
+ccLine("t") ccLine("b") ccLine("l") ccLine("r")
+
+local ccDot = Instance.new("Frame")
+ccDot.BackgroundColor3 = Color3.new(1, 1, 1)
+ccDot.BorderSizePixel = 0
+ccDot.Size = UDim2.fromOffset(3, 3)
+ccDot.Position = UDim2.new(0.5, -1.5, 0.5, -1.5)
+ccDot.Parent = ccHolder
+
+local ccImage = nil -- создаётся когда вписан ID картинки
+
+RunService.RenderStepped:Connect(function(dt)
+    if not CC.On then return end
+    local m = UserInputService:GetMouseLocation()
+    ccHolder.Position = UDim2.fromOffset(m.X, m.Y)
+
+    if CC.Mode == "Right" then
+        CC.rot = (CC.rot + CC.Speed * dt) % 360
+    elseif CC.Mode == "Left" then
+        CC.rot = (CC.rot - CC.Speed * dt) % 360
+    else -- Reverse: качается влево-вправо
+        CC.rot = CC.rot + CC.Speed * dt * CC.pingpong
+        if CC.rot >= 90 then CC.rot = 90 CC.pingpong = -1 end
+        if CC.rot <= -90 then CC.rot = -90 CC.pingpong = 1 end
+    end
+    ccHolder.Rotation = CC.rot
+end)
+
+Tabs.Other:AddSection("Custom Cursor")
+
+Tabs.Other:AddToggle("CCOn", { Title = "Custom Cursor", Default = false })
+    :OnChanged(function(v)
+        CC.On = v
+        ccGui.Enabled = v
+        -- прячем/показываем системный курсор (работает на ПК)
+        pcall(function()
+            LocalPlayer:GetMouse().Icon = v and "rbxasset://textures/blank.png" or ""
+        end)
+    end)
+
+Tabs.Other:AddSlider("CCSize", {
+    Title = "Size", Default = 40, Min = 20, Max = 120, Rounding = 0,
+    Callback = function(v)
+        CC.Size = v
+        ccHolder.Size = UDim2.fromOffset(v, v)
+    end
+})
+
+Tabs.Other:AddSlider("CCSpeed", {
+    Title = "Speed (град/сек)", Default = 180, Min = 30, Max = 720, Rounding = 0,
+    Callback = function(v) CC.Speed = v end
+})
+
+Tabs.Other:AddDropdown("CCMode", {
+    Title = "Rotation",
+    Values = { "Right", "Left", "Reverse" }, Default = "Right",
+    Callback = function(v) CC.Mode = v end
+})
+
+Tabs.Other:AddInput("CCImage", {
+    Title = "Image ID (пусто = встроенный прицел)",
+    Placeholder = "например 123456789",
+    Callback = function(v)
+        v = tostring(v or ""):gsub("%s+", "")
+        if v == "" then
+            if ccImage then ccImage.Visible = false end
+            for _, ch in ipairs(ccHolder:GetChildren()) do
+                if ch:IsA("Frame") then ch.Visible = true end
+            end
+            return
+        end
+        if not v:find("rbxassetid") then v = "rbxassetid://" .. v end
+        if not ccImage then
+            ccImage = Instance.new("ImageLabel")
+            ccImage.BackgroundTransparency = 1
+            ccImage.Size = UDim2.fromScale(1, 1)
+            ccImage.Parent = ccHolder
+        end
+        ccImage.Image = v
+        ccImage.Visible = true
+        for _, ch in ipairs(ccHolder:GetChildren()) do
+            if ch:IsA("Frame") then ch.Visible = false end
+        end
+    end
+})
+
 Tabs.Other:AddSection("Dodge Throw Knife")
 -- ═══════════════════════════════════════════════════════════════
 -- DODGE THROW KNIFE (телепорт от летящего ножа)
