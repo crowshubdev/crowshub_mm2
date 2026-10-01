@@ -2008,7 +2008,7 @@ Tabs.Other:AddToggle("AutoFlingDeath", {
     if not v then deathFlingPending = false end
 end)
 
-–– ==== OTHER ====
+-- ════ OTHER ════
 Tabs.Other:AddSection("Dodge Throw Knife")
 -- ═══════════════════════════════════════════════════════════════
 -- DODGE THROW KNIFE (телепорт от летящего ножа)
