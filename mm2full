@@ -1380,8 +1380,6 @@ local function doFling(plr)
     end)
 end
 
-getgenv().CWH_DoFling = doFling
-
 local function stopFling()
     getgenv().CWH_FlingStop = true
     flinging = false
