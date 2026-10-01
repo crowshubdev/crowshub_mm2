@@ -563,6 +563,327 @@ Tabs.World:AddSection("Round Timer")
 Tabs.World:AddToggle("TimerShow", { Title = "Timer GUI", Default = false })
     :OnChanged(function(v) timerGui.Enabled = v end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- PING / FPS CHECKER
+-- ═══════════════════════════════════════════════════════════════
+local perfGui = Instance.new("ScreenGui")
+perfGui.Name = "CWH_Perf"
+perfGui.Parent = gethui and gethui() or CoreGui
+perfGui.ResetOnSpawn = false
+perfGui.Enabled = false
+
+local perfFrame = Instance.new("Frame")
+perfFrame.Size = UDim2.new(0, 120, 0, 62)
+perfFrame.Position = UDim2.new(0.75, 0, 0.35, 0)
+perfFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+perfFrame.BackgroundTransparency = 0.3
+perfFrame.BorderSizePixel = 0
+perfFrame.Active = true
+perfFrame.Parent = perfGui
+Instance.new("UICorner", perfFrame).CornerRadius = UDim.new(0, 8)
+
+local perfStroke = Instance.new("UIStroke")
+perfStroke.Color = Color3.fromRGB(0, 150, 200)
+perfStroke.Thickness = 1.5
+perfStroke.Parent = perfFrame
+
+local pingLabel = Instance.new("TextLabel")
+pingLabel.Size = UDim2.new(1, -10, 0.5, 0)
+pingLabel.Position = UDim2.new(0, 5, 0, 0)
+pingLabel.BackgroundTransparency = 1
+pingLabel.Text = "📶 -- ms"
+pingLabel.TextColor3 = Color3.new(1, 1, 1)
+pingLabel.Font = Enum.Font.GothamBold
+pingLabel.TextSize = 15
+pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+pingLabel.Parent = perfFrame
+
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(1, -10, 0.5, 0)
+fpsLabel.Position = UDim2.new(0, 5, 0.5, 0)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.Text = "🎯 -- fps"
+fpsLabel.TextColor3 = Color3.new(1, 1, 1)
+fpsLabel.Font = Enum.Font.GothamBold
+fpsLabel.TextSize = 15
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+fpsLabel.Parent = perfFrame
+
+do
+    local dragging, ds, sp = false, nil, nil
+    perfFrame.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            ds = i.Position
+            sp = perfFrame.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            perfFrame.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+end
+
+-- FPS счётчик
+local fpsCounter = 0
+RunService.RenderStepped:Connect(function()
+    fpsCounter += 1
+end)
+
+task.spawn(function()
+    local Stats = game:GetService("Stats")
+    while perfGui.Parent do
+        task.wait(0.5)
+        -- FPS = кадры за последнюю секунду / 2 (окно 0.5с)
+        local fps = math.floor(fpsCounter * 2)
+        fpsCounter = 0
+
+        local ping = nil
+        pcall(function()
+            ping = Stats.Network.ServerLatency
+        end)
+
+        if fpsLabel.Parent then
+            fpsLabel.Text = string.format("🎯 %d fps", fps)
+            fpsLabel.TextColor3 = fps >= 45 and Color3.fromRGB(80, 255, 120)
+                or (fps >= 25 and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(255, 80, 80))
+        end
+        if pingLabel.Parent and ping then
+            pingLabel.Text = string.format("📶 %d ms", math.floor(ping))
+            pingLabel.TextColor3 = ping <= 100 and Color3.fromRGB(80, 255, 120)
+                or (ping <= 250 and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(255, 80, 80))
+        end
+    end
+end)
+
+Tabs.World:AddSection("Ping / FPS")
+Tabs.World:AddToggle("PerfShow", {
+    Title = "Ping / FPS Checker",
+    Description = "Маленькое окошко с пингом и фпс",
+    Default = false
+}):OnChanged(function(v) perfGui.Enabled = v end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ROUND STATUS (murderer / sheriff-hero / gun drop)
+-- ═══════════════════════════════════════════════════════════════
+local statusGui = Instance.new("ScreenGui")
+statusGui.Name = "CWH_Status"
+statusGui.Parent = gethui and gethui() or CoreGui
+statusGui.ResetOnSpawn = false
+statusGui.Enabled = false
+
+local statusFrame = Instance.new("Frame")
+statusFrame.Size = UDim2.new(0, 190, 0, 96)
+statusFrame.Position = UDim2.new(0.75, 0, 0.5, 0)
+statusFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+statusFrame.BackgroundTransparency = 0.3
+statusFrame.BorderSizePixel = 0
+statusFrame.Active = true
+statusFrame.Parent = statusGui
+Instance.new("UICorner", statusFrame).CornerRadius = UDim.new(0, 8)
+
+local statusStroke = Instance.new("UIStroke")
+statusStroke.Color = Color3.fromRGB(0, 150, 200)
+statusStroke.Thickness = 1.5
+statusStroke.Parent = statusFrame
+
+local murLabel = Instance.new("TextLabel")
+murLabel.Size = UDim2.new(1, -10, 0, 28)
+murLabel.Position = UDim2.new(0, 5, 0, 4)
+murLabel.BackgroundTransparency = 1
+murLabel.Text = "🩸 Murderer: ..."
+murLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
+murLabel.Font = Enum.Font.GothamBold
+murLabel.TextSize = 14
+murLabel.TextXAlignment = Enum.TextXAlignment.Left
+murLabel.Parent = statusFrame
+
+local sherLabel = Instance.new("TextLabel")
+sherLabel.Size = UDim2.new(1, -10, 0, 28)
+sherLabel.Position = UDim2.new(0, 5, 0, 34)
+sherLabel.BackgroundTransparency = 1
+sherLabel.Text = "🔫 Sheriff/Hero: ..."
+sherLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
+sherLabel.Font = Enum.Font.GothamBold
+sherLabel.TextSize = 14
+sherLabel.TextXAlignment = Enum.TextXAlignment.Left
+sherLabel.Parent = statusFrame
+
+local gunLabel = Instance.new("TextLabel")
+gunLabel.Size = UDim2.new(1, -10, 0, 28)
+gunLabel.Position = UDim2.new(0, 5, 0, 64)
+gunLabel.BackgroundTransparency = 1
+gunLabel.Text = "🔫 Gun Drop: ..."
+gunLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+gunLabel.Font = Enum.Font.GothamBold
+gunLabel.TextSize = 14
+gunLabel.TextXAlignment = Enum.TextXAlignment.Left
+gunLabel.Parent = statusFrame
+
+do
+    local dragging, ds, sp = false, nil, nil
+    statusFrame.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            ds = i.Position
+            sp = statusFrame.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            statusFrame.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+end
+
+task.spawn(function()
+    while statusGui.Parent do
+        task.wait(0.4)
+        pcall(function()
+            -- Murderer
+            local mur = getMurderer()
+            if mur then
+                murLabel.Text = "🩸 Murderer: " .. mur.Name
+                murLabel.TextColor3 = Color3.fromRGB(255, 90, 90)
+            else
+                murLabel.Text = "🩸 Murderer: ⏳ нет данных"
+                murLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            end
+
+            -- Sheriff / Hero: Hero появляется когда игрок поднял Gun после смерти шерифа
+            local hero = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    local sd = ServerRoles[p.Name]
+                    if type(sd) == "table" and (sd.Role == "Hero") then
+                        hero = p
+                        break
+                    end
+                end
+            end
+            local sher = getSheriff()
+            if hero then
+                sherLabel.Text = "🔫 Sheriff/Hero: " .. hero.Name .. " [HERO]"
+                sherLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+            elseif sher then
+                sherLabel.Text = "🔫 Sheriff/Hero: " .. sher.Name
+                sherLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
+            else
+                sherLabel.Text = "🔫 Sheriff/Hero: ⏳ нет данных"
+                sherLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            end
+
+            -- Gun Drop
+            local map = getMap()
+            local drop = map and map:FindFirstChild("GunDrop", true)
+            if drop then
+                gunLabel.Text = "🔫 Gun Drop: ЕСТЬ ⚠️"
+                gunLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            else
+                gunLabel.Text = "🔫 Gun Drop: нет"
+                gunLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+        end)
+    end
+end)
+
+Tabs.World:AddSection("Round Status")
+Tabs.World:AddToggle("StatusShow", {
+    Title = "Round Status",
+    Description = "Murderer / Sheriff-Hero / Gun Drop",
+    Default = false
+}):OnChanged(function(v) statusGui.Enabled = v end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-FLING (защита от выброса)
+-- ═══════════════════════════════════════════════════════════════
+local AntiFling = {
+    On = false, MaxVel = 500, ClearMovers = true, DisableEnemyCollide = true,
+    lastCheck = 0,
+}
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if AntiFling.On then
+            pcall(function()
+                local char = getChar(LocalPlayer)
+                local hrp = getHRP(char)
+                local hum = getHum(char)
+                if not hrp then return end
+
+                -- 1) снос BodyMovers у себя
+                if AntiFling.ClearMovers then
+                    for _, obj in pairs(char:GetDescendants()) do
+                        if obj:IsA("BodyVelocity") or obj:IsA("BodyAngularVelocity")
+                            or obj:IsA("BodyThrust") or obj:IsA("BodyGyro")
+                            or obj:IsA("LinearVelocity") or obj:IsA("AngularVelocity")
+                            or obj:IsA("VectorForce") or obj:IsA("Torque") then
+                            -- не трогаем свой флинг-инструмент
+                            if obj.Name ~= "CWH_EpixVel" then
+                                obj:Destroy()
+                            end
+                        end
+                    end
+                end
+
+                -- 2) чужие CanCollide off + обнуление скорости HRP
+                if AntiFling.DisableEnemyCollide then
+                    for _, other in ipairs(Players:GetPlayers()) do
+                        if other ~= LocalPlayer and other.Character then
+                            for _, part in ipairs(other.Character:GetChildren()) do
+                                if part:IsA("BasePart") and part.CanCollide then
+                                    part.CanCollide = false
+                                    if part.Name == "HumanoidRootPart" then
+                                        part.Velocity = Vector3.zero
+                                        part.RotVelocity = Vector3.zero
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- 3) сброс аномальной своей скорости
+                local vel = hrp.AssemblyLinearVelocity or hrp.Velocity
+                local rot = hrp.AssemblyAngularVelocity or hrp.RotVelocity
+                if vel and vel.Magnitude > AntiFling.MaxVel then
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.Velocity = Vector3.zero
+                end
+                if rot and rot.Magnitude > AntiFling.MaxVel then
+                    hrp.AssemblyAngularVelocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                end
+            end)
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Anti-Fling")
+Tabs.Combat:AddToggle("AntiFlingOn", {
+    Title = "🛡 Enable Anti-Fling",
+    Description = "Защита от выброса другими игроками",
+    Default = false
+}):OnChanged(function(v) AntiFling.On = v end)
+Tabs.Combat:AddSlider("AntiFlingMaxVel", {
+    Title = "Max Velocity", Description = "Порог аномальной скорости",
+    Default = 500, Min = 100, Max = 2000, Rounding = 0,
+    Callback = function(v) AntiFling.MaxVel = v end
+})
+
 -- ═══ COMBAT ═══
 local function getKnife()
     local c = getChar(LocalPlayer)
@@ -1177,6 +1498,244 @@ end)
 task.delay(3, function()
     pcall(refreshFlingList)
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- DODGE THROW KNIFE (телепорт от летящего ножа)
+-- ═══════════════════════════════════════════════════════════════
+local DodgeKnife = {
+    On = false, Distance = 40, Detect = 100, Cooldown = 0.5, Last = 0,
+}
+
+-- пул летящих ножей
+local knifePool = {}
+local knifeVelTrack = {}
+
+local function tryAddKnife(inst)
+    if inst and inst:IsA("BasePart") then
+        local n = inst.Name:lower()
+        if n:find("knife") or n:find("throw") or n:find("blade") then
+            knifePool[inst] = true
+        end
+    end
+end
+for _, obj in ipairs(workspace:GetDescendants()) do tryAddKnife(obj) end
+workspace.DescendantAdded:Connect(tryAddKnife)
+
+local function getFlyingKnives()
+    local list = {}
+    for inst in pairs(knifePool) do
+        if inst and inst.Parent then
+            local inChar = false
+            local p = inst
+            while p and p ~= workspace do
+                if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then
+                    inChar = true
+                    break
+                end
+                p = p.Parent
+            end
+            if not inChar then
+                table.insert(list, inst)
+            else
+                knifePool[inst] = nil
+            end
+        else
+            knifePool[inst] = nil
+        end
+    end
+    return list
+end
+
+local function knifePos(k)
+    if not k or not k.Parent then return nil end
+    if k:IsA("BasePart") then return k.Position end
+    local ok, pv = pcall(function() return k:GetPivot() end)
+    if ok and typeof(pv) == "CFrame" then return pv.Position end
+    local f = k:FindFirstChildWhichIsA("BasePart")
+    return f and f.Position
+end
+
+local function knifeVel(k)
+    local part = k:IsA("BasePart") and k or k:FindFirstChildWhichIsA("BasePart")
+    if part then
+        local ok, v = pcall(function() return part.AssemblyLinearVelocity end)
+        if ok and v and v.Magnitude >= 5 then return v end
+    end
+    -- фоллбэк: дельта позиций (CFrame-анимация)
+    local pos = knifePos(k)
+    if not pos then return Vector3.zero end
+    local now = os.clock()
+    local tr = knifeVelTrack[k]
+    if tr then
+        local dt = now - tr.t
+        if dt > 0.01 then
+            local v = (pos - tr.p) / dt
+            knifeVelTrack[k] = { p = pos, t = now }
+            if v.Magnitude >= 5 then return v end
+        end
+    else
+        knifeVelTrack[k] = { p = pos, t = now }
+    end
+    return Vector3.zero
+end
+
+local function doDodgeKnife()
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    if not hrp then return false end
+
+    local now = os.clock()
+    if now - DodgeKnife.Last < DodgeKnife.Cooldown then return false end
+
+    local myPos = hrp.Position
+
+    for _, knife in ipairs(getFlyingKnives()) do
+        local kPos = knifePos(knife)
+        if kPos then
+            local kVel = knifeVel(knife)
+            if kVel.Magnitude >= 5 then
+                local toMe = myPos - kPos
+                local dist = toMe.Magnitude
+                if dist > 3 and dist < DodgeKnife.Detect then
+                    local kDir = kVel.Unit
+                    local dot = kDir:Dot(toMe.Unit)
+                    if dot > 0.7 then
+                        -- нож летит в нас — уклоняемся
+                        local perp = Vector3.new(-kDir.Z, 0, kDir.X)
+                        if perp.Magnitude < 0.1 then perp = Vector3.new(1, 0, 0) end
+                        perp = perp.Unit
+                        -- случайная сторона + случайный сдвиг вдоль ножа
+                        local side = math.random(0, 1) == 0 and 1 or -1
+                        local along = (math.random() - 0.5) * DodgeKnife.Distance * 0.6
+                        local dodge = perp * side * DodgeKnife.Distance
+                            + kDir * along
+                        local target = myPos + dodge
+                        -- держим ту же высоту (не телепортируем в пол/небо)
+                        target = Vector3.new(target.X, myPos.Y, target.Z)
+
+                        hrp.CFrame = CFrame.new(target)
+                        DodgeKnife.Last = now
+                        Notify("Dodge", "🌀 Уклонение от ножа!", nil, 2)
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if DodgeKnife.On then
+            pcall(doDodgeKnife)
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Dodge Throw Knife")
+Tabs.Combat:AddToggle("DodgeKnifeOn", {
+    Title = "🌀 Auto Dodge Knife",
+    Description = "Телепорт в сторону от летящего ножа",
+    Default = false
+}):OnChanged(function(v) DodgeKnife.On = v end)
+Tabs.Combat:AddSlider("DodgeKnifeDist", {
+    Title = "Dodge Distance", Default = 40, Min = 20, Max = 60, Rounding = 0,
+    Callback = function(v) DodgeKnife.Distance = v end
+})
+Tabs.Combat:AddSlider("DodgeKnifeDetect", {
+    Title = "Detect Radius", Default = 100, Min = 30, Max = 200, Rounding = 0,
+    Callback = function(v) DodgeKnife.Detect = v end
+})
+Tabs.Combat:AddSlider("DodgeKnifeCD", {
+    Title = "Cooldown (сек)", Default = 0.5, Min = 0.1, Max = 2, Rounding = 1,
+    Callback = function(v) DodgeKnife.Cooldown = v end
+})
+Tabs.Combat:AddButton({
+    Title = "🌀 Dodge Now",
+    Description = "Ручное уклонение прямо сейчас",
+    Callback = function()
+        if not doDodgeKnife() then
+            Notify("Dodge", "Летящих ножей нет", nil, 2)
+        end
+    end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- DODGE MURDER (телепорт от убийцы при опасной дистанции)
+-- ═══════════════════════════════════════════════════════════════
+local DodgeMurder = {
+    On = false, TriggerDist = 25, TeleportDist = 70, Cooldown = 2, Last = 0,
+}
+
+local function doDodgeMurder()
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    local hum = getHum(char)
+    if not (hrp and hum and hum.Health > 0) then return false end
+
+    local now = os.clock()
+    if now - DodgeMurder.Last < DodgeMurder.Cooldown then return false end
+
+    local mur = getMurderer()
+    local mHRP = mur and getHRP(getChar(mur))
+    if not mHRP then return false end
+
+    local dist = (mHRP.Position - hrp.Position).Magnitude
+    if dist > DodgeMurder.TriggerDist then return false end
+
+    -- телепорт на случайную точку на окружности TeleportDist от меня
+    local angle = math.random() * math.pi * 2
+    local r = DodgeMurder.TeleportDist
+    local target = hrp.Position + Vector3.new(
+        math.cos(angle) * r,
+        0,
+        math.sin(angle) * r
+    )
+
+    -- если murder оказался ближе к новой точке чем мы — разворачиваем на 180
+    if (target - mHRP.Position).Magnitude < (hrp.Position - mHRP.Position).Magnitude then
+        target = hrp.Position - Vector3.new(
+            math.cos(angle) * r,
+            0,
+            math.sin(angle) * r
+        )
+    end
+
+    hrp.CFrame = CFrame.new(target)
+    DodgeMurder.Last = now
+    Notify("Dodge Murder", "💨 Телепорт от " .. mur.Name .. "!", nil, 2)
+    return true
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if DodgeMurder.On then
+            pcall(doDodgeMurder)
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Dodge Murder")
+Tabs.Combat:AddToggle("DodgeMurderOn", {
+    Title = "💨 Auto Dodge Murder",
+    Description = "Телепорт когда убийца подошёл близко",
+    Default = false
+}):OnChanged(function(v) DodgeMurder.On = v end)
+Tabs.Combat:AddSlider("DodgeMurderTrig", {
+    Title = "Trigger Distance", Description = "Murderer ближе — телепорт",
+    Default = 25, Min = 10, Max = 60, Rounding = 0,
+    Callback = function(v) DodgeMurder.TriggerDist = v end
+})
+Tabs.Combat:AddSlider("DodgeMurderTP", {
+    Title = "Teleport Distance", Description = "Насколько далеко убегать",
+    Default = 70, Min = 30, Max = 150, Rounding = 0,
+    Callback = function(v) DodgeMurder.TeleportDist = v end
+})
+Tabs.Combat:AddSlider("DodgeMurderCD", {
+    Title = "Cooldown (сек)", Default = 2, Min = 0.5, Max = 5, Rounding = 1,
+    Callback = function(v) DodgeMurder.Cooldown = v end
+})
 
 -- ═══ FARM ═══
 
