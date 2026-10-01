@@ -178,7 +178,6 @@ local Tabs = {
     Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
     Farm = Window:AddTab({ Title = "Auto Farm", Icon = "coins" }),
     Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
-    Changelog = Window:AddTab({ Title = "Changelog", Icon = "info" }),  -- НОВОЕ
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
  
@@ -2253,29 +2252,6 @@ Tabs.Combat:AddSlider("DodgeMurderCD", {
     Callback = function(v) DodgeMurder.Cooldown = v end
 })
 
-–– ===== CHANGELOG ====
-
--- ═══════════════════════════════════════════════════════════════
--- CHANGELOG
--- ═══════════════════════════════════════════════════════════════
-Tabs.Changelog:AddParagraph({
-    Title = "Remastered v3",
-    Content = "• Ping/FPS Checker (World)\n• Round Status: Murderer / Sheriff-Hero / Gun Drop\n• Dodge Throw Knife + Dodge Murder (Other)\n• Anti-Fling (Combat)\n• Auto Kill Everyone на монетах (Farm)\n• Auto Fling Murderer после смерти (Other)\n• Fling: Stop + Refresh списка игроков\n• Silent Aim v2: Simple / Pro / Hacker"
-})
-Tabs.Changelog:AddParagraph({
-    Title = "Remastered v2",
-    Content = "• FluentPro загрузчик с ретраями (фикс запуска в Delta)\n• Кнопка открытия меню (drag + tap)\n• Фарм без джиттера + мгновенный ретаргет\n• Fling из Vision Hub (возврат на место)\n• Round Timer (World)"
-})
-Tabs.Changelog:AddParagraph({
-    Title = "Remastered v1",
-    Content = "• Полная пересборка: вырезаны крашащие блоки (Destroy UI, Server Status)\n• ESP с мгновенными ролями через PlayerDataChanged\n• Gun Drop ESP\n• Coin Aura, Farm Basic/Down\n• Kill Aura / Kill Everyone\n• Speed Lock (скорость не слетает от ножа)"
-})
-Tabs.Changelog:AddParagraph({
-Title = "1 version script ",
-Content = "• Был создан скрипт было добавлено: авто фарм , есп "
-})
-Notify("Update", "v3: Other + Changelog + Auto KE + Auto Fling", nil, 5)
-
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
 Tabs.Settings:AddDropdown("Theme", {
@@ -2365,4 +2341,4 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 15)
+Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 5)
