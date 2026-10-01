@@ -929,13 +929,13 @@ task.spawn(function()
     end
 end)
 
-Tabs.Combat:AddSection("Anti-Fling")
-Tabs.Combat:AddToggle("AntiFlingOn", {
+Tabs.World:AddSection("Anti-Fling")
+Tabs.World:AddToggle("AntiFlingOn", {
     Title = "🛡 Enable Anti-Fling",
     Description = "Защита от выброса другими игроками",
     Default = false
 }):OnChanged(function(v) AntiFling.On = v end)
-Tabs.Combat:AddSlider("AntiFlingMaxVel", {
+Tabs.World:AddSlider("AntiFlingMaxVel", {
     Title = "Max Velocity", Description = "Порог аномальной скорости",
     Default = 500, Min = 100, Max = 2000, Rounding = 0,
     Callback = function(v) AntiFling.MaxVel = v end
@@ -1045,7 +1045,7 @@ Tabs.Combat:AddButton({
 })
 
 -- Silent Aim v2 (Simple/Pro/Hacker)
-local SA2 = { On = false, Mode = "Simple", Target = "Murderer", Predict = true, Range = 300 }
+local SA2 = local SA2 = { On = false, Mode = "Simple", Target = "Murderer", Predict = true, Range = 300, AimPart = "Torso" }
 local WS2, origM, origT, hooked = nil, nil, nil, false
 
 local function getWS()
@@ -1158,24 +1158,45 @@ local function restoreAtt()
     if a and savedAtt then pcall(function() a.WorldCFrame = savedAtt end) end
     savedAtt = nil
 end
+
 local function startPush()
     if pushConn then pushConn:Disconnect() end
     pushConn = RunService.Heartbeat:Connect(function()
         if not (SA2.On and SA2.Mode == "Hacker") then return end
         local t = pickSA()
         local my = getHRP(getChar(LocalPlayer))
-        local th = t and getChar(t) and getHRP(getChar(t))
+        local th = t and t.Character and getHRP(t.Character)
         if not (t and my and th) then restoreAtt() return end
         local a = getAtt()
         if not a then return end
         if not savedAtt then pcall(function() savedAtt = a.WorldCFrame end) end
+
         local dir = (th.Position - my.Position)
         if dir.Magnitude < 1 then return end
         dir = dir.Unit
-        local d = math.max(dir.Magnitude - 5, 8)
-        pcall(function() a.WorldCFrame = CFrame.new(my.Position + dir * d, th.Position) end)
+
+        -- стена между нами?
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { LocalPlayer.Character }
+        local hit = workspace:Raycast(my.Position, th.Position - my.Position, params)
+        local tchar = t.Character
+        local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
+
+        if not blocked then
+            -- путь чист — обычный выстрел, ничего не двигаем
+            restoreAtt()
+            return
+        end
+
+        -- стена есть: точка выстрела за ней (60% пути до цели)
+        local d = math.max(math.min((th.Position - my.Position).Magnitude * 0.6, 60), 10)
+        pcall(function()
+            a.WorldCFrame = CFrame.new(my.Position + dir * d, th.Position)
+        end)
     end)
 end
+
 local function stopPush()
     if pushConn then pushConn:Disconnect() pushConn = nil end
     restoreAtt()
@@ -1207,7 +1228,15 @@ Tabs.Combat:AddDropdown("SA2Mode", {
 Tabs.Combat:AddDropdown("SA2Target", {
     Title = "Target", Values = { "Murderer", "Sheriff", "Closest" }, Default = "Murderer",
     Callback = function(v) SA2.Target = v end
+}) 
+
+Tabs.Combat:AddDropdown("SA2AimPart", {
+    Title = "Aim Part",
+    Description = "Torso — стабильнее попадает, Head — хедшоты",
+    Values = { "Torso", "Head" }, Default = "Torso",
+    Callback = function(v) SA2.AimPart = v end
 })
+
 Tabs.Combat:AddToggle("SA2Pred", { Title = "Prediction", Default = true })
     :OnChanged(function(v) SA2.Predict = v end)
 Tabs.Combat:AddSlider("SA2Range", {
@@ -2054,8 +2083,8 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     hookHumanoid(char)
 end)
 
-Tabs.Other:AddSection("Auto Fling on Death")
-Tabs.Other:AddToggle("AutoFlingDeath", {
+Tabs.Farm:AddSection("Auto Fling on Death")
+Tabs.Farm:AddToggle("AutoFlingDeath", {
     Title = "🌪 Auto Fling Murderer",
     Description = "Умер → респавн → сразу флинг убийцы",
     Default = false
@@ -2063,6 +2092,53 @@ Tabs.Other:AddToggle("AutoFlingDeath", {
     AutoFlingDeath.On = v
     if not v then deathFlingPending = false end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- COIN AURA (автономная)
+-- ═══════════════════════════════════════════════════════════════
+local CA4 = { On = false, Radius = 15, Delay = 0.05, Last = 0 }
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if CA4.On then
+            pcall(function()
+                local now = os.clock()
+                if now - CA4.Last < CA4.Delay then return end
+                local char = getChar(LocalPlayer)
+                local root = getHRP(char)
+                if not root then return end
+                local map = getMap()
+                local cont = map and map:FindFirstChild("CoinContainer")
+                if not cont then return end
+                local touched = false
+                for _, c in ipairs(cont:GetDescendants()) do
+                    if c:IsA("BasePart")
+                        and not c:GetAttribute("Collected")
+                        and not c:GetAttribute("Delete")
+                        and (c.Position - root.Position).Magnitude <= CA4.Radius then
+                        pcall(function()
+                            realFireTouch(root, c, 0)
+                            realFireTouch(root, c, 1)
+                        end)
+                        touched = true
+                    end
+                end
+                if touched then CA4.Last = now end
+            end)
+        end
+    end
+end)
+
+Tabs.Farm:AddSection("Coin Aura")
+Tabs.Farm:AddToggle("CA4On", {
+    Title = "🎯 Coin Aura",
+    Description = "Собирает монеты в радиусе без касания",
+    Default = false
+}):OnChanged(function(v) CA4.On = v end)
+Tabs.Farm:AddSlider("CA4Radius", {
+    Title = "Aura Radius", Default = 15, Min = 3, Max = 35, Rounding = 0,
+    Callback = function(v) CA4.Radius = v end
+})
 
 -- ════ OTHER ════
 Tabs.Other:AddSection("Cursor custom")
@@ -2325,25 +2401,25 @@ task.spawn(function()
     end
 end)
 
-Tabs.Combat:AddSection("Dodge Throw Knife")
-Tabs.Combat:AddToggle("DodgeKnifeOn", {
+Tabs.Other:AddSection("Dodge Throw Knife")
+Tabs.Other:AddToggle("DodgeKnifeOn", {
     Title = "🌀 Auto Dodge Knife",
     Description = "Телепорт в сторону от летящего ножа",
     Default = false
 }):OnChanged(function(v) DodgeKnife.On = v end)
-Tabs.Combat:AddSlider("DodgeKnifeDist", {
+Tabs.Other:AddSlider("DodgeKnifeDist", {
     Title = "Dodge Distance", Default = 40, Min = 20, Max = 60, Rounding = 0,
     Callback = function(v) DodgeKnife.Distance = v end
 })
-Tabs.Combat:AddSlider("DodgeKnifeDetect", {
+Tabs.Other:AddSlider("DodgeKnifeDetect", {
     Title = "Detect Radius", Default = 100, Min = 30, Max = 200, Rounding = 0,
     Callback = function(v) DodgeKnife.Detect = v end
 })
-Tabs.Combat:AddSlider("DodgeKnifeCD", {
+Tabs.Other:AddSlider("DodgeKnifeCD", {
     Title = "Cooldown (сек)", Default = 0.5, Min = 0.1, Max = 2, Rounding = 1,
     Callback = function(v) DodgeKnife.Cooldown = v end
 })
-Tabs.Combat:AddButton({
+Tabs.Other:AddButton({
     Title = "🌀 Dodge Now",
     Description = "Ручное уклонение прямо сейчас",
     Callback = function()
@@ -2410,23 +2486,23 @@ task.spawn(function()
     end
 end)
 
-Tabs.Combat:AddSection("Dodge Murder")
-Tabs.Combat:AddToggle("DodgeMurderOn", {
+Tabs.Other:AddSection("Dodge Murder")
+Tabs.Other:AddToggle("DodgeMurderOn", {
     Title = "💨 Auto Dodge Murder",
     Description = "Телепорт когда убийца подошёл близко",
     Default = false
 }):OnChanged(function(v) DodgeMurder.On = v end)
-Tabs.Combat:AddSlider("DodgeMurderTrig", {
+Tabs.Other:AddSlider("DodgeMurderTrig", {
     Title = "Trigger Distance", Description = "Murderer ближе — телепорт",
     Default = 25, Min = 10, Max = 60, Rounding = 0,
     Callback = function(v) DodgeMurder.TriggerDist = v end
 })
-Tabs.Combat:AddSlider("DodgeMurderTP", {
+Tabs.Other:AddSlider("DodgeMurderTP", {
     Title = "Teleport Distance", Description = "Насколько далеко убегать",
     Default = 70, Min = 30, Max = 150, Rounding = 0,
     Callback = function(v) DodgeMurder.TeleportDist = v end
 })
-Tabs.Combat:AddSlider("DodgeMurderCD", {
+Tabs.Other:AddSlider("DodgeMurderCD", {
     Title = "Cooldown (сек)", Default = 2, Min = 0.5, Max = 5, Rounding = 1,
     Callback = function(v) DodgeMurder.Cooldown = v end
 })
