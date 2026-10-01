@@ -1045,7 +1045,7 @@ Tabs.Combat:AddButton({
 })
 
 -- Silent Aim v2 (Simple/Pro/Hacker)
-local SA2 = local SA2 = { On = false, Mode = "Simple", Target = "Murderer", Predict = true, Range = 300, AimPart = "Torso" }
+local SA2 = { On = false, Mode = "Simple", Target = "Murderer", Predict = true, Range = 300, AimPart = "Torso" }
 local WS2, origM, origT, hooked = nil, nil, nil, false
 
 local function getWS()
