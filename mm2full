@@ -637,7 +637,7 @@ local fpsCounter = 0
 RunService.RenderStepped:Connect(function()
     fpsCounter += 1
 end)
-
+local fpsLast = 60
 -- замер пинга: раз в 0.5с дёргаем heartbeat и меряем реальный джиттер
 local pingSmooth = 0
 task.spawn(function()
@@ -655,7 +655,7 @@ task.spawn(function()
             end
         end)
 
-        -- способ 2:心跳-джиттер (работает всегда)
+        -- способ 2:hearbeat-джиттер (работает всегда)
         if not measured then
             local t0 = os.clock()
             RunService.Heartbeat:Wait()
@@ -682,18 +682,20 @@ task.spawn(function()
     end
 end)
 
+task.spawn(function()
+    while perfGui.Parent do
+        task.wait(0.5)
+        local fps = math.floor(fpsCounter * 2)
+        fpsCounter = 0
+        fpsLast = fps
+
         if fpsLabel.Parent then
             fpsLabel.Text = string.format("🎯 %d fps", fps)
             fpsLabel.TextColor3 = fps >= 45 and Color3.fromRGB(80, 255, 120)
                 or (fps >= 25 and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(255, 80, 80))
         end
-        if pingLabel.Parent and ping then
-            pingLabel.Text = string.format("📶 %d ms", math.floor(ping))
-            pingLabel.TextColor3 = ping <= 100 and Color3.fromRGB(80, 255, 120)
-                or (ping <= 250 and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(255, 80, 80))
-        end
     end
-end)
+end)        
 
 Tabs.World:AddSection("Ping / FPS")
 Tabs.World:AddToggle("PerfShow", {
