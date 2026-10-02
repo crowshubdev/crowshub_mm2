@@ -1192,6 +1192,10 @@ local function restoreAtt()
     savedAtt = nil
 end
 
+local cachedOrigin = nil
+local lastBlockKey = nil
+local wasBlocked = false
+
 local function startPush()
     if pushConn then pushConn:Disconnect() end
     pushConn = RunService.Heartbeat:Connect(function()
@@ -1199,7 +1203,13 @@ local function startPush()
         local t = pickSA()
         local my = getHRP(getChar(LocalPlayer))
         local th = t and t.Character and getHRP(t.Character)
-        if not (t and my and th) then restoreAtt() return end
+        if not (t and my and th) then
+            if wasBlocked then restoreAtt() end
+            wasBlocked = false
+            cachedOrigin = nil
+            lastBlockKey = nil
+            return
+        end
         local a = getAtt()
         if not a then return end
         if not savedAtt then pcall(function() savedAtt = a.WorldCFrame end) end
@@ -1208,7 +1218,6 @@ local function startPush()
         if dir.Magnitude < 1 then return end
         dir = dir.Unit
 
-        -- стена между нами?
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.FilterDescendantsInstances = { LocalPlayer.Character }
@@ -1217,18 +1226,35 @@ local function startPush()
         local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
 
         if not blocked then
-            -- путь чист — обычный выстрел, ничего не двигаем
-            restoreAtt()
+            -- путь чист: возвращаем ТОЛЬКО один раз, не дёргаем каждый кадр
+            if wasBlocked then
+                restoreAtt()
+                wasBlocked = false
+                cachedOrigin = nil
+                lastBlockKey = nil
+            end
             return
         end
 
-                -- точка СРАЗУ за стеной, которая заслоняет цель
-        local hitDist = hit and (hit.Position - my.Position).Magnitude or 10
-        local d = math.clamp(hitDist + 4, 10, math.max((th.Position - my.Position).Magnitude - 3, 12))
+        wasBlocked = true
+        -- ключ стабильности: та же стена + та же цель = та же точка
+        local key = hit.Instance:GetDebugId()
+            .. ":" .. math.floor(hit.Position.X / 2)
+            .. ":" .. math.floor(th.Position.X / 4)
+            .. ":" .. math.floor(th.Position.Z / 4)
+
+        if key ~= lastBlockKey or not cachedOrigin then
+            lastBlockKey = key
+            local hitDist = (hit.Position - my.Position).Magnitude
+            -- точка СРАЗУ за стеной, не далеко — сервер режет далёкие origin
+            local d = math.clamp(hitDist + 3, 8, 40)
+            cachedOrigin = CFrame.new(my.Position + dir * d, th.Position)
+        end
+
         pcall(function()
-            a.WorldCFrame = CFrame.new(my.Position + dir * d, th.Position)
+            a.WorldCFrame = cachedOrigin
         end)
-        end)
+    end)
 end
 
 local function stopPush()
