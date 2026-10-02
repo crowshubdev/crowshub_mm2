@@ -1228,6 +1228,8 @@ local function startPush()
         pcall(function()
             a.WorldCFrame = CFrame.new(my.Position + dir * d, th.Position)
         end)
+        end)
+end
 
 local function stopPush()
     if pushConn then pushConn:Disconnect() pushConn = nil end
