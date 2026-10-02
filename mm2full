@@ -638,18 +638,49 @@ RunService.RenderStepped:Connect(function()
     fpsCounter += 1
 end)
 
+-- замер пинга: раз в 0.5с дёргаем heartbeat и меряем реальный джиттер
+local pingSmooth = 0
 task.spawn(function()
     local Stats = game:GetService("Stats")
+    local RunService = game:GetService("RunService")
     while perfGui.Parent do
-        task.wait(0.5)
-        -- FPS = кадры за последнюю секунду / 2 (окно 0.5с)
-        local fps = math.floor(fpsCounter * 2)
-        fpsCounter = 0
+        local measured = nil
 
-        local ping = nil
+        -- способ 1: серверная статистика
         pcall(function()
-            ping = Stats.Network.ServerLatency
+            local nw = Stats.Network
+            local lat = nw and nw.ServerLatency
+            if type(lat) == "number" and lat > 0 then
+                measured = lat
+            end
         end)
+
+        -- способ 2:心跳-джиттер (работает всегда)
+        if not measured then
+            local t0 = os.clock()
+            RunService.Heartbeat:Wait()
+            local t1 = os.clock()
+            local frame = (t1 - t0) * 1000
+            -- ожидание кадра ~ (1000/fps), лишнее = сетевой джиттер
+            local expected = 1000 / math.max(fpsLast, 10)
+            local extra = frame - expected
+            if extra > 0 then
+                measured = math.clamp(extra, 0, 2000)
+            else
+                measured = 0
+            end
+        end
+
+        pingSmooth = pingSmooth * 0.7 + (measured or pingSmooth) * 0.3
+
+        if pingLabel.Parent then
+            pingLabel.Text = string.format("📶 %d ms", math.floor(pingSmooth))
+            pingLabel.TextColor3 = pingSmooth <= 100 and Color3.fromRGB(80, 255, 120)
+                or (pingSmooth <= 250 and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(255, 80, 80))
+        end
+        task.wait(0.5)
+    end
+end)
 
         if fpsLabel.Parent then
             fpsLabel.Text = string.format("🎯 %d fps", fps)
@@ -1189,13 +1220,12 @@ local function startPush()
             return
         end
 
-        -- стена есть: точка выстрела за ней (60% пути до цели)
-        local d = math.max(math.min((th.Position - my.Position).Magnitude * 0.6, 60), 10)
+                -- точка СРАЗУ за стеной, которая заслоняет цель
+        local hitDist = hit and (hit.Position - my.Position).Magnitude or 10
+        local d = math.clamp(hitDist + 4, 10, math.max((th.Position - my.Position).Magnitude - 3, 12))
         pcall(function()
             a.WorldCFrame = CFrame.new(my.Position + dir * d, th.Position)
         end)
-    end)
-end
 
 local function stopPush()
     if pushConn then pushConn:Disconnect() pushConn = nil end
@@ -2142,11 +2172,13 @@ Tabs.Farm:AddSlider("CA4Radius", {
 
 -- ════ OTHER ════
 Tabs.Other:AddSection("Cursor custom")
+
 -- ═══════════════════════════════════════════════════════════════
--- CUSTOM CURSOR (картинка/прицел вместо серого кружка + вращение)
+-- CUSTOM CURSOR v2 (Phone = центр экрана, PC = за мышью)
 -- ═══════════════════════════════════════════════════════════════
 local CC = {
     On = false, Size = 40, Speed = 180, Mode = "Right",
+    Device = "Auto", -- Auto / Phone / PC
     rot = 0, pingpong = 1,
 }
 
@@ -2189,18 +2221,55 @@ ccDot.Size = UDim2.fromOffset(3, 3)
 ccDot.Position = UDim2.new(0.5, -1.5, 0.5, -1.5)
 ccDot.Parent = ccHolder
 
-local ccImage = nil -- создаётся когда вписан ID картинки
+local ccImage = nil
+
+local function ccApplyImage(id)
+    id = tostring(id or ""):gsub("%s+", "")
+    if id == "" then
+        if ccImage then ccImage.Visible = false end
+        for _, ch in ipairs(ccHolder:GetChildren()) do
+            if ch:IsA("Frame") then ch.Visible = true end
+        end
+        return
+    end
+    if not id:find("rbxassetid") then id = "rbxassetid://" .. id end
+    if not ccImage then
+        ccImage = Instance.new("ImageLabel")
+        ccImage.BackgroundTransparency = 1
+        ccImage.Size = UDim2.fromScale(1, 1)
+        ccImage.Parent = ccHolder
+    end
+    ccImage.Image = id
+    ccImage.Visible = true
+    for _, ch in ipairs(ccHolder:GetChildren()) do
+        if ch:IsA("Frame") then ch.Visible = false end
+    end
+end
+
+-- позиция курсора: Phone = центр экрана, PC = за мышью
+local function ccGetPosition()
+    local dev = CC.Device
+    if dev == "Auto" then
+        dev = UserInputService.TouchEnabled and "Phone" or "PC"
+    end
+    if dev == "Phone" then
+        local vp = workspace.CurrentCamera.ViewportSize
+        return vp.X / 2, vp.Y / 2
+    end
+    local m = UserInputService:GetMouseLocation()
+    return m.X, m.Y
+end
 
 RunService.RenderStepped:Connect(function(dt)
     if not CC.On then return end
-    local m = UserInputService:GetMouseLocation()
-    ccHolder.Position = UDim2.fromOffset(m.X, m.Y)
+    local x, y = ccGetPosition()
+    ccHolder.Position = UDim2.fromOffset(x, y)
 
     if CC.Mode == "Right" then
         CC.rot = (CC.rot + CC.Speed * dt) % 360
     elseif CC.Mode == "Left" then
         CC.rot = (CC.rot - CC.Speed * dt) % 360
-    else -- Reverse: качается влево-вправо
+    else
         CC.rot = CC.rot + CC.Speed * dt * CC.pingpong
         if CC.rot >= 90 then CC.rot = 90 CC.pingpong = -1 end
         if CC.rot <= -90 then CC.rot = -90 CC.pingpong = 1 end
@@ -2214,11 +2283,28 @@ Tabs.Other:AddToggle("CCOn", { Title = "Custom Cursor", Default = false })
     :OnChanged(function(v)
         CC.On = v
         ccGui.Enabled = v
-        -- прячем/показываем системный курсор (работает на ПК)
         pcall(function()
-            LocalPlayer:GetMouse().Icon = v and "rbxasset://textures/blank.png" or ""
+            -- прячем системный курсор только на PC
+            local hide = v and (CC.Device == "PC"
+                or (CC.Device == "Auto" and not UserInputService.TouchEnabled))
+            LocalPlayer:GetMouse().Icon = hide and "rbxasset://textures/blank.png" or ""
         end)
     end)
+
+Tabs.Other:AddDropdown("CCDevice", {
+    Title = "Device",
+    Description = "Phone — фикс в центре экрана, PC — за мышью",
+    Values = { "Auto", "Phone", "PC" }, Default = "Auto",
+    Callback = function(v)
+        CC.Device = v
+        -- пересинхронизируем скрытие системного курсора
+        pcall(function()
+            local hide = CC.On and (v == "PC"
+                or (v == "Auto" and not UserInputService.TouchEnabled))
+            LocalPlayer:GetMouse().Icon = hide and "rbxasset://textures/blank.png" or ""
+        end)
+    end
+})
 
 Tabs.Other:AddSlider("CCSize", {
     Title = "Size", Default = 40, Min = 20, Max = 120, Rounding = 0,
@@ -2242,28 +2328,7 @@ Tabs.Other:AddDropdown("CCMode", {
 Tabs.Other:AddInput("CCImage", {
     Title = "Image ID (пусто = встроенный прицел)",
     Placeholder = "например 123456789",
-    Callback = function(v)
-        v = tostring(v or ""):gsub("%s+", "")
-        if v == "" then
-            if ccImage then ccImage.Visible = false end
-            for _, ch in ipairs(ccHolder:GetChildren()) do
-                if ch:IsA("Frame") then ch.Visible = true end
-            end
-            return
-        end
-        if not v:find("rbxassetid") then v = "rbxassetid://" .. v end
-        if not ccImage then
-            ccImage = Instance.new("ImageLabel")
-            ccImage.BackgroundTransparency = 1
-            ccImage.Size = UDim2.fromScale(1, 1)
-            ccImage.Parent = ccHolder
-        end
-        ccImage.Image = v
-        ccImage.Visible = true
-        for _, ch in ipairs(ccHolder:GetChildren()) do
-            if ch:IsA("Frame") then ch.Visible = false end
-        end
-    end
+    Callback = ccApplyImage
 })
 
 Tabs.Other:AddSection("Dodge Throw Knife")
