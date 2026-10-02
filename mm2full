@@ -164,7 +164,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
