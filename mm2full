@@ -2874,10 +2874,10 @@ do
             or i.UserInputType == Enum.UserInputType.Touch) then
             local d = i.Position - dragStart
             totalDist = d.Magnitude
-            openBtn.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + d.X,
-                startPos.Y.Scale, startPos.Y.Offset + d.Y
-        end)
+                    openBtn.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + d.X,
+            startPos.Y.Scale, startPos.Y.Offset + d.Y
+        )
     end)
 end
 
