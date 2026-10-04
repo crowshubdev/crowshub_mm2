@@ -2689,6 +2689,110 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
     Callback = function(v) DodgeMurder.Cooldown = v end
 })
 
+-- ═══════════════════════════════════════════════════════════════
+-- SHOOT MURDERER BUTTON (стиль: прозрачный фон, белая рамка)
+-- ═══════════════════════════════════════════════════════════════
+local smbGui = Instance.new("ScreenGui")
+smbGui.Name = "CWH_ShootBtn"
+smbGui.Parent = gethui and gethui() or CoreGui
+smbGui.ResetOnSpawn = false
+smbGui.Enabled = false
+
+local smb = Instance.new("TextButton")
+smb.Size = UDim2.new(0, 170, 0, 44)
+smb.Position = UDim2.new(0.75, -85, 0.42, 0)
+smb.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
+smb.BackgroundTransparency = 0.55
+smb.Text = "Shoot Murderer"
+smb.TextColor3 = Color3.new(1, 1, 1)
+smb.Font = Enum.Font.GothamBold
+smb.TextSize = 18
+smb.Active = true
+smb.Parent = smbGui
+
+local smbCorner = Instance.new("UICorner")
+smbCorner.CornerRadius = UDim.new(0, 6)
+smbCorner.Parent = smb
+
+local smbStroke = Instance.new("UIStroke")
+smbStroke.Color = Color3.fromRGB(120, 120, 255)
+smbStroke.Thickness = 2
+smbStroke.Transparency = 0.2
+smbStroke.Parent = smb
+
+do
+    local dragging, ds, sp = false, nil, nil
+    smb.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            ds = i.Position
+            sp = smb.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            smb.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+end
+
+smb.MouseButton1Click:Connect(function()
+    -- тот же механизм что в Quick Button 🎯
+    local c = getChar(LocalPlayer)
+    local gun = c and c:FindFirstChild("Gun")
+    if not gun then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        gun = bp and bp:FindFirstChild("Gun")
+        if gun then
+            local hum = getHum(c)
+            if hum then
+                pcall(function() hum:EquipTool(gun) end)
+                task.wait(0.15)
+                gun = getChar(LocalPlayer):FindFirstChild("Gun")
+            end
+        end
+    end
+    if not gun then Notify("Shoot", "Нет Gun!", nil, 3) return end
+
+    local kl = gun:FindFirstChild("KnifeLocal")
+    local cb = kl and kl:FindFirstChild("CreateBeam")
+    local rf = cb and cb:FindFirstChild("RemoteFunction")
+    if not (rf and typeof(rf.InvokeServer) == "function") then
+        Notify("Shoot", "Ремоут не найден", nil, 3)
+        return
+    end
+
+    local mur = getMurderer()
+    local murHRP = mur and getHRP(getChar(mur))
+    if not murHRP then Notify("Shoot", "Murderer не найден", nil, 3) return end
+
+    local vel = murHRP.AssemblyLinearVelocity or Vector3.zero
+    local ping = 0
+    pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
+    if ping > 1 then ping = ping / 1000 end
+    local predPos = murHRP.Position + vel * (0.028 + ping)
+
+    pcall(function() rf:InvokeServer(1, predPos, "AH2") end)
+    -- визуальный фидбек
+    smbStroke.Color = Color3.fromRGB(255, 80, 80)
+    task.delay(0.25, function()
+        smbStroke.Color = Color3.fromRGB(120, 120, 255)
+    end)
+end)
+
+Tabs.Other:AddSection("Shoot Button")
+Tabs.Other:AddToggle("ShootBtnShow", {
+    Title = "🎯 Shoot Murderer Button",
+    Description = "Кнопка на экране: прозрачный фон, белая рамка",
+    Default = false
+}):OnChanged(function(v) smbGui.Enabled = v end)
+
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
 Tabs.Settings:AddDropdown("Theme", {
@@ -2773,8 +2877,7 @@ do
             openBtn.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + d.X,
                 startPos.Y.Scale, startPos.Y.Offset + d.Y
-            )
-        end
+        end)
     end)
 end
 
