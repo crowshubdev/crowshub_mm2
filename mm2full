@@ -75,6 +75,15 @@ local function getRole(plr)
     if now - roleCacheT > 0.4 then roleCache = {} roleCacheT = now end
     if not roleCache[plr] then
         local role = "Unknown"
+        -- ПЕРВЫМ ДЕЛОМ: реальный Gun в руках/рюкзаке = Sheriff (покрывает Hero)
+        local c0 = plr and plr.Character
+        if c0 then
+            local bp0 = plr:FindFirstChild("Backpack")
+            if (c0:FindFirstChild("Gun")) or (bp0 and bp0:FindFirstChild("Gun")) then
+                roleCache[plr] = "Sheriff"
+                return roleCache[plr]
+            end
+        end
         local sd = ServerRoles[plr.Name]
         if type(sd) == "table" and sd.Role then
             role = (sd.Role == "Hero") and "Sheriff" or sd.Role
@@ -368,29 +377,60 @@ task.spawn(function()
 end)
 
 -- Gun Drop ESP
+
+-- ═══════════════════════════════════════════════════════════════
+-- GUN HERE LABEL (текст над упавшей пушкой)
+-- ═══════════════════════════════════════════════════════════════
+local gunHereOn = false
+local gunLabel = nil
+
 task.spawn(function()
     while task.wait(0.4) do
         pcall(function()
             local map = getMap()
             local drop = map and map:FindFirstChild("GunDrop", true)
-            if ESP.Gun and drop then
-                if not gunHL or not gunHL.Parent then
-                    gunHL = Instance.new("Highlight")
-                    gunHL.Name = "CWH_GunHL"
-                    gunHL.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    gunHL.FillColor = Color3.fromRGB(255, 215, 0)
-                    gunHL.OutlineColor = Color3.fromRGB(255, 215, 0)
-                    gunHL.FillTransparency = 0.4
+
+            if gunHereOn and drop then
+                local part = drop:IsA("BasePart") and drop
+                    or drop:FindFirstChildWhichIsA("BasePart", true)
+                if part then
+                    if not gunLabel or not gunLabel.Parent then
+                        gunLabel = Instance.new("BillboardGui")
+                        gunLabel.Name = "CWH_GunHere"
+                        gunLabel.Size = UDim2.new(0, 140, 0, 34)
+                        gunLabel.StudsOffset = Vector3.new(0, 2.5, 0)
+                        gunLabel.AlwaysOnTop = true
+                        local tx = Instance.new("TextLabel")
+                        tx.Name = "T"
+                        tx.Size = UDim2.new(1, 0, 1, 0)
+                        tx.BackgroundTransparency = 1
+                        tx.Text = "🔫 GUN HERE"
+                        tx.TextColor3 = Color3.fromRGB(255, 215, 0)
+                        tx.TextStrokeColor3 = Color3.new(0, 0, 0)
+                        tx.TextStrokeTransparency = 0
+                        tx.Font = Enum.Font.GothamBold
+                        tx.TextSize = 16
+                        tx.Parent = gunLabel
+                    end
+                    gunLabel.Adornee = part
+                    gunLabel.Parent = part
                 end
-                gunHL.Adornee = drop
-                gunHL.Parent = workspace
-            elseif gunHL then
-                gunHL:Destroy()
-                gunHL = nil
+            else
+                if gunLabel then
+                    gunLabel:Destroy()
+                    gunLabel = nil
+                end
             end
         end)
     end
 end)
+
+Tabs.Visuals:AddSection("Gun Label")
+Tabs.Visuals:AddToggle("GunHere", {
+    Title = "🔫 Gun Here Label",
+    Description = "Текст над упавшей пушкой",
+    Default = false
+}):OnChanged(function(v) gunHereOn = v end)
 
 Tabs.Visuals:AddSection("Player ESP")
 Tabs.Visuals:AddToggle("EspHL", { Title = "Highlight (Roles)", Default = false })
@@ -436,6 +476,53 @@ task.spawn(function()
         end
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- INSTANT GRAB GUN (бьёт GunDrop каждые 0.15с — берёт сразу после кулдауна)
+-- ═══════════════════════════════════════════════════════════════
+local instantGrabOn = false
+
+task.spawn(function()
+    while task.wait(0.15) do
+        if instantGrabOn then
+            pcall(function()
+                local map = getMap()
+                local root = getHRP(getChar(LocalPlayer))
+                local drop = map and map:FindFirstChild("GunDrop", true)
+                if drop and root and realFireTouch then
+                    realFireTouch(drop, root, 1)
+                    realFireTouch(drop, root, 0)
+                end
+            end)
+        end
+    end
+end)
+
+-- уведомление когда пистолет реально взят (Gun появился у тебя)
+task.spawn(function()
+    local seen = false
+    while task.wait(0.3) do
+        pcall(function()
+            local c = getChar(LocalPlayer)
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            local has = (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+            if has and not seen and instantGrabOn then
+                seen = true
+                Notify("Instant Grab", "🔫 Gun взят!", nil, 3)
+            elseif not has then
+                seen = false
+            end
+        end)
+    end
+end)
+
+Tabs.World:AddSection("Instant Grab Gun")
+
+Tabs.World:AddToggle("InstantGrab", {
+    Title = "⚡ Instant Grab Gun",
+    Description = "Авто-подбор сразу после 10с отчёта",
+    Default = false
+}):OnChanged(function(v) instantGrabOn = v end)
 
 Tabs.World:AddSection("Teleports")
 local tpTarget = "Lobby"
