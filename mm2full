@@ -2878,7 +2878,6 @@ do
             startPos.X.Scale, startPos.X.Offset + d.X,
             startPos.Y.Scale, startPos.Y.Offset + d.Y
         )
-    end)
 end
 
 Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 5)
