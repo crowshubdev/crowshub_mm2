@@ -2869,15 +2869,17 @@ do
         end
     end)
 
-    openBtn.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-            or i.UserInputType == Enum.UserInputType.Touch) then
-            local d = i.Position - dragStart
-            totalDist = d.Magnitude
-                    openBtn.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + d.X,
-            startPos.Y.Scale, startPos.Y.Offset + d.Y
-        )
-end
+            openBtn.InputChanged:Connect(function(i)
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+                or i.UserInputType == Enum.UserInputType.Touch) then
+                local d = i.Position - dragStart
+                totalDist = d.Magnitude
+                openBtn.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + d.X,
+                    startPos.Y.Scale, startPos.Y.Offset + d.Y
+                )
+            end
+        end)
+    end
 
 Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 5)
