@@ -2690,7 +2690,7 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- SHOOT MURDERER BUTTON (стиль: прозрачный фон, белая рамка)
+-- SHOOT MURDERER BUTTON v2 (tap через InputBegan + пробитие стен + размеры)
 -- ═══════════════════════════════════════════════════════════════
 local smbGui = Instance.new("ScreenGui")
 smbGui.Name = "CWH_ShootBtn"
@@ -2699,6 +2699,7 @@ smbGui.ResetOnSpawn = false
 smbGui.Enabled = false
 
 local smb = Instance.new("TextButton")
+smb.Name = "ShootBtn"
 smb.Size = UDim2.new(0, 170, 0, 44)
 smb.Position = UDim2.new(0.75, -85, 0.42, 0)
 smb.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
@@ -2720,30 +2721,21 @@ smbStroke.Thickness = 2
 smbStroke.Transparency = 0.2
 smbStroke.Parent = smb
 
-do
-    local dragging, ds, sp = false, nil, nil
-    smb.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            ds = i.Position
-            sp = smb.Position
-            i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-            or i.UserInputType == Enum.UserInputType.Touch) then
-            local d = i.Position - ds
-            smb.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
-        end
-    end)
+-- размеры (вертикаль/горизонталь)
+local SMB_W, SMB_H = 170, 44
+local function applySize()
+    smb.Size = UDim2.new(0, SMB_W, 0, SMB_H)
+    smb.TextSize = math.clamp(math.min(SMB_W, SMB_H) * 0.4, 10, 26)
 end
 
-smb.MouseButton1Click:Connect(function()
-    -- тот же механизм что в Quick Button 🎯
+-- ── сама стрельба ──
+local lastShot = 0
+
+local function doShoot()
+    local now = os.clock()
+    if now - lastShot < 0.6 then return end
+    lastShot = now
+
     local c = getChar(LocalPlayer)
     local gun = c and c:FindFirstChild("Gun")
     if not gun then
@@ -2772,6 +2764,34 @@ smb.MouseButton1Click:Connect(function()
     local murHRP = mur and getHRP(getChar(mur))
     if not murHRP then Notify("Shoot", "Murderer не найден", nil, 3) return end
 
+    local myHRP = getHRP(getChar(LocalPlayer))
+    if not myHRP then return end
+
+    -- проверка стены
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { LocalPlayer.Character }
+    local hit = workspace:Raycast(myHRP.Position, murHRP.Position - myHRP.Position, params)
+    local tchar = mur.Character
+    local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
+
+    local savedAtt = nil
+    local att = myHRP:FindFirstChild("GunRaycastAttachment")
+    local pushed = false
+
+    if blocked and att then
+        -- пробитие: точка сразу за стеной (тот же трюк что в Hacker-режиме)
+        pcall(function() savedAtt = att.WorldCFrame end)
+        local dir = (murHRP.Position - myHRP.Position).Unit
+        local hitDist = (hit.Position - myHRP.Position).Magnitude
+        local d = math.clamp(hitDist + 3, 8, 40)
+        pcall(function()
+            att.WorldCFrame = CFrame.new(myHRP.Position + dir * d, murHRP.Position)
+        end)
+        pushed = true
+    end
+
+    -- предикт и выстрел
     local vel = murHRP.AssemblyLinearVelocity or Vector3.zero
     local ping = 0
     pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
@@ -2779,19 +2799,76 @@ smb.MouseButton1Click:Connect(function()
     local predPos = murHRP.Position + vel * (0.028 + ping)
 
     pcall(function() rf:InvokeServer(1, predPos, "AH2") end)
-    -- визуальный фидбек
+
+    if pushed then
+        task.delay(0.1, function()
+            if att and savedAtt then pcall(function() att.WorldCFrame = savedAtt end) end
+        end)
+        Notify("Shoot", "🔫 Через стену → " .. mur.Name, nil, 2)
+    else
+        Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
+    end
+
+    -- фидбек
     smbStroke.Color = Color3.fromRGB(255, 80, 80)
     task.delay(0.25, function()
         smbStroke.Color = Color3.fromRGB(120, 120, 255)
     end)
+end
+
+-- ── tap через InputBegan (надёжно на телефоне) ──
+smb.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+    or i.UserInputType == Enum.UserInputType.Touch then
+        task.spawn(doShoot)
+    end
 end)
 
-Tabs.Other:AddSection("Shoot Button")
+-- drag кнопки
+do
+    local dragging, ds, sp, totalDist = false, nil, nil, 0
+    smb.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            totalDist = 0
+            ds = i.Position
+            sp = smb.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - ds
+            totalDist = d.Magnitude
+            smb.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+        end
+    end)
+end
+
+-- GUI настройки
+Tabs.Other:AddSection("Shoot Button v2")
+
 Tabs.Other:AddToggle("ShootBtnShow", {
     Title = "🎯 Shoot Murderer Button",
-    Description = "Кнопка на экране: прозрачный фон, белая рамка",
+    Description = "Прозрачная кнопка с пробитием стен",
     Default = false
 }):OnChanged(function(v) smbGui.Enabled = v end)
+
+Tabs.Other:AddSlider("ShootBtnW", {
+    Title = "Width (горизонталь)", Default = 170, Min = 120, Max = 320, Rounding = 0,
+    Callback = function(v) SMB_W = v applySize() end
+})
+
+Tabs.Other:AddSlider("ShootBtnH", {
+    Title = "Height (вертикаль)", Default = 44, Min = 30, Max = 100, Rounding = 0,
+    Callback = function(v) SMB_H = v applySize() end
+})
 
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
