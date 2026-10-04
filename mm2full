@@ -1270,9 +1270,24 @@ end
 -- Hacker: push attachment за стену
 local pushConn, savedAtt = nil, nil
 local function getAtt()
-    local hrp = getHRP(getChar(LocalPlayer))
-    return hrp and hrp:FindFirstChild("GunRaycastAttachment")
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    if hrp then
+        local a = hrp:FindFirstChild("GunRaycastAttachment")
+        if a then return a end
+    end
+    -- аттачмент живёт внутри GunServer с именем GunRaycastAttachment1
+    local gun = char and char:FindFirstChild("Gun")
+    if gun then
+        local gs = gun:FindFirstChild("GunServer")
+        if gs then
+            local a = gs:FindFirstChildWhichIsA("Attachment")
+            if a then return a end
+        end
+        return gun:FindFirstChildWhichIsA("Attachment", true)
+    end
 end
+
 local function restoreAtt()
     local a = getAtt()
     if a and savedAtt then pcall(function() a.WorldCFrame = savedAtt end) end
@@ -2690,7 +2705,7 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- SHOOT MURDERER BUTTON v2 (tap через InputBegan + пробитие стен + размеры)
+-- SHOOT MURDERER BUTTON v3 (Activate через SA2-хуки, стены пробивает)
 -- ═══════════════════════════════════════════════════════════════
 local smbGui = Instance.new("ScreenGui")
 smbGui.Name = "CWH_ShootBtn"
@@ -2721,21 +2736,21 @@ smbStroke.Thickness = 2
 smbStroke.Transparency = 0.2
 smbStroke.Parent = smb
 
--- размеры (вертикаль/горизонталь)
 local SMB_W, SMB_H = 170, 44
 local function applySize()
     smb.Size = UDim2.new(0, SMB_W, 0, SMB_H)
     smb.TextSize = math.clamp(math.min(SMB_W, SMB_H) * 0.4, 10, 26)
 end
 
--- ── сама стрельба ──
 local lastShot = 0
+local shooting = false
 
 local function doShoot()
+    if shooting then return end
     local now = os.clock()
-    if now - lastShot < 0.6 then return end
-    lastShot = now
+    if now - lastShot < 0.8 then return end
 
+    -- ган: найти и экипировать
     local c = getChar(LocalPlayer)
     local gun = c and c:FindFirstChild("Gun")
     if not gun then
@@ -2745,78 +2760,53 @@ local function doShoot()
             local hum = getHum(c)
             if hum then
                 pcall(function() hum:EquipTool(gun) end)
-                task.wait(0.15)
+                task.wait(0.2)
                 gun = getChar(LocalPlayer):FindFirstChild("Gun")
             end
         end
     end
     if not gun then Notify("Shoot", "Нет Gun!", nil, 3) return end
 
-    local kl = gun:FindFirstChild("KnifeLocal")
-    local cb = kl and kl:FindFirstChild("CreateBeam")
-    local rf = cb and cb:FindFirstChild("RemoteFunction")
-    if not (rf and typeof(rf.InvokeServer) == "function") then
-        Notify("Shoot", "Ремоут не найден", nil, 3)
+    local mur = getMurderer()
+    if not mur then Notify("Shoot", "Murderer не найден", nil, 3) return end
+
+    -- временно включаем SA2 в Hacker-режиме, целясь в Murderer
+    local prevEnabled, prevMode, prevTarget = SA2.Enabled, SA2.Mode, SA2.Target
+    SA2.Enabled = true
+    SA2.Mode = "Hacker"
+    SA2.Target = "Murderer"
+
+    if not installHooks() then
+        SA2.Enabled, SA2.Mode, SA2.Target = prevEnabled, prevMode, prevTarget
+        Notify("Shoot", "WeaponService не найден", nil, 4)
         return
     end
+    startPush()
 
-    local mur = getMurderer()
-    local murHRP = mur and getHRP(getChar(mur))
-    if not murHRP then Notify("Shoot", "Murderer не найден", nil, 3) return end
+    shooting = true
+    lastShot = os.clock()
+    task.wait(0.05)
+    pcall(function() gun:Activate() end)
+    task.wait(0.25)
 
-    local myHRP = getHRP(getChar(LocalPlayer))
-    if not myHRP then return end
-
-    -- проверка стены
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { LocalPlayer.Character }
-    local hit = workspace:Raycast(myHRP.Position, murHRP.Position - myHRP.Position, params)
-    local tchar = mur.Character
-    local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
-
-    local savedAtt = nil
-    local att = myHRP:FindFirstChild("GunRaycastAttachment")
-    local pushed = false
-
-    if blocked and att then
-        -- пробитие: точка сразу за стеной (тот же трюк что в Hacker-режиме)
-        pcall(function() savedAtt = att.WorldCFrame end)
-        local dir = (murHRP.Position - myHRP.Position).Unit
-        local hitDist = (hit.Position - myHRP.Position).Magnitude
-        local d = math.clamp(hitDist + 3, 8, 40)
-        pcall(function()
-            att.WorldCFrame = CFrame.new(myHRP.Position + dir * d, murHRP.Position)
-        end)
-        pushed = true
-    end
-
-    -- предикт и выстрел
-    local vel = murHRP.AssemblyLinearVelocity or Vector3.zero
-    local ping = 0
-    pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
-    if ping > 1 then ping = ping / 1000 end
-    local predPos = murHRP.Position + vel * (0.028 + ping)
-
-    pcall(function() rf:InvokeServer(1, predPos, "AH2") end)
-
-    if pushed then
-        task.delay(0.1, function()
-            if att and savedAtt then pcall(function() att.WorldCFrame = savedAtt end) end
-        end)
-        Notify("Shoot", "🔫 Через стену → " .. mur.Name, nil, 2)
+    -- вернуть всё как было
+    SA2.Enabled, SA2.Mode, SA2.Target = prevEnabled, prevMode, prevTarget
+    if prevEnabled then
+        startPush() -- перезапуск пуша с прежним режимом
     else
-        Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
+        stopPush()
+        removeHooks()
     end
+    shooting = false
 
-    -- фидбек
     smbStroke.Color = Color3.fromRGB(255, 80, 80)
     task.delay(0.25, function()
         smbStroke.Color = Color3.fromRGB(120, 120, 255)
     end)
+    Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
 end
 
--- ── tap через InputBegan (надёжно на телефоне) ──
+-- tap через InputBegan
 smb.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1
     or i.UserInputType == Enum.UserInputType.Touch then
@@ -2824,20 +2814,17 @@ smb.InputBegan:Connect(function(i)
     end
 end)
 
--- drag кнопки
+-- drag
 do
-    local dragging, ds, sp, totalDist = false, nil, nil, 0
+    local dragging, ds, sp = false, nil, nil
     smb.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            totalDist = 0
             ds = i.Position
             sp = smb.Position
             i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if i.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
@@ -2845,28 +2832,25 @@ do
         if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
             or i.UserInputType == Enum.UserInputType.Touch) then
             local d = i.Position - ds
-            totalDist = d.Magnitude
             smb.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
         end
     end)
 end
 
--- GUI настройки
-Tabs.Other:AddSection("Shoot Button v2")
+Tabs.Other:AddSection("Shoot Button v3")
 
 Tabs.Other:AddToggle("ShootBtnShow", {
     Title = "🎯 Shoot Murderer Button",
-    Description = "Прозрачная кнопка с пробитием стен",
     Default = false
 }):OnChanged(function(v) smbGui.Enabled = v end)
 
 Tabs.Other:AddSlider("ShootBtnW", {
-    Title = "Width (горизонталь)", Default = 170, Min = 120, Max = 320, Rounding = 0,
+    Title = "Width", Default = 170, Min = 120, Max = 320, Rounding = 0,
     Callback = function(v) SMB_W = v applySize() end
 })
 
 Tabs.Other:AddSlider("ShootBtnH", {
-    Title = "Height (вертикаль)", Default = 44, Min = 30, Max = 100, Rounding = 0,
+    Title = "Height", Default = 44, Min = 30, Max = 100, Rounding = 0,
     Callback = function(v) SMB_H = v applySize() end
 })
 
