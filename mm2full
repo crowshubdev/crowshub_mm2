@@ -1327,10 +1327,12 @@ local function startPush()
         local tchar = t.Character
         local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
 
-        if not blocked then
-            -- путь чист: возвращаем ТОЛЬКО один раз, не дёргаем каждый кадр
+           if not blocked then
             if wasBlocked then
-                restoreAtt()
+                -- задержка: сервер обрабатывает выстрел после расблокировки
+                task.delay(0.15, function()
+                    restoreAtt()
+                end)
                 wasBlocked = false
                 cachedOrigin = nil
                 lastBlockKey = nil
@@ -1340,7 +1342,7 @@ local function startPush()
 
         wasBlocked = true
         -- ключ стабильности: та же стена + та же цель = та же точка
-        local key = hit.Instance:GetDebugId()
+            local key = tostring(hit.Instance)
             .. ":" .. math.floor(hit.Position.X / 2)
             .. ":" .. math.floor(th.Position.X / 4)
             .. ":" .. math.floor(th.Position.Z / 4)
@@ -1424,6 +1426,52 @@ task.spawn(function()
         if SA2.On and not hooked then pcall(installHooks) end
     end
 end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO WALL SHOOT (Hacker-режим сам стреляет через стены)
+-- ═══════════════════════════════════════════════════════════════
+local AutoWall = { On = false, Interval = 2, Last = 0 }
+
+task.spawn(function()
+    while task.wait(0.3) do
+        if AutoWall.On and SA2.On and SA2.Mode == "Hacker" then
+            local now = os.clock()
+            if now - AutoWall.Last >= AutoWall.Interval then
+                local mur = getMurderer()
+                local murChar = mur and mur.Character
+                local murHRP = murChar and getHRP(murChar)
+                local myChar = getChar(LocalPlayer)
+                local myHRP = myChar and getHRP(myChar)
+                local gun = myChar and myChar:FindFirstChild("Gun")
+                if murHRP and myHRP and gun then
+                    local params = RaycastParams.new()
+                    params.FilterType = Enum.RaycastFilterType.Exclude
+                    params.FilterDescendantsInstances = { myChar }
+                    local hit = workspace:Raycast(myHRP.Position, murHRP.Position - myHRP.Position, params)
+                    local blocked = hit and not hit.Instance:IsDescendantOf(murChar)
+                    if blocked then
+                        AutoWall.Last = now
+                        pcall(function() gun:Activate() end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+Tabs.Combat:AddSection("Auto Wall Shoot")
+
+Tabs.Combat:AddToggle("AutoWallOn", {
+    Title = "🧱 Auto Wall Shoot",
+    Description = "Hacker-режим сам стреляет через стены",
+    Default = false
+}):OnChanged(function(v) AutoWall.On = v end)
+
+Tabs.Combat:AddSlider("AutoWallInt", {
+    Title = "Interval (сек)",
+    Default = 2, Min = 1, Max = 5, Rounding = 1,
+    Callback = function(v) AutoWall.Interval = v end
+})
 
 -- Fling
 
