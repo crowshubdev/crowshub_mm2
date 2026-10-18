@@ -2950,11 +2950,7 @@ local function addDual()
     local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
     if not leftArm or not rightArm then return end
 
-    -- 1. Синхронизируем поднятие левой руки с правой (копируем хват/позу)
-    local rightShoulder = char:FindFirstChild("Right Shoulder", true) or char:FindFirstChild("RightShoulder", true)
-    local leftShoulder = char:FindFirstChild("Left Shoulder", true) or char:FindFirstChild("LeftShoulder", true)
-
-    -- 2. Находим хват правого оружия (RightGrip)
+    -- Находим хват правого оружия (RightGrip)
     local gripWeld = nil
     for _, w in ipairs(rightArm:GetChildren()) do
         if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
@@ -3035,7 +3031,7 @@ local function addDual()
     dualLastRole = myRole
 end
 
--- Быстрая проверка каждые 0.1 сек (вместо 1 сек) для моментального появления при нажатии на инструмент
+-- Отслеживаем доставание оружия в руку (каждые 0.1 сек)
 task.spawn(function()
     while task.wait(0.1) do
         if dualOn then
@@ -3046,12 +3042,10 @@ task.spawn(function()
                 local hasToolInHand = toolName and char:FindFirstChild(toolName)
 
                 if hasToolInHand then
-                    -- Если оружие в руке, а дубликата ещё нет — создаём
                     if not dualModel or not dualModel.Parent then
                         pcall(addDual)
                     end
                 else
-                    -- Если оружие убрали из руки в инвентарь — удаляем дубликат из левой руки
                     if dualModel then
                         removeDual()
                     end
@@ -3062,6 +3056,28 @@ task.spawn(function()
                 removeDual()
             end
         end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    dualModel = nil
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ПОДКЛЮЧЕНИЕ К ИНТЕРФЕЙСУ FLUENT
+-- ═══════════════════════════════════════════════════════════════
+Tabs.Other:AddSection("Dual Weapon")
+
+Tabs.Other:AddToggle("DualOn", {
+    Title = "🗡 Dual Weapon",
+    Description = "Второе оружие в левой руке (3D-модель, без слота в хотбаре)",
+    Default = false
+}):OnChanged(function(v)
+    dualOn = v
+    if v then
+        pcall(addDual)
+    else
+        removeDual()
     end
 end)
 
