@@ -2917,7 +2917,7 @@ Tabs.Other:AddSlider("ShootBtnH", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- DUAL WEAPON v2 (3D-модель в левой руке: без слота в хотбаре, рука на месте)
+-- DUAL WEAPON v2.1 (Синхронизация с экипировкой + Анимация левой руки)
 -- ═══════════════════════════════════════════════════════════════
 local dualOn = false
 local dualModel = nil
@@ -2937,34 +2937,33 @@ local function addDual()
     if not char then return end
 
     local myRole = getRole(LocalPlayer)
-    local tool = nil
-    if myRole == "Murderer" then
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        tool = char:FindFirstChild("Knife") or (bp and bp:FindFirstChild("Knife"))
-    elseif myRole == "Sheriff" or myRole == "Hero" then
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        tool = char:FindFirstChild("Gun") or (bp and bp:FindFirstChild("Gun"))
-    else
-        return -- Innocent: ничего не носим
-    end
+    
+    -- Ищем предмет ИМЕННО внутри персонажа (когда он экипирован в руку)
+    local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
+    if not toolName then return end
+
+    local tool = char:FindFirstChild(toolName)
+    -- Если инструмент не в руке (лежит в Backpack) — пока ничего не создаем
     if not tool then return end
 
     local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
-    if not leftArm then return end
+    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+    if not leftArm or not rightArm then return end
 
-    -- как движок держит оригинал в правой руке (RightGrip)
+    -- 1. Синхронизируем поднятие левой руки с правой (копируем хват/позу)
+    local rightShoulder = char:FindFirstChild("Right Shoulder", true) or char:FindFirstChild("RightShoulder", true)
+    local leftShoulder = char:FindFirstChild("Left Shoulder", true) or char:FindFirstChild("LeftShoulder", true)
+
+    -- 2. Находим хват правого оружия (RightGrip)
     local gripWeld = nil
-    local rightHand = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
-    if rightHand then
-        for _, w in ipairs(rightHand:GetChildren()) do
-            if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
-                gripWeld = w
-                break
-            end
+    for _, w in ipairs(rightArm:GetChildren()) do
+        if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
+            gripWeld = w
+            break
         end
     end
 
-    -- собираем 3D-модель из частей оружия (НЕ Tool — слот в хотбаре не появится)
+    -- Собираем 3D-модель из деталей оружия
     local srcParts = {}
     local handleSrc = nil
     for _, c in ipairs(tool:GetDescendants()) do
@@ -2988,7 +2987,7 @@ local function addDual()
         end
         c.CanCollide = false
         c.Massless = true
-        c.Anchored = true -- на время построения
+        c.Anchored = true
         c.Name = "CWH_Dual_" .. p.Name
         clones[p] = c
         c.Parent = holder
@@ -2997,17 +2996,15 @@ local function addDual()
     local newHandle = clones[handleSrc]
     if not newHandle then holder:Destroy() return end
 
-    -- куда встаёт handle: точная копия хвата оригинала, но от ЛЕВОЙ руки
-    local gripC0, gripC1
-    if gripWeld then
-        gripC0, gripC1 = gripWeld.C0, gripWeld.C1
-    else
-        gripC0 = tool.Grip
-        gripC1 = CFrame.new()
-    end
-    local handleCF = leftArm.CFrame * gripC0 * gripC1:Inverse()
+    -- Настройка хвата для левой руки
+    local gripC0 = gripWeld and gripWeld.C0 or tool.Grip
+    local gripC1 = gripWeld and gripWeld.C1 or CFrame.new()
 
-    -- расставляем части: handle по хвату, остальные — как в оригинале
+    -- Разворачиваем рукоятку зеркально для левой руки, чтобы она не смотрела назад
+    local mirrorC0 = gripC0 * CFrame.Angles(0, math.rad(180), 0)
+
+    local handleCF = leftArm.CFrame * mirrorC0 * gripC1:Inverse()
+
     newHandle.CFrame = handleCF
     for src, c in pairs(clones) do
         if src ~= handleSrc then
@@ -3017,14 +3014,14 @@ local function addDual()
 
     holder.Parent = char
 
-    -- включаем физику: handle к левой руке, остальные части — к handle
+    -- Физическая привязка (Weld)
     for src, c in pairs(clones) do
         c.Anchored = false
         local w = Instance.new("Weld")
         if src == handleSrc then
             w.Part0 = leftArm
             w.Part1 = c
-            w.C0 = gripC0
+            w.C0 = mirrorC0
             w.C1 = gripC1
         else
             w.Part0 = newHandle
@@ -3038,35 +3035,33 @@ local function addDual()
     dualLastRole = myRole
 end
 
+-- Быстрая проверка каждые 0.1 сек (вместо 1 сек) для моментального появления при нажатии на инструмент
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.1) do
         if dualOn then
-            local myRole = getRole(LocalPlayer)
-            -- пересоздаём при смене роли, респавне или пропаже
-            if myRole ~= dualLastRole
-                or not dualModel or not dualModel.Parent then
-                pcall(addDual)
+            local char = LocalPlayer.Character
+            if char then
+                local myRole = getRole(LocalPlayer)
+                local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
+                local hasToolInHand = toolName and char:FindFirstChild(toolName)
+
+                if hasToolInHand then
+                    -- Если оружие в руке, а дубликата ещё нет — создаём
+                    if not dualModel or not dualModel.Parent then
+                        pcall(addDual)
+                    end
+                else
+                    -- Если оружие убрали из руки в инвентарь — удаляем дубликат из левой руки
+                    if dualModel then
+                        removeDual()
+                    end
+                end
+            end
+        else
+            if dualModel then
+                removeDual()
             end
         end
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    dualModel = nil
-end)
-
-Tabs.Other:AddSection("Dual Weapon")
-
-Tabs.Other:AddToggle("DualOn", {
-    Title = "🗡 Dual Weapon",
-    Description = "Второе оружие в левой руке (3D-модель, без слота в хотбаре)",
-    Default = false
-}):OnChanged(function(v)
-    dualOn = v
-    if v then
-        pcall(addDual)
-    else
-        removeDual()
     end
 end)
 
