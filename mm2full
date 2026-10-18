@@ -1812,7 +1812,7 @@ local AVOID_DIST = 40
 local RISE_SAFE_DIST = 20
 local touchedCoins = {} -- [coin] = время touch
 local blockedCoins = {}
-
+local touchCounts = {} -- [coin] = сколько раз touch не сработал
 local function farm_hrp()
     local c = getChar(LocalPlayer)
     return c and getHRP(c)
@@ -1923,6 +1923,12 @@ local function fire_touch(coin)
     end
     -- ФИКС: помечаем монету — не летим в неё повторно
     touchedCoins[coin] = now
+    -- застряли: 3-й touch той же монеты — блокируем её на 10 сек
+    touchCounts[coin] = (touchCounts[coin] or 0) + 1
+    if touchCounts[coin] >= 3 then
+        blockedCoins[coin] = now
+        touchCounts[coin] = nil
+    end
     AutoFarmSystem.CollectedCount = AutoFarmSystem.CollectedCount + 1
     return true
 end
@@ -1991,6 +1997,13 @@ task.spawn(function()
         -- чистим старые метки
         for coin, t in pairs(touchedCoins) do
             if not coin.Parent or now - t > 3 then touchedCoins[coin] = nil end
+        end
+
+        for coin, t in pairs(blockedCoins) do
+            if not coin.Parent or now - t > 15 then blockedCoins[coin] = nil end
+        end
+        for coin in pairs(touchCounts) do
+            if not coin.Parent then touchCounts[coin] = nil end
         end
 
         if AutoFarmSystem.Enabled then
@@ -2923,7 +2936,7 @@ local function addDual()
     local char = getChar(LocalPlayer)
     if not char then return end
 
-    local myRole = getCachedRole(LocalPlayer)
+        local myRole = getRole(LocalPlayer)
     local tool = nil
     if myRole == "Murderer" then
         local bp = LocalPlayer:FindFirstChild("Backpack")
@@ -2972,7 +2985,7 @@ end
 task.spawn(function()
     while task.wait(1) do
         if dualOn then
-            local myRole = getCachedRole(LocalPlayer)
+                local myRole = getRole(LocalPlayer)
             -- пересоздаём при смене роли, респавне или пропаже
             if myRole ~= dualLastRole
                 or not dualInstance or not dualInstance.Parent then
