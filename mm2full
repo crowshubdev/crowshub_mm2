@@ -1811,6 +1811,7 @@ local DOWN_RISE_XZ = 4
 local AVOID_DIST = 40
 local RISE_SAFE_DIST = 20
 local touchedCoins = {} -- [coin] = время touch
+local blockedCoins = {}
 
 local function farm_hrp()
     local c = getChar(LocalPlayer)
@@ -1845,9 +1846,9 @@ local function nearest_coin(pos, list)
     local best, bd = nil, math.huge
     local now = os.clock()
     for _, v in ipairs(list) do
-        -- пропускаем только что тронутые (сервер ещё не убрал)
-        local t = touchedCoins[v]
-        if not (t and now - t < 1.5) then
+        local tT = touchedCoins[v]
+        local tB = blockedCoins[v]
+        if not (tT and now - tT < 1.5) and not (tB and now - tB < 10) then
             local d = (v.Position - pos).Magnitude
             if d < bd then bd = d best = v end
         end
@@ -2901,6 +2902,104 @@ Tabs.Other:AddSlider("ShootBtnH", {
     Title = "Height", Default = 44, Min = 30, Max = 100, Rounding = 0,
     Callback = function(v) SMB_H = v applySize() end
 })
+
+-- ═══════════════════════════════════════════════════════════════
+-- DUAL WEAPON (нож за Murderer / пистолет за Sheriff-Hero, левая рука)
+-- ═══════════════════════════════════════════════════════════════
+local dualOn = false
+local dualInstance = nil
+local dualLastRole = nil
+
+local function removeDual()
+    if dualInstance then
+        pcall(function() dualInstance:Destroy() end)
+        dualInstance = nil
+    end
+    dualLastRole = nil
+end
+
+local function addDual()
+    removeDual()
+    local char = getChar(LocalPlayer)
+    if not char then return end
+
+    local myRole = getCachedRole(LocalPlayer)
+    local tool = nil
+    if myRole == "Murderer" then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        tool = char:FindFirstChild("Knife") or (bp and bp:FindFirstChild("Knife"))
+    elseif myRole == "Sheriff" or myRole == "Hero" then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        tool = char:FindFirstChild("Gun") or (bp and bp:FindFirstChild("Gun"))
+    else
+        return -- Innocent: ничего не носим
+    end
+    if not tool then return end
+
+    local leftArm = char:FindFirstChild("Left Arm")
+        or char:FindFirstChild("LeftUpperArm")
+    if not leftArm then return end
+
+    local clone = tool:Clone()
+    clone.Name = "CWH_DualWeapon"
+    for _, c in ipairs(clone:GetDescendants()) do
+        if c:IsA("Script") or c:IsA("LocalScript") or c:IsA("ModuleScript")
+            or c:IsA("RemoteEvent") or c:IsA("RemoteFunction") then
+            c:Destroy()
+        elseif c:IsA("BasePart") then
+            c.CanCollide = false
+            c.Massless = true
+        end
+    end
+    local handle = clone:FindFirstChild("Handle")
+        or clone:FindFirstChildWhichIsA("BasePart")
+    if not handle then clone:Destroy() return end
+
+    clone.Parent = char
+    handle.CFrame = leftArm.CFrame * CFrame.new(0, -0.9, 0)
+        * CFrame.Angles(math.rad(90), math.rad(180), 0)
+
+    local weld = Instance.new("Weld")
+    weld.Part0 = leftArm
+    weld.Part1 = handle
+    weld.C0 = leftArm.CFrame:Inverse() * handle.CFrame
+    weld.Parent = handle
+
+    dualInstance = clone
+    dualLastRole = myRole
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        if dualOn then
+            local myRole = getCachedRole(LocalPlayer)
+            -- пересоздаём при смене роли, респавне или пропаже
+            if myRole ~= dualLastRole
+                or not dualInstance or not dualInstance.Parent then
+                pcall(addDual)
+            end
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    dualInstance = nil
+end)
+
+Tabs.Other:AddSection("Dual Weapon")
+
+Tabs.Other:AddToggle("DualOn", {
+    Title = "🗡 Dual Weapon",
+    Description = "2 нож за Murderer / 2 пистолет за Sheriff-Hero (левая рука)",
+    Default = false
+}):OnChanged(function(v)
+    dualOn = v
+    if v then
+        pcall(addDual)
+    else
+        removeDual()
+    end
+end)
 
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
