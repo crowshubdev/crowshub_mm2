@@ -2917,16 +2917,16 @@ Tabs.Other:AddSlider("ShootBtnH", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- DUAL WEAPON (нож за Murderer / пистолет за Sheriff-Hero, левая рука)
+-- DUAL WEAPON v2 (3D-модель в левой руке: без слота в хотбаре, рука на месте)
 -- ═══════════════════════════════════════════════════════════════
 local dualOn = false
-local dualInstance = nil
+local dualModel = nil
 local dualLastRole = nil
 
 local function removeDual()
-    if dualInstance then
-        pcall(function() dualInstance:Destroy() end)
-        dualInstance = nil
+    if dualModel then
+        pcall(function() dualModel:Destroy() end)
+        dualModel = nil
     end
     dualLastRole = nil
 end
@@ -2936,7 +2936,7 @@ local function addDual()
     local char = getChar(LocalPlayer)
     if not char then return end
 
-        local myRole = getRole(LocalPlayer)
+    local myRole = getRole(LocalPlayer)
     local tool = nil
     if myRole == "Murderer" then
         local bp = LocalPlayer:FindFirstChild("Backpack")
@@ -2949,46 +2949,102 @@ local function addDual()
     end
     if not tool then return end
 
-    local leftArm = char:FindFirstChild("Left Arm")
-        or char:FindFirstChild("LeftUpperArm")
+    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
     if not leftArm then return end
 
-    local clone = tool:Clone()
-    clone.Name = "CWH_DualWeapon"
-    for _, c in ipairs(clone:GetDescendants()) do
-        if c:IsA("Script") or c:IsA("LocalScript") or c:IsA("ModuleScript")
-            or c:IsA("RemoteEvent") or c:IsA("RemoteFunction") then
-            c:Destroy()
-        elseif c:IsA("BasePart") then
-            c.CanCollide = false
-            c.Massless = true
+    -- как движок держит оригинал в правой руке (RightGrip)
+    local gripWeld = nil
+    local rightHand = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+    if rightHand then
+        for _, w in ipairs(rightHand:GetChildren()) do
+            if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
+                gripWeld = w
+                break
+            end
         end
     end
-    local handle = clone:FindFirstChild("Handle")
-        or clone:FindFirstChildWhichIsA("BasePart")
-    if not handle then clone:Destroy() return end
 
-    clone.Parent = char
-    handle.CFrame = leftArm.CFrame * CFrame.new(0, -0.9, 0)
-        * CFrame.Angles(math.rad(90), math.rad(180), 0)
+    -- собираем 3D-модель из частей оружия (НЕ Tool — слот в хотбаре не появится)
+    local srcParts = {}
+    local handleSrc = nil
+    for _, c in ipairs(tool:GetDescendants()) do
+        if c:IsA("BasePart") then
+            srcParts[#srcParts + 1] = c
+            if c.Name == "Handle" or handleSrc == nil then handleSrc = c end
+        end
+    end
+    if not handleSrc then return end
 
-    local weld = Instance.new("Weld")
-    weld.Part0 = leftArm
-    weld.Part1 = handle
-    weld.C0 = leftArm.CFrame:Inverse() * handle.CFrame
-    weld.Parent = handle
+    local holder = Instance.new("Model")
+    holder.Name = "CWH_DualWeapon"
+    local clones = {}
+    for _, p in ipairs(srcParts) do
+        local c = p:Clone()
+        for _, d in ipairs(c:GetChildren()) do
+            if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript")
+                or d:IsA("Weld") or d:IsA("Motor6D") or d:IsA("WeldConstraint") then
+                d:Destroy()
+            end
+        end
+        c.CanCollide = false
+        c.Massless = true
+        c.Anchored = true -- на время построения
+        c.Name = "CWH_Dual_" .. p.Name
+        clones[p] = c
+        c.Parent = holder
+    end
 
-    dualInstance = clone
+    local newHandle = clones[handleSrc]
+    if not newHandle then holder:Destroy() return end
+
+    -- куда встаёт handle: точная копия хвата оригинала, но от ЛЕВОЙ руки
+    local gripC0, gripC1
+    if gripWeld then
+        gripC0, gripC1 = gripWeld.C0, gripWeld.C1
+    else
+        gripC0 = tool.Grip
+        gripC1 = CFrame.new()
+    end
+    local handleCF = leftArm.CFrame * gripC0 * gripC1:Inverse()
+
+    -- расставляем части: handle по хвату, остальные — как в оригинале
+    newHandle.CFrame = handleCF
+    for src, c in pairs(clones) do
+        if src ~= handleSrc then
+            c.CFrame = handleCF * handleSrc.CFrame:ToObjectSpace(src.CFrame)
+        end
+    end
+
+    holder.Parent = char
+
+    -- включаем физику: handle к левой руке, остальные части — к handle
+    for src, c in pairs(clones) do
+        c.Anchored = false
+        local w = Instance.new("Weld")
+        if src == handleSrc then
+            w.Part0 = leftArm
+            w.Part1 = c
+            w.C0 = gripC0
+            w.C1 = gripC1
+        else
+            w.Part0 = newHandle
+            w.Part1 = c
+            w.C0 = handleSrc.CFrame:ToObjectSpace(src.CFrame)
+        end
+        w.Parent = c
+    end
+
+    dualModel = holder
     dualLastRole = myRole
 end
 
 task.spawn(function()
     while task.wait(1) do
         if dualOn then
-                local myRole = getRole(LocalPlayer)
+            local myRole = getRole(LocalPlayer)
             -- пересоздаём при смене роли, респавне или пропаже
             if myRole ~= dualLastRole
-                or not dualInstance or not dualInstance.Parent then
+                or not dualModel or not dualModel.Parent then
                 pcall(addDual)
             end
         end
@@ -2996,14 +3052,14 @@ task.spawn(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    dualInstance = nil
+    dualModel = nil
 end)
 
 Tabs.Other:AddSection("Dual Weapon")
 
 Tabs.Other:AddToggle("DualOn", {
     Title = "🗡 Dual Weapon",
-    Description = "2 нож за Murderer / 2 пистолет за Sheriff-Hero (левая рука)",
+    Description = "Второе оружие в левой руке (3D-модель, без слота в хотбаре)",
     Default = false
 }):OnChanged(function(v)
     dualOn = v
