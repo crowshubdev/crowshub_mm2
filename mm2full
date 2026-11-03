@@ -1,4 +1,34 @@
 print("[CWH] START — правильный скрипт выполняется")
+-- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
+-- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
+-- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
+getgenv().CWH_RUN = false
+pcall(function()
+    if getgenv().CWH_Window and getgenv().CWH_Window.Destroy then
+        getgenv().CWH_Window:Destroy()
+    end
+end)
+pcall(function()
+    local root = (type(gethui) == "function") and gethui() or game:GetService("CoreGui")
+    for _, nm in ipairs({ "CWH_Timer", "CWH_Perf", "CWH_Status", "CWH_Cursor", "CWH_ShootBtn", "CWH_OpenBtn" }) do
+        local g = root:FindFirstChild(nm)
+        if g then g:Destroy() end
+    end
+end)
+pcall(function()
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+        local c = p.Character
+        if c then
+            for _, d in ipairs(c:GetDescendants()) do
+                if d.Name == "CWH_ESP" or d.Name == "CWH_Tag" or d.Name == "CWH_GunHere" then
+                    d:Destroy()
+                end
+            end
+        end
+    end
+end)
+getgenv().CWH_Window = nil
+task.wait(0.25)
 
 -- ═══ FLUENT PRO LOADER ═══
 local Fluent = nil
@@ -28,6 +58,7 @@ if not Fluent then
     warn("[CWH] FluentPro не загрузился за 5 попыток")
     return
 end
+getgenv().CWH_RUN = true
 
 -- ═══ SERVICES ═══
 local Players = game:GetService("Players")
@@ -151,6 +182,7 @@ end
 local notified = {}
 task.spawn(function()
     while true do
+    if not getgenv().CWH_RUN then break end
         pcall(function()
             local ok, t = pcall(function() return ReplicatedStorage.Remotes.Extras.GetTimer:InvokeServer() end)
             if ok and type(t) == "number" and t <= 1 then notified = {} end
@@ -179,6 +211,7 @@ local Window = Fluent:CreateWindow({
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.LeftShift
 })
+getgenv().CWH_Window = Window
 
 local Tabs = {
     Main = Window:AddTab({ Title = "Main", Icon = "user" }),
@@ -249,6 +282,7 @@ Tabs.Main:AddToggle("AntiAFK", { Title = "Anti-AFK", Default = false })
             task.spawn(function()
                 local vu = game:GetService("VirtualUser")
                 while task.wait(180) do
+                if not getgenv().CWH_RUN then break end
                     pcall(function()
                         vu:CaptureController()
                         vu:Set2DFocus(true)
@@ -277,6 +311,7 @@ Tabs.Main:AddToggle("GodMode", { Title = "God Mode (client heal)", Default = fal
     :OnChanged(function(v) godOn = v end)
 task.spawn(function()
     while task.wait(0.2) do
+    if not getgenv().CWH_RUN then break end
         if godOn then
             local h = getHum(getChar(LocalPlayer))
             if h and h.Health > 0 and h.Health < h.MaxHealth then h.Health = h.MaxHealth end
@@ -333,6 +368,7 @@ end
 
 task.spawn(function()
     while task.wait(0.2) do
+    if not getgenv().CWH_RUN then break end
         if ESP.HL or ESP.Names or ESP.Dist or ESP.HP then
             pcall(function()
                 local myHRP = getHRP(getChar(LocalPlayer))
@@ -386,6 +422,7 @@ local gunLabel = nil
 
 task.spawn(function()
     while task.wait(0.4) do
+    if not getgenv().CWH_RUN then break end
         pcall(function()
             local map = getMap()
             local drop = map and map:FindFirstChild("GunDrop", true)
@@ -468,6 +505,7 @@ Tabs.World:AddToggle("AutoGrab", { Title = "Auto Grab Gun", Default = false })
 
 task.spawn(function()
     while task.wait(0.3) do
+    if not getgenv().CWH_RUN then break end
         if autoGrab then
             local map = getMap()
             local root = getHRP(getChar(LocalPlayer))
@@ -484,6 +522,7 @@ local instantGrabOn = false
 
 task.spawn(function()
     while task.wait(0.15) do
+    if not getgenv().CWH_RUN then break end
         if instantGrabOn then
             pcall(function()
                 local map = getMap()
@@ -502,6 +541,7 @@ end)
 task.spawn(function()
     local seen = false
     while task.wait(0.3) do
+    if not getgenv().CWH_RUN then break end
         pcall(function()
             local c = getChar(LocalPlayer)
             local bp = LocalPlayer:FindFirstChild("Backpack")
@@ -994,6 +1034,7 @@ local AntiFling = {
 
 task.spawn(function()
     while task.wait(0.05) do
+    if not getgenv().CWH_RUN then break end
         if AntiFling.On then
             pcall(function()
                 local char = getChar(LocalPlayer)
@@ -1102,6 +1143,7 @@ Tabs.Combat:AddDropdown("AuraTarget", {
 
 task.spawn(function()
     while task.wait(0.15) do
+    if not getgenv().CWH_RUN then break end
         if aura.On and amMurderer() then
             local k = equipKnife()
             if k then
@@ -1164,22 +1206,30 @@ Tabs.Combat:AddButton({
     end
 })
 
--- Silent Aim v2 (Simple/Pro/Hacker)
-local SA2 = { On = false, Mode = "Simple", Target = "Murderer", Predict = true, Range = 300, AimPart = "Torso" }
-local WS2, origM, origT, hooked = nil, nil, nil, false
+-- ═══════════════════════════════════════════════════════════════
+-- SILENT AIM v3 + WALLBANG (порт метода из Pulse Hub)
+--  • Silent Aim: хук WeaponService — пуля летит в выбранную цель
+--  • Wallbang: клик = прямой выстрел ремоутом Shoot, origin в 3 студах
+--    от жертвы (сразу за стеной) — сервер такой выстрел принимает
+--  • Auto Shoot: сам стреляет по цели с интервалом
+-- ═══════════════════════════════════════════════════════════════
+local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
+              AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0 }
+local WS3, origM3, origT3, hooked3 = nil, nil, nil, false
+local SA3Bypass = false -- true: хук отдаёт настоящую мышь, чтобы не мешать нашему выстрелу
 
 local function getWS()
-    if WS2 then return WS2 end
+    if WS3 then return WS3 end
     local ok, m = pcall(function()
         return require(ReplicatedStorage:WaitForChild("ClientServices", 10):WaitForChild("WeaponService", 10))
     end)
-    if ok and type(m) == "table" then WS2 = m end
-    return WS2
+    if ok and type(m) == "table" then WS3 = m end
+    return WS3
 end
 
 local function pickSA()
-    if SA2.Target == "Murderer" then return getMurderer() end
-    if SA2.Target == "Sheriff" then return getSheriff() end
+    if SA3.Target == "Murderer" then return getMurderer() end
+    if SA3.Target == "Sheriff" then return getSheriff() end
     local my = getHRP(getChar(LocalPlayer))
     if not my then return end
     local best, bd = nil, math.huge
@@ -1196,27 +1246,20 @@ local function pickSA()
     return best
 end
 
-local function aimCF()
-    local t = pickSA()
-    if not (t and t.Character) then return end
-    local c = t.Character
-    local part = c:FindFirstChild("Head") or c:FindFirstChild("UpperTorso")
+-- точка прицела (с предсказанием по скорости цели)
+local function sa3AimPos(targetPlayer)
+    local t = targetPlayer or pickSA()
+    local c = t and t.Character
+    if not c then return nil end
+    local hum = getHum(c)
+    if not (hum and hum.Health > 0) then return nil end
+    local part = (SA3.AimPart == "Head" and c:FindFirstChild("Head")) or c:FindFirstChild("UpperTorso")
         or c:FindFirstChild("Torso") or c:FindFirstChild("HumanoidRootPart")
     local my = getHRP(getChar(LocalPlayer))
-    if not (part and my) then return end
+    if not (part and my) then return nil end
+    if (part.Position - my.Position).Magnitude > SA3.Range then return nil end
     local pos = part.Position
-    local dist = (pos - my.Position).Magnitude
-    if SA2.Mode == "Simple" then
-        if dist > SA2.Range then return end
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { LocalPlayer.Character }
-        local hit = workspace:Raycast(my.Position, pos - my.Position, params)
-        if hit and not (hit.Instance and hit.Instance:IsDescendantOf(c)) then return end
-    elseif SA2.Mode == "Pro" then
-        if dist > SA2.Range then return end
-    end
-    if SA2.Predict then
+    if SA3.Predict then
         local root = getHRP(c)
         if root then
             local vel = root.AssemblyLinearVelocity or Vector3.zero
@@ -1226,186 +1269,172 @@ local function aimCF()
             pos = pos + vel * (ping + 0.05)
         end
     end
-    return CFrame.new(pos)
+    return pos
+end
+
+-- ручной выстрел ремоутом Shoot (метод Pulse Hub) — работает ЧЕРЕЗ СТЕНЫ
+local function sa3FireShot(targetPlayer)
+    local myChar = getChar(LocalPlayer)
+    local myHRP = myChar and getHRP(myChar)
+    local gun = myChar and myChar:FindFirstChild("Gun")
+    if not gun then
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        gun = bp and bp:FindFirstChild("Gun")
+        if gun then
+            local hum = getHum(myChar)
+            if hum then
+                pcall(function() hum:EquipTool(gun) end)
+                task.wait(0.2)
+                myChar = getChar(LocalPlayer)
+                gun = myChar and myChar:FindFirstChild("Gun")
+            end
+        end
+    end
+    local shoot = gun and (gun:FindFirstChild("Shoot") or gun:FindFirstChild("Shoot", true))
+    if not (myHRP and gun and shoot) then return false end
+    local pos = sa3AimPos(targetPlayer)
+    if not pos then return false end
+    local origin
+    if SA3.Wallbang or targetPlayer then
+        -- точка в 3 студах от жертвы В НАШУ СТОРОНУ = сразу за стеной (трюк Pulse)
+        local d = myHRP.Position - pos
+        local away = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
+        origin = pos + away * 3
+    else
+        origin = myHRP.Position
+    end
+    SA3Bypass = true
+    local ok = pcall(function()
+        local cf = (pos - origin).Magnitude < 0.1 and CFrame.new(origin) or CFrame.new(origin, pos)
+        shoot:FireServer(cf, CFrame.new(pos))
+    end)
+    SA3Bypass = false
+    return ok
 end
 
 local function installHooks()
     local m = getWS()
     if not m then return false end
-    if hooked then return true end
+    if hooked3 then return true end
     pcall(function() setreadonly(m, false) end)
     if type(m.GetMouseTargetCFrame) == "function" then
-        origM = m.GetMouseTargetCFrame
+        origM3 = m.GetMouseTargetCFrame
         m.GetMouseTargetCFrame = function(s, ...)
-            if SA2.On then
-                local cf = aimCF()
-                if cf then return cf end
+            if SA3.On and not SA3Bypass then
+                local pos = sa3AimPos()
+                if pos then return CFrame.new(pos) end
             end
-            return origM(s, ...)
+            return origM3(s, ...)
         end
     end
     if type(m.GetTargetPosition) == "function" then
-        origT = m.GetTargetPosition
+        origT3 = m.GetTargetPosition
         m.GetTargetPosition = function(s, ...)
-            if SA2.On then
-                local cf = aimCF()
-                if cf then return cf.Position end
+            if SA3.On and not SA3Bypass then
+                local pos = sa3AimPos()
+                if pos then return pos end
             end
-            return origT(s, ...)
+            return origT3(s, ...)
         end
     end
-    hooked = true
+    hooked3 = true
     return true
 end
 
 local function removeHooks()
-    if WS2 and hooked then
-        pcall(function() setreadonly(WS2, false) end)
-        if origM then pcall(function() WS2.GetMouseTargetCFrame = origM end) end
-        if origT then pcall(function() WS2.GetTargetPosition = origT end) end
+    if WS3 and hooked3 then
+        pcall(function() setreadonly(WS3, false) end)
+        if origM3 then pcall(function() WS3.GetMouseTargetCFrame = origM3 end) end
+        if origT3 then pcall(function() WS3.GetTargetPosition = origT3 end) end
     end
-    hooked = false
+    hooked3 = false
 end
 
--- Hacker: push attachment за стену
-local pushConn, savedAtt = nil, nil
-local function getAtt()
-    local char = getChar(LocalPlayer)
-    local hrp = getHRP(char)
-    if hrp then
-        local a = hrp:FindFirstChild("GunRaycastAttachment")
-        if a then return a end
-    end
-    -- аттачмент живёт внутри GunServer с именем GunRaycastAttachment1
-    local gun = char and char:FindFirstChild("Gun")
-    if gun then
-        local gs = gun:FindFirstChild("GunServer")
-        if gs then
-            local a = gs:FindFirstChildWhichIsA("Attachment")
-            if a then return a end
+-- Wallbang-выстрел по клику мыши / тапу (если включён тоггл Wallbang)
+UserInputService.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+        if SA3.On and SA3.Wallbang then
+            task.spawn(function() sa3FireShot() end)
         end
-        return gun:FindFirstChildWhichIsA("Attachment", true)
     end
-end
+end)
 
-local function restoreAtt()
-    local a = getAtt()
-    if a and savedAtt then pcall(function() a.WorldCFrame = savedAtt end) end
-    savedAtt = nil
-end
-
-local cachedOrigin = nil
-local lastBlockKey = nil
-local wasBlocked = false
-
-local function startPush()
-    if pushConn then pushConn:Disconnect() end
-    pushConn = RunService.Heartbeat:Connect(function()
-        if not (SA2.On and SA2.Mode == "Hacker") then return end
-        local t = pickSA()
-        local my = getHRP(getChar(LocalPlayer))
-        local th = t and t.Character and getHRP(t.Character)
-        if not (t and my and th) then
-            if wasBlocked then restoreAtt() end
-            wasBlocked = false
-            cachedOrigin = nil
-            lastBlockKey = nil
-            return
-        end
-        local a = getAtt()
-        if not a then return end
-        if not savedAtt then pcall(function() savedAtt = a.WorldCFrame end) end
-
-        local dir = (th.Position - my.Position)
-        if dir.Magnitude < 1 then return end
-        dir = dir.Unit
-
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { LocalPlayer.Character }
-        local hit = workspace:Raycast(my.Position, th.Position - my.Position, params)
-        local tchar = t.Character
-        local blocked = hit and tchar and not hit.Instance:IsDescendantOf(tchar)
-
-           if not blocked then
-            if wasBlocked then
-                -- задержка: сервер обрабатывает выстрел после расблокировки
-                task.delay(0.15, function()
-                    restoreAtt()
-                end)
-                wasBlocked = false
-                cachedOrigin = nil
-                lastBlockKey = nil
+-- Auto Shoot: сам стреляет по цели (без Wallbang — только при прямой видимости)
+task.spawn(function()
+    while task.wait(0.2) do
+        if not getgenv().CWH_RUN then break end
+        if SA3.On and SA3.AutoShoot then
+            local now = os.clock()
+            if now - SA3.Last >= SA3.Interval then
+                local canShoot = SA3.Wallbang
+                if not canShoot then
+                    local t = pickSA()
+                    local tc = t and t.Character
+                    local thrp = tc and getHRP(tc)
+                    local my = getHRP(getChar(LocalPlayer))
+                    if thrp and my then
+                        local params = RaycastParams.new()
+                        params.FilterType = Enum.RaycastFilterType.Exclude
+                        params.FilterDescendantsInstances = { getChar(LocalPlayer) }
+                        local hit = workspace:Raycast(my.Position, thrp.Position - my.Position, params)
+                        canShoot = (not hit) or (hit.Instance and tc and hit.Instance:IsDescendantOf(tc))
+                    end
+                end
+                if canShoot then
+                    SA3.Last = now
+                    sa3FireShot()
+                end
             end
-            return
         end
+    end
+end)
 
-        wasBlocked = true
-        -- ключ стабильности: та же стена + та же цель = та же точка
-            local key = tostring(hit.Instance)
-            .. ":" .. math.floor(hit.Position.X / 2)
-            .. ":" .. math.floor(th.Position.X / 4)
-            .. ":" .. math.floor(th.Position.Z / 4)
-
-        if key ~= lastBlockKey or not cachedOrigin then
-            lastBlockKey = key
-            local hitDist = (hit.Position - my.Position).Magnitude
-            -- точка СРАЗУ за стеной, не далеко — сервер режет далёкие origin
-            local d = math.clamp(hitDist + 3, 8, 40)
-            cachedOrigin = CFrame.new(my.Position + dir * d, th.Position)
-        end
-
-        pcall(function()
-            a.WorldCFrame = cachedOrigin
-        end)
-    end)
-end
-
-local function stopPush()
-    if pushConn then pushConn:Disconnect() pushConn = nil end
-    restoreAtt()
-end
-
-Tabs.Combat:AddSection("Silent Aim v2")
-Tabs.Combat:AddToggle("SA2On", { Title = "Enable Silent Aim v2", Default = false })
+Tabs.Combat:AddSection("Silent Aim v3 (Pulse)")
+Tabs.Combat:AddToggle("SA3On", { Title = "Enable Silent Aim", Default = false })
     :OnChanged(function(v)
-        SA2.On = v
+        SA3.On = v
         if v then
             if installHooks() then
-                startPush()
-                Notify("SA2", "ON | " .. SA2.Mode, nil, 3)
+                Notify("SA3", "ON | цель: " .. SA3.Target, nil, 3)
             else
-                SA2.On = false
-                Notify("SA2", "WeaponService не найден", nil, 5)
+                SA3.On = false
+                Notify("SA3", "WeaponService не найден", nil, 5)
             end
         else
-            stopPush()
             removeHooks()
         end
     end)
-Tabs.Combat:AddDropdown("SA2Mode", {
-    Title = "Mode",
-    Description = "Hacker = через стены (wallbang)",
-    Values = { "Simple", "Pro", "Hacker" }, Default = "Simple",
-    Callback = function(v) SA2.Mode = v end
-})
-Tabs.Combat:AddDropdown("SA2Target", {
+Tabs.Combat:AddDropdown("SA3Target", {
     Title = "Target", Values = { "Murderer", "Sheriff", "Closest" }, Default = "Murderer",
-    Callback = function(v) SA2.Target = v end
-}) 
-
-Tabs.Combat:AddDropdown("SA2AimPart", {
+    Callback = function(v) SA3.Target = v end
+})
+Tabs.Combat:AddDropdown("SA3AimPart", {
     Title = "Aim Part",
     Description = "Torso — стабильнее попадает, Head — хедшоты",
     Values = { "Torso", "Head" }, Default = "Torso",
-    Callback = function(v) SA2.AimPart = v end
+    Callback = function(v) SA3.AimPart = v end
 })
-
-Tabs.Combat:AddToggle("SA2Pred", { Title = "Prediction", Default = true })
-    :OnChanged(function(v) SA2.Predict = v end)
-Tabs.Combat:AddSlider("SA2Range", {
-    Title = "Range (Simple/Pro)", Default = 300, Min = 50, Max = 1000, Rounding = 0,
-    Callback = function(v) SA2.Range = v end
+Tabs.Combat:AddToggle("SA3Pred", { Title = "Prediction", Default = true })
+    :OnChanged(function(v) SA3.Predict = v end)
+Tabs.Combat:AddSlider("SA3Range", {
+    Title = "Range", Default = 500, Min = 50, Max = 1000, Rounding = 0,
+    Callback = function(v) SA3.Range = v end
+})
+Tabs.Combat:AddToggle("SA3Wallbang", {
+    Title = "🧱 Wallbang (через стены)",
+    Description = "Клик = прямой выстрел ремоутом Shoot сквозь стены (нужен Gun)",
+    Default = false
+}):OnChanged(function(v) SA3.Wallbang = v end)
+Tabs.Combat:AddToggle("SA3Auto", {
+    Title = "Auto Shoot",
+    Description = "Сам стреляет по цели с интервалом",
+    Default = false
+}):OnChanged(function(v) SA3.AutoShoot = v end)
+Tabs.Combat:AddSlider("SA3AutoInt", {
+    Title = "Auto Shoot интервал (сек)", Default = 1.5, Min = 0.3, Max = 5, Rounding = 1,
+    Callback = function(v) SA3.Interval = v end
 })
 Tabs.Combat:AddButton({
     Title = "🔍 Debug WeaponService",
@@ -1423,55 +1452,10 @@ Tabs.Combat:AddButton({
 
 task.spawn(function()
     while task.wait(5) do
-        if SA2.On and not hooked then pcall(installHooks) end
+        if not getgenv().CWH_RUN then break end
+        if SA3.On and not hooked3 then pcall(installHooks) end
     end
 end)
-
--- ═══════════════════════════════════════════════════════════════
--- AUTO WALL SHOOT (Hacker-режим сам стреляет через стены)
--- ═══════════════════════════════════════════════════════════════
-local AutoWall = { On = false, Interval = 2, Last = 0 }
-
-task.spawn(function()
-    while task.wait(0.3) do
-        if AutoWall.On and SA2.On and SA2.Mode == "Hacker" then
-            local now = os.clock()
-            if now - AutoWall.Last >= AutoWall.Interval then
-                local mur = getMurderer()
-                local murChar = mur and mur.Character
-                local murHRP = murChar and getHRP(murChar)
-                local myChar = getChar(LocalPlayer)
-                local myHRP = myChar and getHRP(myChar)
-                local gun = myChar and myChar:FindFirstChild("Gun")
-                if murHRP and myHRP and gun then
-                    local params = RaycastParams.new()
-                    params.FilterType = Enum.RaycastFilterType.Exclude
-                    params.FilterDescendantsInstances = { myChar }
-                    local hit = workspace:Raycast(myHRP.Position, murHRP.Position - myHRP.Position, params)
-                    local blocked = hit and not hit.Instance:IsDescendantOf(murChar)
-                    if blocked then
-                        AutoWall.Last = now
-                        pcall(function() gun:Activate() end)
-                    end
-                end
-            end
-        end
-    end
-end)
-
-Tabs.Combat:AddSection("Auto Wall Shoot")
-
-Tabs.Combat:AddToggle("AutoWallOn", {
-    Title = "🧱 Auto Wall Shoot",
-    Description = "Hacker-режим сам стреляет через стены",
-    Default = false
-}):OnChanged(function(v) AutoWall.On = v end)
-
-Tabs.Combat:AddSlider("AutoWallInt", {
-    Title = "Interval (сек)",
-    Default = 2, Min = 1, Max = 5, Rounding = 1,
-    Callback = function(v) AutoWall.Interval = v end
-})
 
 -- Fling
 
@@ -1990,6 +1974,7 @@ end
 local lastFrame = os.clock()
 task.spawn(function()
     while true do
+    if not getgenv().CWH_RUN then break end
         local now = os.clock()
         local dt = math.min(now - lastFrame, 0.1)
         lastFrame = now
@@ -2239,6 +2224,7 @@ end)
 
 task.spawn(function()
     while task.wait(0.5) do
+    if not getgenv().CWH_RUN then break end
         if AutoKE.On and not AutoKE.DoneThisRound then
             local farmRef = getgenv().CWH_FarmRef
             local collected = farmRef and farmRef.CollectedCount or 0
@@ -2324,6 +2310,7 @@ local CA4 = { On = false, Radius = 15, Delay = 0.05, Last = 0 }
 
 task.spawn(function()
     while task.wait(0.05) do
+    if not getgenv().CWH_RUN then break end
         if CA4.On then
             pcall(function()
                 local now = os.clock()
@@ -2654,6 +2641,7 @@ end
 
 task.spawn(function()
     while task.wait(0.05) do
+    if not getgenv().CWH_RUN then break end
         if DodgeKnife.On then
             pcall(doDodgeKnife)
         end
@@ -2739,6 +2727,7 @@ end
 
 task.spawn(function()
     while task.wait(0.1) do
+    if not getgenv().CWH_RUN then break end
         if DodgeMurder.On then
             pcall(doDodgeMurder)
         end
@@ -2767,7 +2756,8 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- SHOOT MURDERER BUTTON v3 (Activate через SA2-хуки, стены пробивает)
+-- ═══════════════════════════════════════════════════════════════
+-- SHOOT MURDERER BUTTON v4 (прямой выстрел ремоутом Shoot — SA3/Pulse-метод, стены пробивает)
 -- ═══════════════════════════════════════════════════════════════
 local smbGui = Instance.new("ScreenGui")
 smbGui.Name = "CWH_ShootBtn"
@@ -2832,40 +2822,21 @@ local function doShoot()
     local mur = getMurderer()
     if not mur then Notify("Shoot", "Murderer не найден", nil, 3) return end
 
-    -- временно включаем SA2 в Hacker-режиме, целясь в Murderer
-    local prevEnabled, prevMode, prevTarget = SA2.Enabled, SA2.Mode, SA2.Target
-    SA2.Enabled = true
-    SA2.Mode = "Hacker"
-    SA2.Target = "Murderer"
-
-    if not installHooks() then
-        SA2.Enabled, SA2.Mode, SA2.Target = prevEnabled, prevMode, prevTarget
-        Notify("Shoot", "WeaponService не найден", nil, 4)
-        return
-    end
-    startPush()
-
     shooting = true
     lastShot = os.clock()
-    task.wait(0.05)
-    pcall(function() gun:Activate() end)
-    task.wait(0.25)
-
-    -- вернуть всё как было
-    SA2.Enabled, SA2.Mode, SA2.Target = prevEnabled, prevMode, prevTarget
-    if prevEnabled then
-        startPush() -- перезапуск пуша с прежним режимом
-    else
-        stopPush()
-        removeHooks()
-    end
+    -- прямой выстрел ремоутом Shoot в Murderer (SA3/Pulse-метод — пробивает стены)
+    local ok = sa3FireShot(mur)
     shooting = false
 
-    smbStroke.Color = Color3.fromRGB(255, 80, 80)
-    task.delay(0.25, function()
-        smbStroke.Color = Color3.fromRGB(120, 120, 255)
-    end)
-    Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
+    if ok then
+        smbStroke.Color = Color3.fromRGB(255, 80, 80)
+        task.delay(0.25, function()
+            smbStroke.Color = Color3.fromRGB(120, 120, 255)
+        end)
+        Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
+    else
+        Notify("Shoot", "Не получилось — нужен Gun в руках/рюкзаке", nil, 3)
+    end
 end
 
 -- tap через InputBegan
@@ -2916,90 +2887,50 @@ Tabs.Other:AddSlider("ShootBtnH", {
     Callback = function(v) SMB_H = v applySize() end
 })
 
-
--- DUAL WEAPON v2.3 (Исправлен возврат руки и зеркальный поворот)
-local dualOn = true
+-- ═══════════════════════════════════════════════════════════════
+-- DUAL WEAPON v2.1 (Синхронизация с экипировкой + Анимация левой руки)
+-- ═══════════════════════════════════════════════════════════════
+local dualOn = false
 local dualModel = nil
-
-local originalLeftShoulderC0 = nil
-
-local function resetLeftArmAnimation(char)
-    if not char then return end
-    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
-    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    
-    local shoulder = nil
-    if leftUpperArm then
-        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
-    elseif torso then
-        shoulder = torso:FindFirstChild("Left Shoulder")
-    end
-
-    if shoulder and originalLeftShoulderC0 then
-        shoulder.C0 = originalLeftShoulderC0
-        originalLeftShoulderC0 = nil -- Сбрасываем кэш, чтобы при следующем взятии зафиксировать чистый дефолт
-    end
-end
-
-local function applyLeftArmAnimation(char)
-    if not char then return end
-    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
-    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    
-    local shoulder = nil
-    if leftUpperArm then
-        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
-    elseif torso then
-        shoulder = torso:FindFirstChild("Left Shoulder")
-    end
-
-    if shoulder then
-        -- Сохраняем оригинал ТОЛЬКО если он ещё не сохранён
-        if not originalLeftShoulderC0 then
-            originalLeftShoulderC0 = shoulder.C0
-        end
-        
-        -- Зеркальные углы для левой руки, чтобы она симметрично держала второй предмет
-        -- Меняем знаки у углов, чтобы рука не выворачивалась назад
-        shoulder.C0 = originalLeftShoulderC0 * CFrame.Angles(math.rad(90), 0, math.rad(10))
-    end
-end
+local dualLastRole = nil
 
 local function removeDual()
-    local char = LocalPlayer.Character
-    if char then
-        resetLeftArmAnimation(char)
-    end
     if dualModel then
         pcall(function() dualModel:Destroy() end)
         dualModel = nil
     end
+    dualLastRole = nil
 end
 
 local function addDual()
     removeDual()
-    local char = LocalPlayer.Character
+    local char = getChar(LocalPlayer)
     if not char then return end
 
     local myRole = getRole(LocalPlayer)
+    
+    -- Ищем предмет ИМЕННО внутри персонажа (когда он экипирован в руку)
     local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
     if not toolName then return end
 
     local tool = char:FindFirstChild(toolName)
+    -- Если инструмент не в руке (лежит в Backpack) — пока ничего не создаем
     if not tool then return end
 
-    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand") or char:FindFirstChild("LeftUpperArm")
-    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand") or char:FindFirstChild("RightUpperArm")
+    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
+    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
     if not leftArm or not rightArm then return end
 
+    -- Находим хват правого оружия (RightGrip)
     local gripWeld = nil
-    for _, w in ipairs(rightArm:GetDescendants()) do
+    for _, w in ipairs(rightArm:GetChildren()) do
         if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
             gripWeld = w
             break
         end
     end
 
+    -- Собираем 3D-модель из деталей оружия
     local srcParts = {}
     local handleSrc = nil
     for _, c in ipairs(tool:GetDescendants()) do
@@ -3032,14 +2963,14 @@ local function addDual()
     local newHandle = clones[handleSrc]
     if not newHandle then holder:Destroy() return end
 
+    -- Настройка хвата для левой руки
     local gripC0 = gripWeld and gripWeld.C0 or tool.Grip
-    local gripC1 = gripWvel and gripWeld.C1 or CFrame.new()
+    local gripC1 = gripWeld and gripWeld.C1 or CFrame.new()
+
+    -- Разворачиваем рукоятку зеркально для левой руки, чтобы она не смотрела назад
     local mirrorC0 = gripC0 * CFrame.Angles(0, math.rad(180), 0)
 
-    local targetArmPart = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
-    if not targetArmPart then targetArmPart = leftArm end
-
-    local handleCF = targetArmPart.CFrame * mirrorC0 * gripC1:Inverse()
+    local handleCF = leftArm.CFrame * mirrorC0 * gripC1:Inverse()
 
     newHandle.CFrame = handleCF
     for src, c in pairs(clones) do
@@ -3050,11 +2981,12 @@ local function addDual()
 
     holder.Parent = char
 
+    -- Физическая привязка (Weld)
     for src, c in pairs(clones) do
         c.Anchored = false
         local w = Instance.new("Weld")
         if src == handleSrc then
-            w.Part0 = targetArmPart
+            w.Part0 = leftArm
             w.Part1 = c
             w.C0 = mirrorC0
             w.C1 = gripC1
@@ -3066,13 +2998,14 @@ local function addDual()
         w.Parent = c
     end
 
-    applyLeftArmAnimation(char)
     dualModel = holder
+    dualLastRole = myRole
 end
 
--- Цикл проверки состояния оружия
+-- Отслеживаем доставание оружия в руку (каждые 0.1 сек)
 task.spawn(function()
     while task.wait(0.1) do
+    if not getgenv().CWH_RUN then break end
         if dualOn then
             local char = LocalPlayer.Character
             if char then
@@ -3100,9 +3033,7 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function()
     dualModel = nil
-    originalLeftShoulderC0 = nil
 end)
-
 
 -- ═══════════════════════════════════════════════════════════════
 -- ПОДКЛЮЧЕНИЕ К ИНТЕРФЕЙСУ FLUENT
@@ -3211,4 +3142,4 @@ do
         end)
     end
 
-Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v2 | Farm", 5)
+Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v3 | Wallbang | Farm", 15)
