@@ -2916,14 +2916,61 @@ Tabs.Other:AddSlider("ShootBtnH", {
     Callback = function(v) SMB_H = v applySize() end
 })
 
+-- DUAL WEAPON v2.2 (Синхронизация с экипировкой + Зеркальный хват + Анимация левой руки)
 -- ═══════════════════════════════════════════════════════════════
--- DUAL WEAPON v2.1 (Синхронизация с экипировкой + Анимация левой руки)
--- ═══════════════════════════════════════════════════════════════
-local dualOn = false
+local dualOn = true -- Включаем скрипт по умолчанию (или управляй этой переменной через свой UI)
 local dualModel = nil
 local dualLastRole = nil
 
+-- Переменные для сохранения оригинального положения плеча левой руки
+local originalLeftShoulderC0 = nil
+local connectedLeftShoulder = nil
+
+local function resetLeftArmAnimation(char)
+    if not char then return end
+    -- Поддерживаем и R15, и R6 модели персонажей
+    local leftUpperArm = char:FindFirstChild("LeftUpperArm") -- R15
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso") -- R6 / R15 Torso
+    
+    local shoulder = nil
+    if leftUpperArm then
+        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
+    elseif torso then
+        shoulder = torso:FindFirstChild("Left Shoulder")
+    end
+
+    if shoulder and originalLeftShoulderC0 then
+        shoulder.C0 = originalLeftShoulderC0
+    end
+    originalLeftShoulderC0 = nil
+end
+
+local function applyLeftArmAnimation(char)
+    if not char then return end
+    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    
+    local shoulder = nil
+    if leftUpperArm then
+        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
+    elseif torso then
+        shoulder = torso:FindFirstChild("Left Shoulder")
+    end
+
+    if shoulder then
+        if not originalLeftShoulderC0 then
+            originalLeftShoulderC0 = shoulder.C0
+        end
+        -- Зеркально поднимаем левую руку вперед (настраивай углы под себя при необходимости)
+        shoulder.C0 = originalLeftShoulderC0 * CFrame.Angles(math.rad(90), 0, math.rad(-10))
+    end
+end
+
 local function removeDual()
+    local char = getChar(LocalPlayer)
+    if char then
+        resetLeftArmAnimation(char)
+    end
     if dualModel then
         pcall(function() dualModel:Destroy() end)
         dualModel = nil
@@ -2946,13 +2993,13 @@ local function addDual()
     -- Если инструмент не в руке (лежит в Backpack) — пока ничего не создаем
     if not tool then return end
 
-    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
-    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand") or char:FindFirstChild("LeftUpperArm")
+    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand") or char:FindFirstChild("RightUpperArm")
     if not leftArm or not rightArm then return end
 
     -- Находим хват правого оружия (RightGrip)
     local gripWeld = nil
-    for _, w in ipairs(rightArm:GetChildren()) do
+    for _, w in ipairs(rightArm:GetDescendants()) do
         if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
             gripWeld = w
             break
@@ -2999,7 +3046,11 @@ local function addDual()
     -- Разворачиваем рукоятку зеркально для левой руки, чтобы она не смотрела назад
     local mirrorC0 = gripC0 * CFrame.Angles(0, math.rad(180), 0)
 
-    local handleCF = leftArm.CFrame * mirrorC0 * gripC1:Inverse()
+    -- Если за основу берется часть руки верхнего уровня, аккуратно позиционируем
+    local targetArmPart = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
+    if not targetArmPart then targetArmPart = leftArm end
+
+    local handleCF = targetArmPart.CFrame * mirrorC0 * gripC1:Inverse()
 
     newHandle.CFrame = handleCF
     for src, c in pairs(clones) do
@@ -3015,7 +3066,7 @@ local function addDual()
         c.Anchored = false
         local w = Instance.new("Weld")
         if src == handleSrc then
-            w.Part0 = leftArm
+            w.Part0 = targetArmPart
             w.Part1 = c
             w.C0 = mirrorC0
             w.C1 = gripC1
@@ -3027,6 +3078,9 @@ local function addDual()
         w.Parent = c
     end
 
+    -- Применяем поднятие левой руки
+    applyLeftArmAnimation(char)
+
     dualModel = holder
     dualLastRole = myRole
 end
@@ -3035,7 +3089,7 @@ end
 task.spawn(function()
     while task.wait(0.1) do
         if dualOn then
-            local char = LocalPlayer.Character
+            local char = getChar(LocalPlayer)
             if char then
                 local myRole = getRole(LocalPlayer)
                 local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
@@ -3061,7 +3115,9 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function()
     dualModel = nil
+    originalLeftShoulderC0 = nil
 end)
+
 
 -- ═══════════════════════════════════════════════════════════════
 -- ПОДКЛЮЧЕНИЕ К ИНТЕРФЕЙСУ FLUENT
