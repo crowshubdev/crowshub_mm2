@@ -209,7 +209,7 @@ local Window = Fluent:CreateWindow({
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.LeftShift
+    MinimizeKey = Enum.KeyCode.LeftAlt
 })
 getgenv().CWH_Window = Window
 
@@ -2887,50 +2887,89 @@ Tabs.Other:AddSlider("ShootBtnH", {
     Callback = function(v) SMB_H = v applySize() end
 })
 
--- ═══════════════════════════════════════════════════════════════
--- DUAL WEAPON v2.1 (Синхронизация с экипировкой + Анимация левой руки)
--- ═══════════════════════════════════════════════════════════════
-local dualOn = false
+-- DUAL WEAPON v2.3 (Исправлен возврат руки и зеркальный поворот)
+local dualOn = true
 local dualModel = nil
-local dualLastRole = nil
+
+local originalLeftShoulderC0 = nil
+
+local function resetLeftArmAnimation(char)
+    if not char then return end
+    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    
+    local shoulder = nil
+    if leftUpperArm then
+        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
+    elseif torso then
+        shoulder = torso:FindFirstChild("Left Shoulder")
+    end
+
+    if shoulder and originalLeftShoulderC0 then
+        shoulder.C0 = originalLeftShoulderC0
+        originalLeftShoulderC0 = nil -- Сбрасываем кэш, чтобы при следующем взятии зафиксировать чистый дефолт
+    end
+end
+
+local function applyLeftArmAnimation(char)
+    if not char then return end
+    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    
+    local shoulder = nil
+    if leftUpperArm then
+        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
+    elseif torso then
+        shoulder = torso:FindFirstChild("Left Shoulder")
+    end
+
+    if shoulder then
+        -- Сохраняем оригинал ТОЛЬКО если он ещё не сохранён
+        if not originalLeftShoulderC0 then
+            originalLeftShoulderC0 = shoulder.C0
+        end
+        
+        -- Зеркальные углы для левой руки, чтобы она симметрично держала второй предмет
+        -- Меняем знаки у углов, чтобы рука не выворачивалась назад
+        shoulder.C0 = originalLeftShoulderC0 * CFrame.Angles(math.rad(90), 0, math.rad(10))
+    end
+end
 
 local function removeDual()
+    local char = LocalPlayer.Character
+    if char then
+        resetLeftArmAnimation(char)
+    end
     if dualModel then
         pcall(function() dualModel:Destroy() end)
         dualModel = nil
     end
-    dualLastRole = nil
 end
 
 local function addDual()
     removeDual()
-    local char = getChar(LocalPlayer)
+    local char = LocalPlayer.Character
     if not char then return end
 
     local myRole = getRole(LocalPlayer)
-    
-    -- Ищем предмет ИМЕННО внутри персонажа (когда он экипирован в руку)
     local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
     if not toolName then return end
 
     local tool = char:FindFirstChild(toolName)
-    -- Если инструмент не в руке (лежит в Backpack) — пока ничего не создаем
     if not tool then return end
 
-    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
-    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand") or char:FindFirstChild("LeftUpperArm")
+    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand") or char:FindFirstChild("RightUpperArm")
     if not leftArm or not rightArm then return end
 
-    -- Находим хват правого оружия (RightGrip)
     local gripWeld = nil
-    for _, w in ipairs(rightArm:GetChildren()) do
+    for _, w in ipairs(rightArm:GetDescendants()) do
         if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
             gripWeld = w
             break
         end
     end
 
-    -- Собираем 3D-модель из деталей оружия
     local srcParts = {}
     local handleSrc = nil
     for _, c in ipairs(tool:GetDescendants()) do
@@ -2963,14 +3002,14 @@ local function addDual()
     local newHandle = clones[handleSrc]
     if not newHandle then holder:Destroy() return end
 
-    -- Настройка хвата для левой руки
     local gripC0 = gripWeld and gripWeld.C0 or tool.Grip
-    local gripC1 = gripWeld and gripWeld.C1 or CFrame.new()
-
-    -- Разворачиваем рукоятку зеркально для левой руки, чтобы она не смотрела назад
+    local gripC1 = gripWvel and gripWeld.C1 or CFrame.new()
     local mirrorC0 = gripC0 * CFrame.Angles(0, math.rad(180), 0)
 
-    local handleCF = leftArm.CFrame * mirrorC0 * gripC1:Inverse()
+    local targetArmPart = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
+    if not targetArmPart then targetArmPart = leftArm end
+
+    local handleCF = targetArmPart.CFrame * mirrorC0 * gripC1:Inverse()
 
     newHandle.CFrame = handleCF
     for src, c in pairs(clones) do
@@ -2981,12 +3020,11 @@ local function addDual()
 
     holder.Parent = char
 
-    -- Физическая привязка (Weld)
     for src, c in pairs(clones) do
         c.Anchored = false
         local w = Instance.new("Weld")
         if src == handleSrc then
-            w.Part0 = leftArm
+            w.Part0 = targetArmPart
             w.Part1 = c
             w.C0 = mirrorC0
             w.C1 = gripC1
@@ -2998,14 +3036,13 @@ local function addDual()
         w.Parent = c
     end
 
+    applyLeftArmAnimation(char)
     dualModel = holder
-    dualLastRole = myRole
 end
 
--- Отслеживаем доставание оружия в руку (каждые 0.1 сек)
+-- Цикл проверки состояния оружия
 task.spawn(function()
     while task.wait(0.1) do
-    if not getgenv().CWH_RUN then break end
         if dualOn then
             local char = LocalPlayer.Character
             if char then
@@ -3033,6 +3070,7 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function()
     dualModel = nil
+    originalLeftShoulderC0 = nil
 end)
 
 -- ═══════════════════════════════════════════════════════════════
