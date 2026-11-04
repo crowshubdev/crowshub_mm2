@@ -489,6 +489,7 @@ end)
 
 -- Gun Drop ESP
 
+do -- ═══ [CWH SCOPE] G1: VISUALS (ESP/labels) + Gun Grab v2/Smooth — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- GUN HERE LABEL (текст над упавшей пушкой)
 -- ═══════════════════════════════════════════════════════════════
@@ -708,6 +709,65 @@ Tabs.World:AddSlider("SmoothGrabSpeed", {
 })
 
 -- ═══════════════════════════════════════════════════════════════
+-- GRAB GUN v3 (дистанционное поднятие: ТЫ ОСТАЁШЬСЯ НА МЕСТЕ —
+-- пушка "притягивается" ремоутом касания с любой дистанции,
+-- персонажа вообще не двигает — ни телепортов, ни полёта)
+-- ═══════════════════════════════════════════════════════════════
+local grab3On = false
+local grab3Busy = false
+
+local function grab3Have()
+    local c = getChar(LocalPlayer)
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    return (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+end
+
+task.spawn(function()
+    while task.wait(0.2) do
+    if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not grab3On or grab3Busy then return end
+            -- не мешаем ферме
+            local farmRef = getgenv().CWH_FarmRef
+            if farmRef and farmRef.Enabled then return end
+            if grab3Have() then return end
+            local map = getMap()
+            local drop = map and map:FindFirstChild("GunDrop", true)
+            if not drop then return end
+            local hrp = getHRP(getChar(LocalPlayer))
+            if not hrp then return end
+            grab3Busy = true
+            task.spawn(function()
+                local ok = false
+                for _ = 1, 15 do
+                    if not getgenv().CWH_RUN then break end
+                    if grab3Have() then ok = true break end
+                    if not drop.Parent then break end
+                    if realFireTouch then
+                        pcall(function()
+                            realFireTouch(drop, hrp, 1)
+                            realFireTouch(drop, hrp, 0)
+                        end)
+                    end
+                    task.wait(0.15)
+                end
+                grab3Busy = false
+                if ok then
+                    Notify("Grab v3", "🧲 Gun притянут — ты остался на месте!", nil, 3)
+                    print("[CWH] Grab v3: пушка поднята дистанционно, без телепорта")
+                end
+            end)
+        end)
+    end
+end)
+
+Tabs.World:AddToggle("AutoGrabV3", {
+    Title = "🧲 Grab Gun v3 — без телепорта",
+    Description = "Притягивает упавшую пушку с места (ты не двигаешься)",
+    Default = false
+}):OnChanged(function(v) grab3On = v end)
+
+-- ═══════════════════════════════════════════════════════════════
 -- INSTANT GRAB GUN (бьёт GunDrop каждые 0.15с — берёт сразу после кулдауна)
 -- ═══════════════════════════════════════════════════════════════
 local instantGrabOn = false
@@ -883,6 +943,8 @@ Tabs.World:AddSection("Round Timer")
 Tabs.World:AddToggle("TimerShow", { Title = "Timer GUI", Default = false })
     :OnChanged(function(v) timerGui.Enabled = v end)
 
+end -- [CWH SCOPE] G1
+do -- ═══ [CWH SCOPE] G2: Ping/FPS, Round Status, FPS Booster, Anti-Fling — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- PING / FPS CHECKER
 -- ═══════════════════════════════════════════════════════════════
@@ -1404,6 +1466,9 @@ Tabs.Combat:AddButton({
 --  • Wallbang: клик = прямой выстрел ремоутом Shoot, origin в 3 студах
 --    от жертвы (сразу за стеной) — сервер такой выстрел принимает
 --  • Auto Shoot: сам стреляет по цели с интервалом
+end -- [CWH SCOPE] G2
+local sa3FireShot -- [CWH] форвард-декларация (определение в Silent Aim, вызов в Shoot Murderer)
+do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0 }
@@ -1465,7 +1530,7 @@ local function sa3AimPos(targetPlayer)
 end
 
 -- ручной выстрел ремоутом Shoot (метод Pulse Hub) — работает ЧЕРЕЗ СТЕНЫ
-local function sa3FireShot(targetPlayer)
+function sa3FireShot(targetPlayer)
     local myChar = getChar(LocalPlayer)
     local myHRP = myChar and getHRP(myChar)
     local gun = myChar and myChar:FindFirstChild("Gun")
@@ -1649,6 +1714,8 @@ task.spawn(function()
     end
 end)
 
+end -- [CWH SCOPE] G3
+do -- ═══ [CWH SCOPE] G4: Kill Sound + Kill Player — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- KILL SOUND (метод Pulse: хук WeaponService.GunFired + ножевые киллы)
 -- ═══════════════════════════════════════════════════════════════
@@ -2628,6 +2695,8 @@ Tabs.Farm:AddToggle("AutoReset", {
     Title = "Auto Reset (когда сумки полные)", Default = false
 }):OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
 
+end -- [CWH SCOPE] G4
+do -- ═══ [CWH SCOPE] G5: AutoKill, Coin Aura, Cursor, Dodge x2 — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- AUTO KILL EVERYONE (когда собрал монеты) + AUTO FLING ON DEATH
 -- ═══════════════════════════════════════════════════════════════
@@ -3255,6 +3324,8 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
 -- ═══════════════════════════════════════════════════════════════
 -- ═══════════════════════════════════════════════════════════════
 -- SHOOT MURDERER BUTTON v4 (прямой выстрел ремоутом Shoot — SA3/Pulse-метод, стены пробивает)
+end -- [CWH SCOPE] G5
+do -- ═══ [CWH SCOPE] G6: Shoot Murderer v4 + Keybind — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 local smbGui = Instance.new("ScreenGui")
 smbGui.Name = "CWH_ShootBtn"
@@ -3430,6 +3501,8 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
+end -- [CWH SCOPE] G6
+do -- ═══ [CWH SCOPE] G7: Bomb Jump — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- BOMB JUMP (метод Pulse: прыжок от игрушки FakeBomb)
 -- ═══════════════════════════════════════════════════════════════
@@ -3547,6 +3620,8 @@ Tabs.Other:AddButton({
     end
 })
 
+end -- [CWH SCOPE] G7
+do -- ═══ [CWH SCOPE] G8: Invisibility — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- INVISIBILITY (метод Pulse: десинк под карту + призрак 50%)
 --  • каждый кадр персонаж на миг улетает ГЛУБОКО под карту (выше
@@ -3767,6 +3842,8 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
+end -- [CWH SCOPE] G8
+do -- ═══ [CWH SCOPE] G9: Auto Clean + Dual Weapon + Fluent hookup — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- AUTO CLEAN (чистит старые трупы/детали с карты — только у тебя,
 -- сервер не трогается; помогает от лагов и мусора на экране)
@@ -4055,6 +4132,7 @@ Tabs.Settings:AddButton({
     Callback = function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end
 })
 
+end -- [CWH SCOPE] G9
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
 -- ═══════════════════════════════════════════════════════════════
