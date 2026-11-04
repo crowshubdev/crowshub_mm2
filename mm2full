@@ -330,11 +330,66 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ═══ VISUALS: ESP ═══
+-- ═══ VISUALS: ESP (дизайн Pulse: цвета ролей, HERO, панель, HP-бар) ═══
 local ESP = { HL = false, Names = false, Dist = false, HP = false, Gun = false }
 local gunHL = nil
 
-local function ensureHL(plr)
+-- цвета ролей как в Pulse Hub
+local ESP_COLORS = {
+    Murderer = Color3.fromRGB(255, 64, 64),
+    Sheriff  = Color3.fromRGB(80, 150, 255),
+    Hero     = Color3.fromRGB(255, 210, 60),
+    Innocent = Color3.fromRGB(90, 230, 130),
+    Unknown  = Color3.fromRGB(176, 182, 204),
+}
+local ESP_PLATE_C = Color3.fromRGB(20, 20, 24)
+local ESP_NAME_C  = Color3.fromRGB(250, 250, 250)
+local ESP_INFO_C  = Color3.fromRGB(200, 205, 215)
+local ESP_HP_LOW  = Color3.fromRGB(235, 60, 60)
+local ESP_HP_HIGH = Color3.fromRGB(90, 225, 120)
+
+-- роль для ESP (механика наша): пистолет у НЕ-шерифа = HERO (шериф умер, кто-то поднял пушку)
+local espCache, espCacheT = {}, 0
+local function espRoleOf(plr)
+    local now = os.clock()
+    if now - espCacheT > 0.3 then espCache = {} espCacheT = now end
+    if not espCache[plr] then
+        local role = "Unknown"
+        local c = plr and plr.Character
+        local bp = plr and plr:FindFirstChild("Backpack")
+        local hasKnife = (c and c:FindFirstChild("Knife")) or (bp and bp:FindFirstChild("Knife"))
+        local hasGun = (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+        local sd = ServerRoles[plr.Name]
+        if hasKnife then
+            role = "Murderer"
+        elseif hasGun then
+            local isSheriff = type(sd) == "table" and sd.Role == "Sheriff" and not sd.Dead and not sd.Killed
+            role = isSheriff and "Sheriff" or "Hero"
+        elseif type(sd) == "table" and sd.Role then
+            if sd.Role == "Murderer" then
+                role = "Murderer"
+            elseif sd.Role == "Sheriff" and not sd.Dead and not sd.Killed then
+                role = "Sheriff"
+            else
+                role = "Innocent"
+            end
+        elseif c then
+            role = "Innocent"
+        end
+        espCache[plr] = role
+    end
+    return espCache[plr]
+end
+
+local function espWeaponOf(plr)
+    local c = plr and plr.Character
+    local bp = plr and plr:FindFirstChild("Backpack")
+    if (c and c:FindFirstChild("Knife")) or (bp and bp:FindFirstChild("Knife")) then return "🔪" end
+    if (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun")) then return "🔫" end
+    return ""
+end
+
+local function ensureESP(plr)
     local c = getChar(plr)
     if not c then return end
     if not c:FindFirstChild("CWH_ESP") then
@@ -350,19 +405,74 @@ local function ensureHL(plr)
         local bg = Instance.new("BillboardGui")
         bg.Name = "CWH_Tag"
         bg.Adornee = hrp
-        bg.Size = UDim2.new(0, 200, 0, 60)
+        bg.Size = UDim2.new(0, 220, 0, 84)
         bg.StudsOffset = Vector3.new(0, 3, 0)
         bg.AlwaysOnTop = true
         bg.Parent = hrp
-        local tx = Instance.new("TextLabel")
-        tx.Name = "L"
-        tx.BackgroundTransparency = 1
-        tx.Size = UDim2.new(1, 0, 1, 0)
-        tx.TextSize = 14
-        tx.Font = Enum.Font.GothamBold
-        tx.TextStrokeTransparency = 0
-        tx.Text = ""
-        tx.Parent = bg
+
+        local plate = Instance.new("Frame")
+        plate.Name = "Plate"
+        plate.Size = UDim2.new(1, 0, 1, 0)
+        plate.BackgroundColor3 = ESP_PLATE_C
+        plate.BackgroundTransparency = 0.25
+        plate.BorderSizePixel = 0
+        plate.Parent = bg
+        local pc = Instance.new("UICorner")
+        pc.CornerRadius = UDim.new(0, 8)
+        pc.Parent = plate
+
+        local nm = Instance.new("TextLabel")
+        nm.Name = "Name"
+        nm.BackgroundTransparency = 1
+        nm.Size = UDim2.new(1, 0, 0, 22)
+        nm.Position = UDim2.new(0, 0, 0, 4)
+        nm.Font = Enum.Font.GothamBold
+        nm.TextSize = 14
+        nm.TextColor3 = ESP_NAME_C
+        nm.Text = ""
+        nm.Parent = plate
+
+        local rl = Instance.new("TextLabel")
+        rl.Name = "Role"
+        rl.BackgroundTransparency = 1
+        rl.Size = UDim2.new(1, 0, 0, 20)
+        rl.Position = UDim2.new(0, 0, 0, 24)
+        rl.Font = Enum.Font.GothamBold
+        rl.TextSize = 13
+        rl.Text = ""
+        rl.Parent = plate
+
+        local hpbg = Instance.new("Frame")
+        hpbg.Name = "HPBG"
+        hpbg.Size = UDim2.new(1, -16, 0, 6)
+        hpbg.Position = UDim2.new(0, 8, 0, 48)
+        hpbg.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+        hpbg.BorderSizePixel = 0
+        hpbg.Parent = plate
+        local hc = Instance.new("UICorner")
+        hc.CornerRadius = UDim.new(0, 3)
+        hc.Parent = hpbg
+
+        local hp = Instance.new("Frame")
+        hp.Name = "HP"
+        hp.Size = UDim2.new(1, 0, 1, 0)
+        hp.BackgroundColor3 = ESP_HP_HIGH
+        hp.BorderSizePixel = 0
+        hp.Parent = hpbg
+        local hc2 = Instance.new("UICorner")
+        hc2.CornerRadius = UDim.new(0, 3)
+        hc2.Parent = hp
+
+        local inf = Instance.new("TextLabel")
+        inf.Name = "Info"
+        inf.BackgroundTransparency = 1
+        inf.Size = UDim2.new(1, 0, 0, 18)
+        inf.Position = UDim2.new(0, 0, 0, 58)
+        inf.Font = Enum.Font.Gotham
+        inf.TextSize = 12
+        inf.TextColor3 = ESP_INFO_C
+        inf.Text = ""
+        inf.Parent = plate
     end
 end
 
@@ -373,37 +483,56 @@ task.spawn(function()
             pcall(function()
                 local myHRP = getHRP(getChar(LocalPlayer))
                 for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr == LocalPlayer then continue end
-                    local c = getChar(plr)
-                    if not c then continue end
-                    local role = getRole(plr)
-                    local color = ROLE_COLORS[role] or ROLE_COLORS.Unknown
-                    ensureHL(plr)
+                    if plr ~= LocalPlayer then
+                        local c = getChar(plr)
+                        if c then
+                            local role = espRoleOf(plr)
+                            local color = ESP_COLORS[role] or ESP_COLORS.Unknown
+                            ensureESP(plr)
 
-                    local hl = c:FindFirstChild("CWH_ESP")
-                    if hl then
-                        hl.Enabled = ESP.HL
-                        hl.FillColor = color
-                        hl.OutlineColor = color
-                    end
+                            local hl = c:FindFirstChild("CWH_ESP")
+                            if hl then
+                                hl.Enabled = ESP.HL
+                                hl.FillColor = color
+                                hl.OutlineColor = color
+                            end
 
-                    local hrp = getHRP(c)
-                    local bg = hrp and hrp:FindFirstChild("CWH_Tag")
-                    if bg then
-                        bg.Enabled = ESP.Names or ESP.Dist or ESP.HP
-                        local tx = bg:FindFirstChild("L")
-                        if tx then
-                            local lines = {}
-                            if ESP.Names then table.insert(lines, plr.Name .. " [" .. role .. "]") end
-                            if ESP.HP then
-                                local h = getHum(c)
-                                if h then table.insert(lines, "HP: " .. math.floor(h.Health)) end
+                            local hrp = getHRP(c)
+                            local bg = hrp and hrp:FindFirstChild("CWH_Tag")
+                            if bg then
+                                bg.Enabled = ESP.Names or ESP.Dist or ESP.HP
+                                local plate = bg:FindFirstChild("Plate")
+                                if plate then
+                                    plate.Visible = ESP.Names or ESP.Dist or ESP.HP
+                                    local nm = plate:FindFirstChild("Name")
+                                    local rl = plate:FindFirstChild("Role")
+                                    local hpbg = plate:FindFirstChild("HPBG")
+                                    local hp = hpbg and hpbg:FindFirstChild("HP")
+                                    local inf = plate:FindFirstChild("Info")
+                                    if nm then
+                                        nm.Text = ESP.Names and plr.Name or ""
+                                    end
+                                    if rl then
+                                        rl.Text = ESP.Names and (role .. " " .. espWeaponOf(plr)) or ""
+                                        rl.TextColor3 = color
+                                    end
+                                    if hp then
+                                        local h = getHum(c)
+                                        if h and ESP.HP then
+                                            local pct = math.clamp(h.Health / math.max(h.MaxHealth, 1), 0, 1)
+                                            hp.Visible = true
+                                            hp.Size = UDim2.new(pct, 0, 1, 0)
+                                            hp.BackgroundColor3 = ESP_HP_LOW:Lerp(ESP_HP_HIGH, pct)
+                                        else
+                                            hp.Visible = false
+                                        end
+                                    end
+                                    if inf then
+                                        inf.Text = (ESP.Dist and myHRP and hrp)
+                                            and (math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs") or ""
+                                    end
+                                end
                             end
-                            if ESP.Dist and myHRP and hrp then
-                                table.insert(lines, math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs")
-                            end
-                            tx.Text = table.concat(lines, "\n")
-                            tx.TextColor3 = color
                         end
                     end
                 end
@@ -483,37 +612,68 @@ Tabs.Visuals:AddToggle("EspGun", { Title = "Gun Drop ESP", Description = "Пуш
     :OnChanged(function(v) ESP.Gun = v end)
 
 -- ═══ WORLD ═══
-local autoGrab = false
 local origBrightness = Lighting.Brightness
 
-Tabs.World:AddSection("Gun")
-Tabs.World:AddButton({
-    Title = "Grab Gun Now",
-    Callback = function()
-        local map = getMap()
-        local root = getHRP(getChar(LocalPlayer))
-        local drop = map and map:FindFirstChild("GunDrop", true)
-        if drop and root and touchGrab(drop, root) then
-            Notify("Grab", "Touched gun!", nil, 3)
-        else
-            Notify("Grab", "No gun!", nil, 3)
-        end
-    end
-})
-Tabs.World:AddToggle("AutoGrab", { Title = "Auto Grab Gun", Default = false })
-    :OnChanged(function(v) autoGrab = v end)
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO GRAB GUN v2 (метод Pulse: сам летит к пушке с любой дистанции)
+-- ═══════════════════════════════════════════════════════════════
+local autoGrabOn = false
+local grabNotifySeen = false
 
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.25) do
     if not getgenv().CWH_RUN then break end
-        if autoGrab then
+        pcall(function()
+            if not autoGrabOn then return end
+            local c = getChar(LocalPlayer)
+            local hrp = getHRP(c)
+            local hum = getHum(c)
+            if not (hrp and hum and hum.Health > 0) then return end
+            -- не мешаем ферме
+            local farmRef = getgenv().CWH_FarmRef
+            if farmRef and farmRef.Enabled then return end
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            if (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun")) then
+                if not grabNotifySeen then
+                    grabNotifySeen = true
+                    Notify("Auto Grab", "💥 Gun взят!", nil, 3)
+                end
+                return
+            end
+            grabNotifySeen = false
             local map = getMap()
-            local root = getHRP(getChar(LocalPlayer))
             local drop = map and map:FindFirstChild("GunDrop", true)
-            if drop and root then touchGrab(drop, root) end
-        end
+            if not drop then return end
+            local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
+            local pos = part and part.Position
+            if not pos then return end
+            local d = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Magnitude
+            local dy = math.abs(pos.Y - hrp.Position.Y)
+            if d < 8 and dy < 14 then
+                if realFireTouch then
+                    realFireTouch(drop, hrp, 1)
+                    realFireTouch(drop, hrp, 0)
+                else
+                    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 2.5, 0))
+                end
+            else
+                -- шаг к пушке (как ферма: CFrame-шаги)
+                local step = math.min(14, d)
+                local dir = Vector3.new(pos.X - hrp.Position.X, 0, pos.Z - hrp.Position.Z)
+                dir = (dir.Magnitude > 0.1) and dir.Unit or Vector3.new(0, 0, 1)
+                hrp.CFrame = CFrame.new(hrp.Position + dir * step
+                    + Vector3.new(0, math.clamp(pos.Y - hrp.Position.Y, -step, step), 0))
+            end
+        end)
     end
 end)
+
+Tabs.World:AddSection("Gun")
+Tabs.World:AddToggle("AutoGrab", {
+    Title = "🎯 Auto Grab Gun",
+    Description = "Сам летит к пушке с любой дистанции (метод Pulse)",
+    Default = false
+}):OnChanged(function(v) autoGrabOn = v end)
 
 -- ═══════════════════════════════════════════════════════════════
 -- INSTANT GRAB GUN (бьёт GunDrop каждые 0.15с — берёт сразу после кулдауна)
@@ -1457,6 +1617,137 @@ task.spawn(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- KILL SOUND (метод Pulse: хук WeaponService.GunFired + ножевые киллы)
+-- ═══════════════════════════════════════════════════════════════
+getgenv().CWH_LastKnifeKill = 0
+local KillSnd = { On = false, Name = "Off", Vol = 60 }
+local KILL_SOUNDS = {
+    { n = "Off",             id = "" },
+    { n = "Heavy",           id = "rbxassetid://94509752219213" },
+    { n = "Blaster",         id = "rbxassetid://3205753493" },
+    { n = "Silence",         id = "rbxassetid://89214508659473" },
+    { n = "Harvester",       id = "rbxassetid://7808472682" },
+    { n = "MM2 Sheriff",     id = "rbxassetid://135424717388240" },
+    { n = "MM2 Gun",         id = "rbxassetid://76995304113402" },
+    { n = "MM2 Gun 2",       id = "rbxassetid://111028294465427" },
+    { n = "Desert Eagle",    id = "rbxassetid://82286818216627" },
+    { n = "Deagle",          id = "rbxassetid://140361765017655" },
+    { n = "AWP",             id = "rbxassetid://120989608556423" },
+    { n = "Revolver",        id = "rbxassetid://115486270266848" },
+    { n = "Revolver 2",      id = "rbxassetid://120771468205926" },
+    { n = ".357 Magnum",     id = "rbxassetid://6350479847" },
+    { n = ".44 Magnum",      id = "rbxassetid://18918494387" },
+    { n = "Sniper",          id = "rbxassetid://103104730555203" },
+    { n = "Heavy Sniper",    id = "rbxassetid://5700090398" },
+    { n = "Glock Silenced",  id = "rbxassetid://112707321486177" },
+    { n = "XPR50 Silenced",  id = "rbxassetid://130946834720896" },
+    { n = "M4A1 Silenced",   id = "rbxassetid://5707240744" },
+    { n = "Pistol",          id = "rbxassetid://6506930532" },
+    { n = "Realistic",       id = "rbxassetid://115567133047135" },
+    { n = "Retro",           id = "rbxassetid://3976061026" },
+    { n = "Laser",           id = "rbxassetid://4400449399" },
+}
+
+local function ksFindId(name)
+    for _, s in ipairs(KILL_SOUNDS) do
+        if s.n == name then return s.id end
+    end
+    return ""
+end
+
+local ksLast = 0
+local function ksPlay(id)
+    if not KillSnd.On or id == "" then return end
+    local now = os.clock()
+    if now - ksLast < 0.35 then return end
+    ksLast = now
+    pcall(function()
+        local snd = Instance.new("Sound")
+        snd.SoundId = id
+        snd.Volume = (tonumber(KillSnd.Vol) or 60) / 100 * 3
+        snd.Parent = game:GetService("SoundService")
+        snd:Play()
+        game:GetService("Debris"):AddItem(snd, 8)
+    end)
+end
+
+-- гановские киллы: сервер шлёт GunFired (кто стрелял, куда попал)
+task.spawn(function()
+    local ok, gf = pcall(function()
+        return ReplicatedStorage:WaitForChild("ClientServices", 15)
+            :WaitForChild("WeaponService", 15):WaitForChild("GunFired", 15)
+    end)
+    if ok and gf and gf:IsA("RemoteEvent") then
+        gf.OnClientEvent:Connect(function(shooter, _a, _b, hit)
+            pcall(function()
+                if not KillSnd.On then return end
+                if typeof(shooter) ~= "Instance" then return end
+                local m = shooter
+                while m and not (m:IsA("Model") and m:FindFirstChildOfClass("Humanoid")) do
+                    m = m.Parent
+                end
+                if m ~= getChar(LocalPlayer) then return end
+                if typeof(hit) ~= "Instance" then return end
+                local v = hit
+                while v and not (v:IsA("Model") and v:FindFirstChildOfClass("Humanoid")) do
+                    v = v.Parent
+                end
+                local vp = v and Players:GetPlayerFromCharacter(v)
+                if vp and vp ~= LocalPlayer then
+                    ksPlay(ksFindId(KillSnd.Name))
+                end
+            end)
+        end)
+        print("[CWH] Kill Sound: GunFired хук установлен")
+    else
+        print("[CWH] Kill Sound: GunFired не найден")
+    end
+end)
+
+-- ножевые киллы: следим за смертями (2с после нашего удара ремоутами)
+task.spawn(function()
+    local prevHP = {}
+    while task.wait(0.25) do
+    if not getgenv().CWH_RUN then break end
+        pcall(function()
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local h = getHum(getChar(plr))
+                    if h then
+                        local was = prevHP[plr]
+                        if was and was > 0 and h.Health <= 0
+                            and (os.clock() - getgenv().CWH_LastKnifeKill) < 2 then
+                            ksPlay(ksFindId(KillSnd.Name))
+                        end
+                        prevHP[plr] = h.Health
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+Tabs.Combat:AddSection("Kill Sound")
+Tabs.Combat:AddToggle("KillSndOn", {
+    Title = "🔊 Kill Sound",
+    Description = "Звук когда ты убил игрока",
+    Default = false
+}):OnChanged(function(v) KillSnd.On = v end)
+
+local ksNames = {}
+for _, s in ipairs(KILL_SOUNDS) do table.insert(ksNames, s.n) end
+Tabs.Combat:AddDropdown("KillSndSel", {
+    Title = "Звук",
+    Values = ksNames,
+    Default = "Off",
+    Callback = function(v) KillSnd.Name = v end
+})
+Tabs.Combat:AddSlider("KillSndVol", {
+    Title = "Громкость", Default = 60, Min = 0, Max = 100, Rounding = 0,
+    Callback = function(v) KillSnd.Vol = v end
+})
+
 -- Fling
 
 -- ═══ FLING (SkidFling из Vision Hub + Stop + Refresh списка) ═══
@@ -1762,6 +2053,87 @@ Tabs.Combat:AddButton({
     Title = "🛑 Stop Fling",
     Description = "Немедленно остановить флинг",
     Callback = stopFling
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- KILL PLAYER (нож-ремоуты: KnifeStabbed + HandleTouched + fireTouch —
+-- удар с места, работает ЧЕРЕЗ СТЕНЫ; нужен Knife)
+-- ═══════════════════════════════════════════════════════════════
+local function keFindKnife()
+    local c = getChar(LocalPlayer)
+    if c and c:FindFirstChild("Knife") then return c:FindFirstChild("Knife") end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    return bp and bp:FindFirstChild("Knife")
+end
+
+local function keKillOne(plr)
+    if not plr then return false end
+    local knife = keFindKnife()
+    if not knife then return false end
+    local c = getChar(LocalPlayer)
+    if knife.Parent ~= c then
+        local hum = getHum(c)
+        if hum then
+            pcall(function() hum:EquipTool(knife) end)
+            task.wait(0.2)
+            knife = keFindKnife()
+        end
+    end
+    if not knife then return false end
+    local pc = getChar(plr)
+    local phrp = pc and getHRP(pc)
+    local ph = getHum(pc)
+    if not (pc and phrp and ph and ph.Health > 0) then return false end
+    local ev = knife:FindFirstChild("Events")
+    local st = ev and ev:FindFirstChild("KnifeStabbed")
+    local to = ev and ev:FindFirstChild("HandleTouched")
+    local handle = knife:FindFirstChild("Handle")
+    if st then pcall(function() st:FireServer() end) end
+    if to then pcall(function() to:FireServer(phrp) end) end
+    if handle then
+        pcall(function()
+            realFireTouch(handle, phrp, 1)
+            realFireTouch(handle, phrp, 0)
+        end)
+    end
+    getgenv().CWH_LastKnifeKill = os.clock()
+    return true
+end
+
+Tabs.Combat:AddButton({
+    Title = "🔪 Kill Selected",
+    Description = "Убить выбранного из списка (нож-ремоуты, через стены)",
+    Callback = function()
+        if not flingSel then
+            Notify("Kill", "Сначала выбери игрока в списке", nil, 3)
+            return
+        end
+        local p = Players:FindFirstChild(flingSel)
+        if not p then
+            Notify("Kill", "Игрок не найден (вышел?) — Refresh", nil, 3)
+            return
+        end
+        task.spawn(function()
+            local ok = keKillOne(p)
+            Notify("Kill", ok and ("🔪 → " .. p.Name) or "Нужен Knife в руках/рюкзаке", nil, 3)
+        end)
+    end
+})
+
+Tabs.Combat:AddButton({
+    Title = "👑 Kill Sheriff / Hero",
+    Description = "Убить того, у кого пистолет (шериф или подобравший)",
+    Callback = function()
+        local t = getSheriff()
+        if not t then
+            Notify("Kill", "Пистолет никто не держит", nil, 3)
+            return
+        end
+        task.spawn(function()
+            local ok = keKillOne(t)
+            Notify("Kill", ok and ("🔪 → " .. t.Name .. " (Sheriff/Hero)") or "Нужен Knife в руках/рюкзаке", nil, 3)
+        end)
+    end
 })
 
 -- автозаполнение списка при входе/выходе игроков
@@ -2201,6 +2573,7 @@ local function keKillAll()
             n += 1
         end
     end
+    getgenv().CWH_LastKnifeKill = os.clock()
     return n
 end
 
@@ -2885,6 +3258,169 @@ Tabs.Other:AddSlider("ShootBtnW", {
 Tabs.Other:AddSlider("ShootBtnH", {
     Title = "Height", Default = 44, Min = 30, Max = 100, Rounding = 0,
     Callback = function(v) SMB_H = v applySize() end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- KEYBIND: выстрел в Murderer с любой клавиши (ПК)
+-- ═══════════════════════════════════════════════════════════════
+local shootKeyName = ""
+
+Tabs.Other:AddSection("Keybind: Shoot Murderer (ПК)")
+
+Tabs.Other:AddInput("ShootKeyBind", {
+    Title = "⌨ Клавиша выстрела в Murderer",
+    Placeholder = "имя клавиши: E, Q, F, X, G, LeftShift, One...",
+    Callback = function(v)
+        local n = tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if n == "" then
+            shootKeyName = ""
+            Notify("Keybind", "Клавиша убрана", nil, 2)
+            return
+        end
+        local ok, key = pcall(function() return Enum.KeyCode[n] end)
+        if ok and key then
+            shootKeyName = n
+            Notify("Keybind", "Выстрел по клавише: " .. n, nil, 2)
+        else
+            shootKeyName = ""
+            Notify("Keybind", "Нет такой клавиши: " .. n, nil, 3)
+        end
+    end
+})
+
+Tabs.Other:AddButton({
+    Title = "🗑 Сбросить клавишу выстрела",
+    Description = "Отключить выстрел по клавише",
+    Callback = function()
+        shootKeyName = ""
+        Notify("Keybind", "Клавиша убрана", nil, 2)
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if shootKeyName == "" then return end
+    local ok, key = pcall(function() return Enum.KeyCode[shootKeyName] end)
+    if ok and key and input.KeyCode == key then
+        task.spawn(doShoot)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- BOMB JUMP (метод Pulse: прыжок от игрушки FakeBomb)
+-- ═══════════════════════════════════════════════════════════════
+local bombJumpOn = false
+
+local function bombJumpVel()
+    local c = getChar(LocalPlayer)
+    local hum = getHum(c)
+    local hrp = getHRP(c)
+    if not (hum and hrp and hum.Health > 0) then return end
+    local v
+    if hum.UseJumpPower == false then
+        v = math.sqrt(2 * (workspace.Gravity or 196.2) * math.max(hum.JumpHeight or 7.2, 1))
+    else
+        v = math.max(hum.JumpPower or 50, 50)
+    end
+    local vel = hrp.AssemblyLinearVelocity
+    hrp.AssemblyLinearVelocity = Vector3.new(vel.X, v, vel.Z)
+    pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+end
+
+local function bombFind()
+    local c = getChar(LocalPlayer)
+    if c then
+        local t = c:FindFirstChild("FakeBomb")
+        if t then return t end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local toys = bp:FindFirstChild("Toys")
+        local t = (toys and toys:FindFirstChild("FakeBomb")) or bp:FindFirstChild("FakeBomb")
+        if t then return t end
+    end
+    return nil
+end
+
+-- тоггл: активация бомбы → подпрыгиваем (взрыв подкидывает выше)
+task.spawn(function()
+    local function hookTool(char)
+        if not char then return end
+        local function h(t)
+            if t:IsA("Tool") and t.Name == "FakeBomb" then
+                t.Activated:Connect(function()
+                    if bombJumpOn then pcall(bombJumpVel) end
+                end)
+            end
+        end
+        for _, t in ipairs(char:GetChildren()) do h(t) end
+        char.ChildAdded:Connect(h)
+    end
+    if getChar(LocalPlayer) then hookTool(getChar(LocalPlayer)) end
+    LocalPlayer.CharacterAdded:Connect(function(ch)
+        task.wait(0.3)
+        hookTool(ch)
+    end)
+end)
+
+-- авто: сам ставит бомбу под собой и прыгает от взрыва
+local function autoBombJump()
+    local c = getChar(LocalPlayer)
+    local hrp = getHRP(c)
+    if not (c and hrp) then return end
+    local bomb = bombFind()
+    if not bomb then
+        Notify("Bomb Jump", "Нет FakeBomb — нужна игрушка-бомба", nil, 4)
+        return
+    end
+    if bomb.Parent ~= c then
+        pcall(function() bomb.Parent = c end)
+        task.wait(0.08)
+        bomb = bombFind()
+        if not bomb then return end
+    end
+    pcall(function()
+        local handle = bomb:FindFirstChild("Handle")
+        local hand = c:FindFirstChild("RightHand") or c:FindFirstChild("Right Arm")
+        if handle and hand and not hand:FindFirstChild("RightGrip") then
+            handle.Anchored = false
+            local w = Instance.new("Weld")
+            w.Name = "RightGrip"
+            w.Part0 = hand
+            w.Part1 = handle
+            w.C0 = (hand.Name == "RightHand") and CFrame.new(0, -0.1, 0)
+                or CFrame.new(0, -1.0, 0) * CFrame.Angles(-1.5707963267948966, 0, 0)
+            w.C1 = bomb.Grip
+            w.Parent = hand
+        end
+    end)
+    bombJumpVel()
+    task.wait(0.12)
+    local remote = bomb:FindFirstChild("Remote") or bomb:FindFirstChild("Remote", true)
+    if not remote then
+        Notify("Bomb Jump", "У бомбы нет Remote", nil, 3)
+        return
+    end
+    pcall(function() remote:FireServer(CFrame.new(hrp.Position - Vector3.new(0, 2.5, 0)), 50) end)
+    task.wait(0.22)
+    bombJumpVel()
+end
+
+Tabs.Other:AddSection("Bomb Jump")
+Tabs.Other:AddToggle("BombJump", {
+    Title = "💣 Bomb Jump",
+    Description = "Активируешь бомбу-игрушку → подпрыгиваешь от взрыва",
+    Default = false
+}):OnChanged(function(v) bombJumpOn = v end)
+
+Tabs.Other:AddButton({
+    Title = "🚀 Auto Bomb Jump",
+    Description = "Сам ставит бомбу под собой и прыгает от взрыва",
+    Callback = function()
+        task.spawn(function()
+            pcall(autoBombJump)
+        end)
+    end
 })
 
 -- DUAL WEAPON v2.3 (Исправлен возврат руки и зеркальный поворот)
