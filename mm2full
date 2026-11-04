@@ -330,7 +330,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ═══ VISUALS: ESP (дизайн Pulse: цвета ролей, HERO, панель, HP-бар) ═══
+-- ═══ VISUALS: ESP (цвета ролей Pulse; ник — текст над головой в цвете роли, без панели) ═══
 local ESP = { HL = false, Names = false, Dist = false, HP = false, Gun = false }
 local gunHL = nil
 
@@ -342,11 +342,7 @@ local ESP_COLORS = {
     Innocent = Color3.fromRGB(90, 230, 130),
     Unknown  = Color3.fromRGB(176, 182, 204),
 }
-local ESP_PLATE_C = Color3.fromRGB(20, 20, 24)
-local ESP_NAME_C  = Color3.fromRGB(250, 250, 250)
-local ESP_INFO_C  = Color3.fromRGB(200, 205, 215)
-local ESP_HP_LOW  = Color3.fromRGB(235, 60, 60)
-local ESP_HP_HIGH = Color3.fromRGB(90, 225, 120)
+local ESP_INFO_C = Color3.fromRGB(230, 232, 240)
 
 -- роль для ESP (механика наша): пистолет у НЕ-шерифа = HERO (шериф умер, кто-то поднял пушку)
 local espCache, espCacheT = {}, 0
@@ -389,6 +385,7 @@ local function espWeaponOf(plr)
     return ""
 end
 
+-- ник ESP: просто текст над головой (без панели — не мешает на телефоне)
 local function ensureESP(plr)
     local c = getChar(plr)
     if not c then return end
@@ -405,74 +402,35 @@ local function ensureESP(plr)
         local bg = Instance.new("BillboardGui")
         bg.Name = "CWH_Tag"
         bg.Adornee = hrp
-        bg.Size = UDim2.new(0, 220, 0, 84)
-        bg.StudsOffset = Vector3.new(0, 3, 0)
+        bg.Size = UDim2.new(0, 220, 0, 42)
+        bg.StudsOffset = Vector3.new(0, 2.6, 0)
         bg.AlwaysOnTop = true
         bg.Parent = hrp
-
-        local plate = Instance.new("Frame")
-        plate.Name = "Plate"
-        plate.Size = UDim2.new(1, 0, 1, 0)
-        plate.BackgroundColor3 = ESP_PLATE_C
-        plate.BackgroundTransparency = 0.25
-        plate.BorderSizePixel = 0
-        plate.Parent = bg
-        local pc = Instance.new("UICorner")
-        pc.CornerRadius = UDim.new(0, 8)
-        pc.Parent = plate
 
         local nm = Instance.new("TextLabel")
         nm.Name = "Name"
         nm.BackgroundTransparency = 1
         nm.Size = UDim2.new(1, 0, 0, 22)
-        nm.Position = UDim2.new(0, 0, 0, 4)
+        nm.Position = UDim2.new(0, 0, 0, 0)
         nm.Font = Enum.Font.GothamBold
-        nm.TextSize = 14
-        nm.TextColor3 = ESP_NAME_C
+        nm.TextSize = 15
+        nm.TextStrokeTransparency = 0
+        nm.TextStrokeColor3 = Color3.new(0, 0, 0)
         nm.Text = ""
-        nm.Parent = plate
-
-        local rl = Instance.new("TextLabel")
-        rl.Name = "Role"
-        rl.BackgroundTransparency = 1
-        rl.Size = UDim2.new(1, 0, 0, 20)
-        rl.Position = UDim2.new(0, 0, 0, 24)
-        rl.Font = Enum.Font.GothamBold
-        rl.TextSize = 13
-        rl.Text = ""
-        rl.Parent = plate
-
-        local hpbg = Instance.new("Frame")
-        hpbg.Name = "HPBG"
-        hpbg.Size = UDim2.new(1, -16, 0, 6)
-        hpbg.Position = UDim2.new(0, 8, 0, 48)
-        hpbg.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
-        hpbg.BorderSizePixel = 0
-        hpbg.Parent = plate
-        local hc = Instance.new("UICorner")
-        hc.CornerRadius = UDim.new(0, 3)
-        hc.Parent = hpbg
-
-        local hp = Instance.new("Frame")
-        hp.Name = "HP"
-        hp.Size = UDim2.new(1, 0, 1, 0)
-        hp.BackgroundColor3 = ESP_HP_HIGH
-        hp.BorderSizePixel = 0
-        hp.Parent = hpbg
-        local hc2 = Instance.new("UICorner")
-        hc2.CornerRadius = UDim.new(0, 3)
-        hc2.Parent = hp
+        nm.Parent = bg
 
         local inf = Instance.new("TextLabel")
         inf.Name = "Info"
         inf.BackgroundTransparency = 1
-        inf.Size = UDim2.new(1, 0, 0, 18)
-        inf.Position = UDim2.new(0, 0, 0, 58)
+        inf.Size = UDim2.new(1, 0, 0, 16)
+        inf.Position = UDim2.new(0, 0, 0, 22)
         inf.Font = Enum.Font.Gotham
         inf.TextSize = 12
+        inf.TextStrokeTransparency = 0
+        inf.TextStrokeColor3 = Color3.new(0, 0, 0)
         inf.TextColor3 = ESP_INFO_C
         inf.Text = ""
-        inf.Parent = plate
+        inf.Parent = bg
     end
 end
 
@@ -488,6 +446,8 @@ task.spawn(function()
                         if c then
                             local role = espRoleOf(plr)
                             local color = ESP_COLORS[role] or ESP_COLORS.Unknown
+                            local hum = getHum(c)
+                            local dead = (hum == nil) or (hum.Health <= 0)
                             ensureESP(plr)
 
                             local hl = c:FindFirstChild("CWH_ESP")
@@ -500,37 +460,23 @@ task.spawn(function()
                             local hrp = getHRP(c)
                             local bg = hrp and hrp:FindFirstChild("CWH_Tag")
                             if bg then
-                                bg.Enabled = ESP.Names or ESP.Dist or ESP.HP
-                                local plate = bg:FindFirstChild("Plate")
-                                if plate then
-                                    plate.Visible = ESP.Names or ESP.Dist or ESP.HP
-                                    local nm = plate:FindFirstChild("Name")
-                                    local rl = plate:FindFirstChild("Role")
-                                    local hpbg = plate:FindFirstChild("HPBG")
-                                    local hp = hpbg and hpbg:FindFirstChild("HP")
-                                    local inf = plate:FindFirstChild("Info")
-                                    if nm then
-                                        nm.Text = ESP.Names and plr.Name or ""
+                                -- трупы не подписываем — меньше мусора на экране
+                                bg.Enabled = (ESP.Names or ESP.Dist or ESP.HP) and not dead
+                                local nm = bg:FindFirstChild("Name")
+                                local inf = bg:FindFirstChild("Info")
+                                if nm then
+                                    nm.Text = ESP.Names and (plr.Name .. " " .. espWeaponOf(plr)) or ""
+                                    nm.TextColor3 = color
+                                end
+                                if inf then
+                                    local parts = {}
+                                    if ESP.HP and hum then
+                                        table.insert(parts, "HP: " .. math.floor(hum.Health))
                                     end
-                                    if rl then
-                                        rl.Text = ESP.Names and (role .. " " .. espWeaponOf(plr)) or ""
-                                        rl.TextColor3 = color
+                                    if ESP.Dist and myHRP and hrp then
+                                        table.insert(parts, math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs")
                                     end
-                                    if hp then
-                                        local h = getHum(c)
-                                        if h and ESP.HP then
-                                            local pct = math.clamp(h.Health / math.max(h.MaxHealth, 1), 0, 1)
-                                            hp.Visible = true
-                                            hp.Size = UDim2.new(pct, 0, 1, 0)
-                                            hp.BackgroundColor3 = ESP_HP_LOW:Lerp(ESP_HP_HIGH, pct)
-                                        else
-                                            hp.Visible = false
-                                        end
-                                    end
-                                    if inf then
-                                        inf.Text = (ESP.Dist and myHRP and hrp)
-                                            and (math.floor((myHRP.Position - hrp.Position).Magnitude) .. " studs") or ""
-                                    end
+                                    inf.Text = table.concat(parts, "  |  ")
                                 end
                             end
                         end
@@ -674,6 +620,92 @@ Tabs.World:AddToggle("AutoGrab", {
     Description = "Сам летит к пушке с любой дистанции (метод Pulse)",
     Default = false
 }):OnChanged(function(v) autoGrabOn = v end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO GRAB GUN SMOOTH (летит к пушке БЕЗ телепорта — скорость, как в Pulse)
+-- ═══════════════════════════════════════════════════════════════
+local smoothGrabOn = false
+local smoothGrabMoving = false
+local smoothGrabSpeed = 35
+
+local function smoothGrabStop()
+    local c = getChar(LocalPlayer)
+    local hrp = getHRP(c)
+    if hrp and smoothGrabMoving then
+        pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+    end
+    smoothGrabMoving = false
+    if c then
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then pcall(function() p.CanCollide = true end) end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+    if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not smoothGrabOn then
+                if smoothGrabMoving then smoothGrabStop() end
+                return
+            end
+            local c = getChar(LocalPlayer)
+            local hrp = getHRP(c)
+            local hum = getHum(c)
+            if not (hrp and hum and hum.Health > 0) then return end
+            local farmRef = getgenv().CWH_FarmRef
+            if farmRef and farmRef.Enabled then return end
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            if (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun")) then
+                if smoothGrabMoving then smoothGrabStop() end
+                return
+            end
+            local map = getMap()
+            local drop = map and map:FindFirstChild("GunDrop", true)
+            if not drop then
+                if smoothGrabMoving then smoothGrabStop() end
+                return
+            end
+            local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
+            local pos = part and part.Position
+            if not pos then return end
+            -- ноклип только ПОКА летим к пушке
+            smoothGrabMoving = true
+            for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+            end
+            local d = (pos - hrp.Position).Magnitude
+            if d < 8 then
+                pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+                if realFireTouch then
+                    realFireTouch(drop, hrp, 1)
+                    realFireTouch(drop, hrp, 0)
+                end
+                return
+            end
+            -- движение СКОРОСТЬЮ (никаких CFrame-телепортов)
+            local dir = (pos - hrp.Position) / d
+            pcall(function()
+                hrp.AssemblyLinearVelocity = dir * smoothGrabSpeed
+            end)
+        end)
+    end
+end)
+
+Tabs.World:AddToggle("AutoGrabSmooth", {
+    Title = "🪽 Auto Grab Gun Smooth",
+    Description = "Летит к пушке БЕЗ телепорта — плавно, как в Pulse",
+    Default = false
+}):OnChanged(function(v)
+    smoothGrabOn = v
+    if not v and smoothGrabMoving then smoothGrabStop() end
+end)
+
+Tabs.World:AddSlider("SmoothGrabSpeed", {
+    Title = "Скорость полёта", Default = 35, Min = 16, Max = 80, Rounding = 0,
+    Callback = function(v) smoothGrabSpeed = v end
+})
 
 -- ═══════════════════════════════════════════════════════════════
 -- INSTANT GRAB GUN (бьёт GunDrop каждые 0.15с — берёт сразу после кулдауна)
@@ -1622,6 +1654,7 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 getgenv().CWH_LastKnifeKill = 0
 local KillSnd = { On = false, Name = "Off", Vol = 60 }
+local ShotSnd = { On = false, Name = "Off", Vol = 60 }
 local KILL_SOUNDS = {
     { n = "Off",             id = "" },
     { n = "Heavy",           id = "rbxassetid://94509752219213" },
@@ -1656,20 +1689,35 @@ local function ksFindId(name)
     return ""
 end
 
-local ksLast = 0
-local function ksPlay(id)
-    if not KillSnd.On or id == "" then return end
-    local now = os.clock()
-    if now - ksLast < 0.35 then return end
-    ksLast = now
+local ksLast, ssLast = 0, 0
+local function playSndId(id, volPct)
+    if id == "" then return end
     pcall(function()
         local snd = Instance.new("Sound")
         snd.SoundId = id
-        snd.Volume = (tonumber(KillSnd.Vol) or 60) / 100 * 3
+        snd.Volume = (tonumber(volPct) or 60) / 100 * 3
         snd.Parent = game:GetService("SoundService")
         snd:Play()
         game:GetService("Debris"):AddItem(snd, 8)
     end)
+end
+
+local function ksPlay(id, force)
+    if id == "" then return end
+    if not force and not KillSnd.On then return end
+    local now = os.clock()
+    if not force and now - ksLast < 0.35 then return end
+    ksLast = now
+    playSndId(id, KillSnd.Vol)
+end
+
+local function ssPlay(id, force)
+    if id == "" then return end
+    if not force and not ShotSnd.On then return end
+    local now = os.clock()
+    if not force and now - ssLast < 0.15 then return end
+    ssLast = now
+    playSndId(id, ShotSnd.Vol)
 end
 
 -- гановские киллы: сервер шлёт GunFired (кто стрелял, куда попал)
@@ -1681,21 +1729,28 @@ task.spawn(function()
     if ok and gf and gf:IsA("RemoteEvent") then
         gf.OnClientEvent:Connect(function(shooter, _a, _b, hit)
             pcall(function()
-                if not KillSnd.On then return end
                 if typeof(shooter) ~= "Instance" then return end
                 local m = shooter
                 while m and not (m:IsA("Model") and m:FindFirstChildOfClass("Humanoid")) do
                     m = m.Parent
                 end
                 if m ~= getChar(LocalPlayer) then return end
-                if typeof(hit) ~= "Instance" then return end
-                local v = hit
-                while v and not (v:IsA("Model") and v:FindFirstChildOfClass("Humanoid")) do
-                    v = v.Parent
+                -- пуля попала в игрока = килл
+                local killed = false
+                if typeof(hit) == "Instance" then
+                    local v = hit
+                    while v and not (v:IsA("Model") and v:FindFirstChildOfClass("Humanoid")) do
+                        v = v.Parent
+                    end
+                    local vp = v and Players:GetPlayerFromCharacter(v)
+                    if vp and vp ~= LocalPlayer and KillSnd.On then
+                        killed = true
+                        ksPlay(ksFindId(KillSnd.Name))
+                    end
                 end
-                local vp = v and Players:GetPlayerFromCharacter(v)
-                if vp and vp ~= LocalPlayer then
-                    ksPlay(ksFindId(KillSnd.Name))
+                -- звук выстрела на ЛЮБОЙ свой выстрел (попал или мимо)
+                if ShotSnd.On and not killed then
+                    ssPlay(ksFindId(ShotSnd.Name))
                 end
             end)
         end)
@@ -1747,6 +1802,75 @@ Tabs.Combat:AddSlider("KillSndVol", {
     Title = "Громкость", Default = 60, Min = 0, Max = 100, Rounding = 0,
     Callback = function(v) KillSnd.Vol = v end
 })
+Tabs.Combat:AddButton({
+    Title = "▶ Прослушать Kill Sound",
+    Description = "Проиграть выбранный звук",
+    Callback = function() ksPlay(ksFindId(KillSnd.Name), true) end
+})
+
+Tabs.Combat:AddSection("Shot Sound")
+Tabs.Combat:AddToggle("ShotSndOn", {
+    Title = "🔊 Shot Sound",
+    Description = "Звук когда ты стреляешь (попал или мимо)",
+    Default = false
+}):OnChanged(function(v) ShotSnd.On = v end)
+Tabs.Combat:AddDropdown("ShotSndSel", {
+    Title = "Звук",
+    Values = ksNames,
+    Default = "Off",
+    Callback = function(v) ShotSnd.Name = v end
+})
+Tabs.Combat:AddSlider("ShotSndVol", {
+    Title = "Громкость", Default = 60, Min = 0, Max = 100, Rounding = 0,
+    Callback = function(v) ShotSnd.Vol = v end
+})
+Tabs.Combat:AddButton({
+    Title = "▶ Прослушать Shot Sound",
+    Description = "Проиграть выбранный звук",
+    Callback = function() ssPlay(ksFindId(ShotSnd.Name), true) end
+})
+
+local muteNativeOn = false
+Tabs.Combat:AddSection("Заглушка выстрела")
+Tabs.Combat:AddToggle("MuteNative", {
+    Title = "🔇 Глушить оригинальный выстрел",
+    Description = "Родной звук выстрела = 0 — играет только Shot Sound",
+    Default = false
+}):OnChanged(function(v) muteNativeOn = v end)
+
+-- глушение родных звуков гана (метод Pulse: gunshot/reload/gunkill → Volume 0)
+local mutedSndCache = {}
+local function nativeIsGunSnd(s)
+    local n = string.lower(s.Name)
+    return n == "gunshot" or n == "reload" or n == "gunkill"
+end
+
+task.spawn(function()
+    while task.wait(0.25) do
+    if not getgenv().CWH_RUN then break end
+        pcall(function()
+            local c = getChar(LocalPlayer)
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            local gun = (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+            -- вернуть громкость звукам, которые ушли из нашего гана/выключили глушение
+            for snd, vol in pairs(mutedSndCache) do
+                if (not snd.Parent) or (not muteNativeOn) or (not gun) or (not snd:IsDescendantOf(gun)) then
+                    if snd.Parent then pcall(function() snd.Volume = vol end) end
+                    mutedSndCache[snd] = nil
+                end
+            end
+            if not muteNativeOn or not gun then return end
+            for _, d in ipairs(gun:GetDescendants()) do
+                if d:IsA("Sound") and nativeIsGunSnd(d) then
+                    if not mutedSndCache[d] then
+                        mutedSndCache[d] = d.Volume
+                    end
+                    if d.Volume ~= 0 then d.Volume = 0 end
+                end
+            end
+        end)
+    end
+end)
 
 -- Fling
 
@@ -3419,6 +3543,296 @@ Tabs.Other:AddButton({
     Callback = function()
         task.spawn(function()
             pcall(autoBombJump)
+        end)
+    end
+})
+
+-- ═══════════════════════════════════════════════════════════════
+-- INVISIBILITY (метод Pulse: десинк под карту + призрак 50%)
+--  • каждый кадр персонаж на миг улетает ГЛУБОКО под карту (выше
+--    FallenPartsDestroyHeight), до отрисовки возвращается на место —
+--    сервер/другие игроки тебя не видят, ты видишь себя призраком
+-- ═══════════════════════════════════════════════════════════════
+local invisOn = false
+local invisKeyName = ""
+local invParts = {}
+local invRealCF, invRealHRP = nil, nil
+local invDownPos, invNeedsRestore = nil, false
+local invFlip = false
+local invRC, invRCChar = nil, nil
+local invVoidY = -400
+pcall(function()
+    local fdh = tonumber(workspace.FallenPartsDestroyHeight) or -500
+    invVoidY = fdh + 15
+end)
+
+local function invScan()
+    invParts = {}
+    local c = getChar(LocalPlayer)
+    if not c then return end
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") and p.Transparency == 0 then
+            local near = (p.Name == "Head") or (p.Parent and p.Parent:IsA("Accessory")) or false
+            invParts[#invParts + 1] = { p = p, near = near }
+        end
+    end
+end
+
+local function invGhostAll(alpha)
+    pcall(function()
+        for _, u in ipairs(invParts) do
+            if u.p and u.p.Parent then
+                u.p.LocalTransparencyModifier = alpha
+            end
+        end
+    end)
+end
+
+local function invFirstPerson()
+    local cam = workspace.CurrentCamera
+    if not cam then return false, nil end
+    local camPos = cam.CFrame.Position
+    if LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson then return true, camPos end
+    local c = getChar(LocalPlayer)
+    local h = c and c:FindFirstChild("Head")
+    if h and (h.Position - camPos).Magnitude < 1.5 then return true, camPos end
+    return false, camPos
+end
+
+local function invisOff(silent)
+    if not invisOn then return end
+    invisOn = false
+    invGhostAll(0)
+    local c = getChar(LocalPlayer)
+    local hrp = getHRP(c)
+    if hrp and hrp.Parent then
+        if invRealHRP == hrp and invRealCF then
+            pcall(function() hrp.CFrame = invRealCF end)
+        end
+        pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+        pcall(function() hrp.AssemblyAngularVelocity = Vector3.zero end)
+    end
+    if not silent then
+        Notify("Invisibility", "Выключена — ты снова виден", nil, 2)
+        print("[CWH] Invisibility: OFF")
+    end
+end
+
+local function invisToggle()
+    task.spawn(function()
+        if invisOn then
+            invisOff()
+        else
+            local c = getChar(LocalPlayer)
+            local hum = getHum(c)
+            if not (hum and getHRP(c)) then
+                Notify("Invisibility", "Нет персонажа", nil, 3)
+                return
+            end
+            invScan()
+            invisOn = true
+            invGhostAll(0.5)
+            Notify("Invisibility", "ВКЛ — другие тебя не видят", nil, 3)
+            print("[CWH] Invisibility: ON (десинк Pulse)")
+        end
+    end)
+end
+
+-- респавн: пересобрать список частей
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if invisOn then invScan() end
+end)
+
+if getgenv().CWH_InvisConn then
+    pcall(function() getgenv().CWH_InvisConn:Disconnect() end)
+end
+getgenv().CWH_InvisConn = RunService.Heartbeat:Connect(function()
+    if not invisOn or not getgenv().CWH_RUN then return end
+    local ch = getChar(LocalPlayer)
+    local hum = getHum(ch)
+    local root = getHRP(ch)
+    if not (hum and root and root.Parent) or hum.Health <= 0 then return end
+    pcall(function()
+        -- ферма двигает персонажа сама — не воюем с ней
+        local farmRef = getgenv().CWH_FarmRef
+        if farmRef and farmRef.Enabled then return end
+        -- рейкаст "стоишь ли на земле" (для чередования глубины, как в Pulse)
+        if not invRC then
+            invRC = RaycastParams.new()
+            invRC.FilterType = Enum.RaycastFilterType.Exclude
+        end
+        if invRCChar ~= ch then
+            invRCChar = ch
+            invRC.FilterDescendantsInstances = { ch }
+        end
+        local grounded = workspace:Raycast(root.Position, Vector3.new(0, -5, 0), invRC) ~= nil
+        local moving = hum.MoveDirection.Magnitude > 0.01
+        local cf = root.CFrame
+        local targetY = invVoidY
+        if grounded and not moving then
+            invFlip = not invFlip
+            if invFlip then targetY = invVoidY + 0.5 end
+        end
+        invRealCF = cf
+        invRealHRP = root
+        root.CFrame = cf * CFrame.new(0, targetY - cf.Y, 0)
+        invDownPos = root.Position
+        invNeedsRestore = true
+    end)
+end)
+
+pcall(function() RunService:UnbindFromRenderStep("CWH_InvisRestore") end)
+pcall(function() RunService:UnbindFromRenderStep("CWH_InvisGhost") end)
+RunService:BindToRenderStep("CWH_InvisRestore", Enum.RenderPriority.Camera.Value - 1, function()
+    if not invisOn or not getgenv().CWH_RUN or not invNeedsRestore then return end
+    local root = getHRP(getChar(LocalPlayer))
+    if root and root.Parent then
+        if not invDownPos or (root.Position - invDownPos).Magnitude < 2 then
+            pcall(function() root.CFrame = invRealCF end)
+        end
+    end
+    invNeedsRestore = false
+end)
+RunService:BindToRenderStep("CWH_InvisGhost", Enum.RenderPriority.Camera.Value + 1, function()
+    if not invisOn or not getgenv().CWH_RUN then return end
+    local fp, camPos = invFirstPerson()
+    pcall(function()
+        for _, u in ipairs(invParts) do
+            local p = u.p
+            if p and p.Parent then
+                local alpha = 0.5
+                if fp then
+                    if u.near then
+                        alpha = 1
+                    else
+                        local d = camPos and (p.Position - camPos).Magnitude or 99
+                        if d < 1.2 then
+                            alpha = 1
+                        elseif d < 2.4 then
+                            alpha = math.max(0.5, 1 - (d - 1.2) / 1.2)
+                        end
+                    end
+                end
+                p.LocalTransparencyModifier = alpha
+            end
+        end
+    end)
+end)
+
+Tabs.Other:AddSection("Invisibility")
+
+Tabs.Other:AddButton({
+    Title = "👻 Invisibility ВКЛ/ВЫКЛ",
+    Description = "Десинк Pulse: другие тебя не видят, ты — призрак",
+    Callback = invisToggle
+})
+
+Tabs.Other:AddInput("InvisKeyBind", {
+    Title = "⌨ Клавиша невидимости",
+    Placeholder = "имя клавиши: V, B, H, T, LeftControl...",
+    Callback = function(v)
+        local n = tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if n == "" then
+            invisKeyName = ""
+            Notify("Keybind", "Клавиша невидимости убрана", nil, 2)
+            return
+        end
+        local ok, key = pcall(function() return Enum.KeyCode[n] end)
+        if ok and key then
+            invisKeyName = n
+            Notify("Keybind", "Невидимость по клавише: " .. n, nil, 2)
+        else
+            invisKeyName = ""
+            Notify("Keybind", "Нет такой клавиши: " .. n, nil, 3)
+        end
+    end
+})
+
+Tabs.Other:AddButton({
+    Title = "🗑 Сбросить клавишу невидимости",
+    Description = "Отключить переключение по клавише",
+    Callback = function()
+        invisKeyName = ""
+        Notify("Keybind", "Клавиша невидимости убрана", nil, 2)
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if invisKeyName == "" then return end
+    local ok, key = pcall(function() return Enum.KeyCode[invisKeyName] end)
+    if ok and key and input.KeyCode == key then
+        invisToggle()
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO CLEAN (чистит старые трупы/детали с карты — только у тебя,
+-- сервер не трогается; помогает от лагов и мусора на экране)
+-- ═══════════════════════════════════════════════════════════════
+local cleanOn = false
+local cleanInterval = 60
+
+local function cleanOldStuff()
+    local n = 0
+    pcall(function()
+        local myChar = getChar(LocalPlayer)
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if obj:IsA("Model") and obj ~= myChar then
+                local hum = obj:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health <= 0 then
+                    -- мёртвый персонаж (труп) — убираем локально
+                    obj:Destroy()
+                    n = n + 1
+                elseif not hum and obj:FindFirstChild("HumanoidRootPart") then
+                    -- старый клон персонажа без гуманоида
+                    local p = Players:FindFirstChild(obj.Name)
+                    if p and p.Character ~= obj then
+                        obj:Destroy()
+                        n = n + 1
+                    end
+                end
+            end
+        end
+    end)
+    return n
+end
+
+task.spawn(function()
+    while true do
+        if not getgenv().CWH_RUN then break end
+        if cleanOn then
+            local n = cleanOldStuff()
+            if n > 0 then Notify("Auto Clean", "🧹 Убрано деталей: " .. n, nil, 2) end
+        end
+        local slept = 0
+        while slept < cleanInterval and cleanOn and getgenv().CWH_RUN do
+            task.wait(0.5)
+            slept = slept + 0.5
+        end
+    end
+end)
+
+Tabs.Other:AddSection("Auto Clean")
+Tabs.Other:AddToggle("AutoClean", {
+    Title = "🧹 Auto Clean",
+    Description = "Сам чистит старые трупы/детали (интервал ниже)",
+    Default = false
+}):OnChanged(function(v) cleanOn = v end)
+
+Tabs.Other:AddSlider("CleanInt", {
+    Title = "Интервал (сек)", Default = 60, Min = 20, Max = 120, Rounding = 0,
+    Callback = function(v) cleanInterval = v end
+})
+
+Tabs.Other:AddButton({
+    Title = "🧹 Clean Now",
+    Description = "Почистить прямо сейчас",
+    Callback = function()
+        task.spawn(function()
+            local n = cleanOldStuff()
+            Notify("Auto Clean", n > 0 and ("🧹 Убрано деталей: " .. n) or "Чисто — ничего не нашлось", nil, 3)
         end)
     end
 })
