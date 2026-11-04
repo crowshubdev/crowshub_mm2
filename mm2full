@@ -3877,16 +3877,20 @@ local function cleanOldStuff()
 end
 
 task.spawn(function()
-    while true do
-        if not getgenv().CWH_RUN then break end
+    while getgenv().CWH_RUN do
         if cleanOn then
             local n = cleanOldStuff()
             if n > 0 then Notify("Auto Clean", "🧹 Убрано деталей: " .. n, nil, 2) end
-        end
-        local slept = 0
-        while slept < cleanInterval and cleanOn and getgenv().CWH_RUN do
-            task.wait(0.5)
-            slept = slept + 0.5
+            -- спим интервал (с ранним выходом, если выключили)
+            local slept = 0
+            while slept < cleanInterval and cleanOn and getgenv().CWH_RUN do
+                task.wait(0.5)
+                slept = slept + 0.5
+            end
+        else
+            -- ФИКС зависания: когда выключено — ОБЯЗАТЕЛЬНО ждём,
+            -- иначе цикл крутится без единого task.wait и вешает поток
+            task.wait(1)
         end
     end
 end)
