@@ -1,4 +1,3 @@
-print("[CWH] START — правильный скрипт выполняется")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -222,6 +221,7 @@ local Tabs = {
     Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
+print("[CWH] INIT 1/3: окно и вкладки готовы")
  
 -- ═══ MAIN ═══
 local DefaultFOV = Camera.FieldOfView
@@ -866,6 +866,25 @@ Tabs.World:AddButton({
     end
 })
 
+-- [v1.3] ТП в лобби по ФИКСИРОВАННЫМ координатам из Crows Lite (564, 462, 1) —
+-- работает всегда, даже когда getLobby() не находит спавны лобби
+Tabs.World:AddButton({
+    Title = "🏠 Телепорт в лобби (координаты фермы)",
+    Description = "Фиксированная точка лобби 564, 462, 1 — та же, что в Crows Lite",
+    Callback = function()
+        task.spawn(function()
+            local hrp = getHRP(getChar(LocalPlayer))
+            if not hrp then
+                Notify("Телепорт", "Персонаж не найден", nil, 3)
+                return
+            end
+            pcall(function() hrp.CFrame = CFrame.new(564, 462, 1) end)
+            pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+            Notify("Телепорт", "В лобби (координаты фермы)!", nil, 2)
+        end)
+    end
+})
+
 Tabs.World:AddSection("Environment")
 Tabs.World:AddToggle("FullBright", { Title = "Full Bright", Default = false })
     :OnChanged(function(v)
@@ -944,6 +963,7 @@ Tabs.World:AddToggle("TimerShow", { Title = "Timer GUI", Default = false })
     :OnChanged(function(v) timerGui.Enabled = v end)
 
 end -- [CWH SCOPE] G1
+print("[CWH] INIT G1/9 OK (ESP, Grab)")
 do -- ═══ [CWH SCOPE] G2: Ping/FPS, Round Status, FPS Booster, Anti-Fling — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- PING / FPS CHECKER
@@ -1467,6 +1487,7 @@ Tabs.Combat:AddButton({
 --    от жертвы (сразу за стеной) — сервер такой выстрел принимает
 --  • Auto Shoot: сам стреляет по цели с интервалом
 end -- [CWH SCOPE] G2
+print("[CWH] INIT G2/9 OK (Ping/FPS, Anti-Fling)")
 local sa3FireShot -- [CWH] форвард-декларация (определение в Silent Aim, вызов в Shoot Murderer)
 do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
@@ -1715,6 +1736,7 @@ task.spawn(function()
 end)
 
 end -- [CWH SCOPE] G3
+print("[CWH] INIT G3/9 OK (Silent Aim v3)")
 do -- ═══ [CWH SCOPE] G4: Kill Sound + Kill Player — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- KILL SOUND (метод Pulse: хук WeaponService.GunFired + ножевые киллы)
@@ -1747,6 +1769,11 @@ local KILL_SOUNDS = {
     { n = "Realistic",       id = "rbxassetid://115567133047135" },
     { n = "Retro",           id = "rbxassetid://3976061026" },
     { n = "Laser",           id = "rbxassetid://4400449399" },
+    -- [v1.3] NEVERLOSE (CS2): ближайшие аналоги хитсаундов NL (hitmarker/ping)
+    { n = "NL Hitmarker",    id = "rbxassetid://5952120301" },
+    { n = "NL Hitmarker 2",  id = "rbxassetid://705502934" },
+    { n = "NL Ping",         id = "rbxasset://sounds/electronicpingshort.wav" },
+    { n = "NL Snap",         id = "rbxasset://sounds/snap.mp3" },
 }
 
 local function ksFindId(name)
@@ -1897,11 +1924,74 @@ Tabs.Combat:AddButton({
     Callback = function() ssPlay(ksFindId(ShotSnd.Name), true) end
 })
 
+-- ═══ [v1.3] ЗВУК ПЕРЕЗАРЯДКИ (пушка появилась у тебя → звук; тоггл = выключение) ═══
+local RelSnd = { On = false, Name = "Reload CS", Vol = 60 }
+local relHadGun = nil
+local relLast = 0
+local RELOAD_SOUNDS = {
+    { n = "Off",                  id = "" },
+    { n = "Reload CS",            id = "rbxassetid://6404425152" },
+    { n = "Reload Rifle",         id = "rbxassetid://4604186785" },
+    { n = "Reload Heavy",         id = "rbxassetid://7195467661" },
+    { n = "NL Ping (встроенный)", id = "rbxasset://sounds/electronicpingshort.wav" },
+    { n = "NL Snap (встроенный)", id = "rbxasset://sounds/snap.mp3" },
+}
+local function relFindId(name)
+    for _, s in ipairs(RELOAD_SOUNDS) do
+        if s.n == name then return s.id end
+    end
+    return ""
+end
+
+Tabs.Combat:AddSection("Звук перезарядки")
+Tabs.Combat:AddToggle("RelSndOn", {
+    Title = "🔊 Звук перезарядки",
+    Description = "Звук когда пушка появилась у тебя (выдали на раунде / поднял с пола)",
+    Default = false
+}):OnChanged(function(v) RelSnd.On = v end)
+local relNames = {}
+for _, s in ipairs(RELOAD_SOUNDS) do table.insert(relNames, s.n) end
+Tabs.Combat:AddDropdown("RelSndSel", {
+    Title = "Звук",
+    Values = relNames,
+    Default = "Reload CS",
+    Callback = function(v) RelSnd.Name = v end
+})
+Tabs.Combat:AddSlider("RelSndVol", {
+    Title = "Громкость", Default = 60, Min = 0, Max = 100, Rounding = 0,
+    Callback = function(v) RelSnd.Vol = v end
+})
+Tabs.Combat:AddButton({
+    Title = "▶ Прослушать звук перезарядки",
+    Description = "Проиграть выбранный звук",
+    Callback = function() playSndId(relFindId(RelSnd.Name), RelSnd.Vol) end
+})
+
+-- триггер: следим за появлением Gun (инстанс сменился = новый раунд / поднял пушку)
+task.spawn(function()
+    while task.wait(0.2) do
+    if not getgenv().CWH_RUN then break end
+        pcall(function()
+            local c = getChar(LocalPlayer)
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            local gun = (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+            if gun and gun ~= relHadGun and RelSnd.On then
+                local now = os.clock()
+                if now - relLast > 1 then
+                    relLast = now
+                    playSndId(relFindId(RelSnd.Name), RelSnd.Vol)
+                end
+            end
+            relHadGun = gun
+        end)
+    end
+end)
+
 local muteNativeOn = false
 Tabs.Combat:AddSection("Заглушка выстрела")
 Tabs.Combat:AddToggle("MuteNative", {
     Title = "🔇 Глушить оригинальный выстрел",
-    Description = "Родной звук выстрела = 0 — играет только Shot Sound",
+    Description = "Родные звуки пушки (выстрел/reload/gunkill) = 0 — играет только твой звук",
     Default = false
 }):OnChanged(function(v) muteNativeOn = v end)
 
@@ -2696,6 +2786,7 @@ Tabs.Farm:AddToggle("AutoReset", {
 }):OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
 
 end -- [CWH SCOPE] G4
+print("[CWH] INIT G4/9 OK (Kill Sound, Shot Sound, Перезарядка)")
 do -- ═══ [CWH SCOPE] G5: AutoKill, Coin Aura, Cursor, Dodge x2 — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- AUTO KILL EVERYONE (когда собрал монеты) + AUTO FLING ON DEATH
@@ -3325,6 +3416,7 @@ Tabs.Other:AddSlider("DodgeMurderCD", {
 -- ═══════════════════════════════════════════════════════════════
 -- SHOOT MURDERER BUTTON v4 (прямой выстрел ремоутом Shoot — SA3/Pulse-метод, стены пробивает)
 end -- [CWH SCOPE] G5
+print("[CWH] INIT G5/9 OK (Aura, Cursor, Dodge)")
 do -- ═══ [CWH SCOPE] G6: Shoot Murderer v4 + Keybind — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 local smbGui = Instance.new("ScreenGui")
@@ -3502,6 +3594,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 end -- [CWH SCOPE] G6
+print("[CWH] INIT G6/9 OK (Shoot Murderer)")
 do -- ═══ [CWH SCOPE] G7: Bomb Jump — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- BOMB JUMP (метод Pulse: прыжок от игрушки FakeBomb)
@@ -3621,6 +3714,7 @@ Tabs.Other:AddButton({
 })
 
 end -- [CWH SCOPE] G7
+print("[CWH] INIT G7/9 OK (Bomb Jump)")
 do -- ═══ [CWH SCOPE] G8: Invisibility — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- INVISIBILITY (метод Pulse: десинк под карту + призрак 50%)
@@ -3843,6 +3937,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 end -- [CWH SCOPE] G8
+print("[CWH] INIT G8/9 OK (Invisibility)")
 do -- ═══ [CWH SCOPE] G9: Auto Clean + Dual Weapon + Fluent hookup — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ═══════════════════════════════════════════════════════════════
 -- AUTO CLEAN (чистит старые трупы/детали с карты — только у тебя,
@@ -4137,6 +4232,8 @@ Tabs.Settings:AddButton({
 })
 
 end -- [CWH SCOPE] G9
+print("[CWH] INIT G9/9 OK (Auto Clean, Dual Weapon, UI)")
+print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
 -- ═══════════════════════════════════════════════════════════════
@@ -4213,3 +4310,4 @@ do
     end
 
 Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v3 | Wallbang | Farm", 15)
+print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
