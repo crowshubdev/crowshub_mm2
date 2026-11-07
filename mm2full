@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.4: свой MP3-хитсаунд встроен, ТП в лобби, звук перезарядки)")
+print("[CWH] START — правильный скрипт выполняется (v1.5: зеркало левой руки, Speed Glitch из Pulse, MP3-хитсаунд)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -4085,48 +4085,15 @@ Tabs.Other:AddButton({
 local dualOn = true
 local dualModel = nil
 
-local originalLeftShoulderC0 = nil
-
-local function resetLeftArmAnimation(char)
-    if not char then return end
-    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
-    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    
-    local shoulder = nil
-    if leftUpperArm then
-        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
-    elseif torso then
-        shoulder = torso:FindFirstChild("Left Shoulder")
-    end
-
-    if shoulder and originalLeftShoulderC0 then
-        shoulder.C0 = originalLeftShoulderC0
-        originalLeftShoulderC0 = nil -- Сбрасываем кэш, чтобы при следующем взятии зафиксировать чистый дефолт
-    end
+-- [v1.5] подъем левой руки теперь делает ЗЕРКАЛО Motor6D.Transform (группа G9b ниже):
+-- левая рука встаёт ровно в ту же позу, что и правая. Старый C0-хак удалён —
+-- аниматор каждый кадр перезаписывает Transform, поэтому C0-правка и не работала.
+local function resetLeftArmAnimation(_char)
+    getgenv().CWH_DualMirrorOn = false
 end
 
-local function applyLeftArmAnimation(char)
-    if not char then return end
-    local leftUpperArm = char:FindFirstChild("LeftUpperArm")
-    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    
-    local shoulder = nil
-    if leftUpperArm then
-        shoulder = leftUpperArm:FindFirstChild("LeftShoulder")
-    elseif torso then
-        shoulder = torso:FindFirstChild("Left Shoulder")
-    end
-
-    if shoulder then
-        -- Сохраняем оригинал ТОЛЬКО если он ещё не сохранён
-        if not originalLeftShoulderC0 then
-            originalLeftShoulderC0 = shoulder.C0
-        end
-        
-        -- Зеркальные углы для левой руки, чтобы она симметрично держала второй предмет
-        -- Меняем знаки у углов, чтобы рука не выворачивалась назад
-        shoulder.C0 = originalLeftShoulderC0 * CFrame.Angles(math.rad(90), 0, math.rad(10))
-    end
+local function applyLeftArmAnimation(_char)
+    getgenv().CWH_DualMirrorOn = true
 end
 
 local function removeDual()
@@ -4198,12 +4165,19 @@ local function addDual()
 
     local gripC0 = gripWeld and gripWeld.C0 or tool.Grip
     local gripC1 = gripWeld and gripWeld.C1 or CFrame.new()
-    local mirrorC0 = gripC0 * CFrame.Angles(0, math.rad(180), 0)
+    -- [v1.5] честное ЗЕРКАЛО грипа по сагиттальной плоскости (x → -x) вместо разворота
+    -- на 180°: дуло смотрит туда же, куда у правой руки, а не назад в плечо
+    local gripRel = gripC0 * gripC1:Inverse()
+    local gx, gy, gz, gr00, gr01, gr02, gr10, gr11, gr12, gr20, gr21, gr22 = gripRel:GetComponents()
+    local gripMirror = CFrame.new(-gx, gy, gz,
+        gr00, -gr01, -gr02,
+        -gr10, gr11, gr12,
+        -gr20, gr21, gr22)
 
     local targetArmPart = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
     if not targetArmPart then targetArmPart = leftArm end
 
-    local handleCF = targetArmPart.CFrame * mirrorC0 * gripC1:Inverse()
+    local handleCF = targetArmPart.CFrame * gripMirror
 
     newHandle.CFrame = handleCF
     for src, c in pairs(clones) do
@@ -4220,8 +4194,8 @@ local function addDual()
         if src == handleSrc then
             w.Part0 = targetArmPart
             w.Part1 = c
-            w.C0 = mirrorC0
-            w.C1 = gripC1
+            w.C0 = gripMirror
+            w.C1 = CFrame.new()
         else
             w.Part0 = newHandle
             w.Part1 = c
@@ -4264,7 +4238,7 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function()
     dualModel = nil
-    originalLeftShoulderC0 = nil
+    getgenv().CWH_DualMirrorOn = false
 end)
 
 -- ═══════════════════════════════════════════════════════════════
@@ -4301,6 +4275,112 @@ Tabs.Settings:AddButton({
 
 end -- [CWH SCOPE] G9
 print("[CWH] INIT G9/9 OK (Auto Clean, Dual Weapon, UI)")
+
+do -- ═══ [CWH SCOPE] G9b: Зеркало левой руки + Speed Glitch (Pulse) — техн. обёртка (лимит 200 регистров Luau) ═══
+-- ── [v1.5] 1) ЛЕВАЯ РУКА = ЗЕРКАЛО ПРАВОЙ ──
+-- Animator каждый кадр перезаписывает Motor6D.Transform, поэтому копируем Transform
+-- правого плеча в левое ПОСЛЕ анимаций (RenderPriority.Animations + 1):
+-- левая рука встаёт ровно в ту же позу, что и правая (поднята с пушкой/ножом),
+-- а зеркальный грип клона разворачивает второй пистолет/нож правильной стороной.
+pcall(function() RunService:UnbindFromRenderStep("CWH_DualMirror") end)
+getgenv().CWH_DualMirrorOn = false
+RunService:BindToRenderStep("CWH_DualMirror", Enum.RenderPriority.Animations.Value + 1, function()
+    if not getgenv().CWH_RUN or not getgenv().CWH_DualMirrorOn then return end
+    pcall(function()
+        local dchar = getChar(LocalPlayer)
+        local torso = dchar and (dchar:FindFirstChild("Torso") or dchar:FindFirstChild("UpperTorso"))
+        local rs = torso and torso:FindFirstChild("Right Shoulder")
+        local ls = torso and torso:FindFirstChild("Left Shoulder")
+        if rs and ls and rs.ClassName == "Motor6D" and ls.ClassName == "Motor6D" then
+            ls.Transform = rs.Transform
+        end
+    end)
+end)
+
+-- ── [v1.5] 2) SPEED GLITCH — точный порт механики из Pulse ──
+-- Прыгнул → в воздухе скорость плавно разгоняется (AssemblyLinearVelocity по направлению
+-- движения, WalkSpeed подтягивается на +6 сверху, как в оригинале). После приземления
+-- буст живёт ещё 0.25с, если 0.3с простоял на земле — сброс. Лестницы/вода/сидя — сброс.
+local SG = { On = false, Max = 120, Accel = 60, Cur = 0, LandAt = 0, Air = false }
+local sgBaseWS = 16
+local function sgReset(h)
+    if SG.Cur ~= 0 or SG.Air then
+        SG.Cur, SG.Air = 0, false
+        if h and not WSOn and h.WalkSpeed > sgBaseWS then
+            pcall(function() h.WalkSpeed = sgBaseWS end)
+        end
+    end
+end
+RunService.Heartbeat:Connect(function(dt)
+    if not getgenv().CWH_RUN then return end
+    local schar = getChar(LocalPlayer)
+    local h = getHum(schar)
+    local hrp = getHRP(schar)
+    if not SG.On then sgReset(h) return end
+    if not (h and hrp and h.Health > 0) then sgReset(h) return end
+    local st = h:GetState()
+    if st == Enum.HumanoidStateType.Climbing or st == Enum.HumanoidStateType.Swimming
+        or st == Enum.HumanoidStateType.Seated or st == Enum.HumanoidStateType.Dead then
+        sgReset(h) return
+    end
+    dt = math.min(dt or 0.0166, 0.1)
+    local now = os.clock()
+    local air = (st == Enum.HumanoidStateType.Freefall) or (st == Enum.HumanoidStateType.Jumping)
+    local md = h.MoveDirection
+    local k = Vector3.new(md.X, 0, md.Z)
+    local moving = k.Magnitude > 0.1
+    local v = hrp.AssemblyLinearVelocity
+    local hv = Vector3.new(v.X, 0, v.Z)
+    local spd = hv.Magnitude
+    if air then
+        SG.Air = true
+        if moving then
+            if SG.Cur < sgBaseWS then SG.Cur = sgBaseWS end
+            if spd > SG.Cur and spd <= SG.Max then SG.Cur = spd end
+            if SG.Cur < SG.Max then SG.Cur = math.min(SG.Max, SG.Cur + SG.Accel * dt) end
+        end
+    else
+        if SG.Air then SG.Air, SG.LandAt = false, now end
+        if now - SG.LandAt > 0.3 then sgReset(h) end
+    end
+    if SG.Cur > SG.Max then SG.Cur = SG.Max end
+    -- WalkSpeed чуть выше буста (как в Pulse: +6), чтобы клиент не гасил скорость.
+    -- Если включён тоггл WalkSpeed — не трогаем, он важнее (скорость даёт velocity).
+    if SG.Cur > 0 and not WSOn and h.WalkSpeed < SG.Cur + 6 then
+        pcall(function() h.WalkSpeed = SG.Cur + 6 end)
+    end
+    if SG.Cur > 0 and moving and (air or (now - SG.LandAt) <= 0.25) and spd < SG.Cur + 1 then
+        local t = k.Unit * SG.Cur
+        if (hv - t).Magnitude > 0.5 then
+            hrp.AssemblyLinearVelocity = Vector3.new(t.X, v.Y, t.Z)
+        end
+    end
+end)
+Tabs.World:AddSection("Speed Glitch")
+Tabs.World:AddToggle("SGlitchOn", {
+    Title = "🏃 Speed Glitch",
+    Description = "Прыгай и двигайся — разгон в воздухе (порт из Pulse)",
+    Default = false
+}):OnChanged(function(v)
+    SG.On = v
+    local h = getHum(getChar(LocalPlayer))
+    if v then
+        if h then sgBaseWS = h.WalkSpeed end
+        SG.Cur, SG.Air, SG.LandAt = 0, false, 0
+    else
+        sgReset(h)
+    end
+end)
+Tabs.World:AddSlider("SGlitchMax", {
+    Title = "Скорость глитча", Default = 120, Min = 30, Max = 300, Rounding = 0,
+    Callback = function(v) SG.Max = v end
+})
+Tabs.World:AddSlider("SGlitchAccel", {
+    Title = "Разгон в воздухе", Default = 60, Min = 10, Max = 300, Rounding = 0,
+    Callback = function(v) SG.Accel = v end
+})
+end -- [CWH SCOPE] G9b
+print("[CWH] INIT G9b OK (Dual Mirror, Speed Glitch)")
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
@@ -4377,5 +4457,5 @@ do
         end)
     end
 
-Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v3 | Wallbang | Farm", 15)
+Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v3 | Speed Glitch | Dual", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
