@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.5: зеркало левой руки, Speed Glitch из Pulse, MP3-хитсаунд)")
+print("[CWH] START — правильный скрипт выполняется (v1.6: рука поднята, SG+кнопка, Grab v3 на отсчёте, кейбинды, fired)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -205,7 +205,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -740,7 +740,12 @@ task.spawn(function()
             grab3Busy = true
             task.spawn(function()
                 local ok = false
-                for _ = 1, 15 do
+                -- [v1.6] спамим касанием ВСЁ время 10-сек отсчёта + запас:
+                -- первые 2.5с — почти каждый кадр (метод Pulse), дальше каждые 0.15с.
+                -- Пушка берётся сразу, как только сервер разрешит — хоть во время отсчёта.
+                local t0 = os.clock()
+                local deadline = t0 + 13
+                while os.clock() < deadline do
                     if not getgenv().CWH_RUN then break end
                     if grab3Have() then ok = true break end
                     if not drop.Parent then break end
@@ -750,7 +755,7 @@ task.spawn(function()
                             realFireTouch(drop, hrp, 0)
                         end)
                     end
-                    task.wait(0.15)
+                    task.wait((os.clock() - t0 < 2.5) and 0.03 or 0.15)
                 end
                 grab3Busy = false
                 if ok then
@@ -764,7 +769,7 @@ end)
 
 Tabs.World:AddToggle("AutoGrabV3", {
     Title = "🧲 Grab Gun v3 — без телепорта",
-    Description = "Притягивает упавшую пушку с места (ты не двигаешься)",
+    Description = "Притягивает пушку с места и держит касание весь 10с отсчёт — берёт, как только сервер даст",
     Default = false
 }):OnChanged(function(v) grab3On = v end)
 
@@ -3552,6 +3557,11 @@ local function doShoot()
 
     shooting = true
     lastShot = os.clock()
+    -- [v1.6] на кнопке появляется текст "fired"
+    smb.Text = "fired"
+    task.delay(1.2, function()
+        pcall(function() smb.Text = "Shoot Murderer" end)
+    end)
     -- прямой выстрел ремоутом Shoot в Murderer (SA3/Pulse-метод — пробивает стены)
     local ok = sa3FireShot(mur)
     shooting = false
@@ -3567,33 +3577,40 @@ local function doShoot()
     end
 end
 
--- tap через InputBegan
-smb.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1
-    or i.UserInputType == Enum.UserInputType.Touch then
-        task.spawn(doShoot)
-    end
-end)
-
--- drag
+-- [v1.6] ТАП = выстрел, ДРАГ = перенос. Порог 8px: при простом нажатии кнопка
+-- никуда не сдвигается и не "улетает" (второй палец драг не перехватывает).
 do
-    local dragging, ds, sp = false, nil, nil
+    local dragging, dragMoved = false, false
+    local dragInput, dragStart, startPos = nil, nil, nil
+
     smb.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            ds = i.Position
-            sp = smb.Position
+            dragMoved = false
+            dragInput = i
+            dragStart = i.Position
+            startPos = smb.Position
             i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then dragging = false end
+                if i.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    if not dragMoved then
+                        task.spawn(doShoot)
+                    end
+                end
             end)
         end
     end)
+
     UserInputService.InputChanged:Connect(function(i)
         if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-            or i.UserInputType == Enum.UserInputType.Touch) then
-            local d = i.Position - ds
-            smb.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+            or (i.UserInputType == Enum.UserInputType.Touch and i == dragInput)) then
+            local d = i.Position - dragStart
+            if d.Magnitude > 8 then dragMoved = true end
+            if dragMoved then
+                smb.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                    startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            end
         end
     end)
 end
@@ -3660,6 +3677,11 @@ UserInputService.InputBegan:Connect(function(input, gp)
         task.spawn(doShoot)
     end
 end)
+
+-- [v1.6] мост для системы кейбиндов (G9c)
+getgenv().CWH_ShootMurderer = function()
+    task.spawn(doShoot)
+end
 
 end -- [CWH SCOPE] G6
 print("[CWH] INIT G6/9 OK (Shoot Murderer)")
@@ -4004,6 +4026,9 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
+-- [v1.6] мост для системы кейбиндов (G9c)
+getgenv().CWH_ToggleInvis = invisToggle
+
 end -- [CWH SCOPE] G8
 print("[CWH] INIT G8/9 OK (Invisibility)")
 do -- ═══ [CWH SCOPE] G9: Auto Clean + Dual Weapon + Fluent hookup — техн. обёртка (лимит 200 регистров Luau) ═══
@@ -4246,11 +4271,12 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 Tabs.Other:AddSection("Dual Weapon")
 
-Tabs.Other:AddToggle("DualOn", {
+local DualToggle = Tabs.Other:AddToggle("DualOn", {
     Title = "🗡 Dual Weapon",
     Description = "Второе оружие в левой руке (3D-модель, без слота в хотбаре)",
     Default = false
-}):OnChanged(function(v)
+})
+DualToggle:OnChanged(function(v)
     dualOn = v
     if v then
         pcall(addDual)
@@ -4258,6 +4284,16 @@ Tabs.Other:AddToggle("DualOn", {
         removeDual()
     end
 end)
+
+-- [v1.6] мост для системы кейбиндов (G9c)
+getgenv().CWH_ToggleDual = function()
+    local nv = not dualOn
+    local ok = DualToggle and pcall(function() DualToggle:SetValue(nv) end)
+    if not ok then
+        dualOn = nv
+        if nv then pcall(addDual) else removeDual() end
+    end
+end
 
 -- ═══ SETTINGS ═══
 Tabs.Settings:AddSection("UI")
@@ -4279,20 +4315,44 @@ print("[CWH] INIT G9/9 OK (Auto Clean, Dual Weapon, UI)")
 do -- ═══ [CWH SCOPE] G9b: Зеркало левой руки + Speed Glitch (Pulse) — техн. обёртка (лимит 200 регистров Luau) ═══
 -- ── [v1.5] 1) ЛЕВАЯ РУКА = ЗЕРКАЛО ПРАВОЙ ──
 -- Animator каждый кадр перезаписывает Motor6D.Transform, поэтому копируем Transform
--- правого плеча в левое ПОСЛЕ анимаций (RenderPriority.Animations + 1):
+-- правого плеча в левое ПОСЛЕ анимаций (RenderPriority.Character + 1):
 -- левая рука встаёт ровно в ту же позу, что и правая (поднята с пушкой/ножом),
 -- а зеркальный грип клона разворачивает второй пистолет/нож правильной стороной.
 pcall(function() RunService:UnbindFromRenderStep("CWH_DualMirror") end)
 getgenv().CWH_DualMirrorOn = false
-RunService:BindToRenderStep("CWH_DualMirror", Enum.RenderPriority.Animations.Value + 1, function()
+-- [v1.6] ФИКСЫ (рука теперь РЕАЛЬНО поднимается):
+-- 1) Enum.RenderPriority.Animations НЕ СУЩЕСТВУЕТ — из-за него весь G9b падал при
+--    запуске: рука не поднималась, Speed Glitch и кнопка телефона не создавались.
+-- 2) Простое копирование Transform было НЕВЕРНЫМ: у левого и правого плеча C0/C1
+--    повёрнуты на ±90°, поэтому левому плечу нужен ЗЕРКАЛЬНЫЙ Transform (x → -x),
+--    как у грипа клона оружия.
+-- 3) Плюс поддержка R15 (там Motor6D зовутся RightShoulder/LeftShoulder без пробела).
+local mirChar, mirRS, mirLS = nil, nil, nil
+RunService:BindToRenderStep("CWH_DualMirror", Enum.RenderPriority.Character.Value + 1, function()
     if not getgenv().CWH_RUN or not getgenv().CWH_DualMirrorOn then return end
     pcall(function()
         local dchar = getChar(LocalPlayer)
-        local torso = dchar and (dchar:FindFirstChild("Torso") or dchar:FindFirstChild("UpperTorso"))
-        local rs = torso and torso:FindFirstChild("Right Shoulder")
-        local ls = torso and torso:FindFirstChild("Left Shoulder")
-        if rs and ls and rs.ClassName == "Motor6D" and ls.ClassName == "Motor6D" then
-            ls.Transform = rs.Transform
+        if dchar ~= mirChar then
+            mirChar = dchar
+            mirRS, mirLS = nil, nil
+            if dchar then
+                for _, d in ipairs(dchar:GetDescendants()) do
+                    if d:IsA("Motor6D") then
+                        if d.Name == "Right Shoulder" or d.Name == "RightShoulder" then
+                            mirRS = d
+                        elseif d.Name == "Left Shoulder" or d.Name == "LeftShoulder" then
+                            mirLS = d
+                        end
+                    end
+                end
+            end
+        end
+        if mirRS and mirLS and mirRS.Parent and mirLS.Parent then
+            local tx, ty, tz, r00, r01, r02, r10, r11, r12, r20, r21, r22 = mirRS.Transform:GetComponents()
+            mirLS.Transform = CFrame.new(-tx, ty, tz,
+                r00, -r01, -r02,
+                -r10, r11, r12,
+                -r20, r21, r22)
         end
     end)
 end)
@@ -4302,6 +4362,7 @@ end)
 -- движения, WalkSpeed подтягивается на +6 сверху, как в оригинале). После приземления
 -- буст живёт ещё 0.25с, если 0.3с простоял на земле — сброс. Лестницы/вода/сидя — сброс.
 local SG = { On = false, Max = 120, Accel = 60, Cur = 0, LandAt = 0, Air = false }
+getgenv().CWH_SGOn = false -- [v1.6] состояние Speed Glitch для кнопки телефона/кейбинда
 local sgBaseWS = 16
 local function sgReset(h)
     if SG.Cur ~= 0 or SG.Air then
@@ -4357,12 +4418,9 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 Tabs.World:AddSection("Speed Glitch")
-Tabs.World:AddToggle("SGlitchOn", {
-    Title = "🏃 Speed Glitch",
-    Description = "Прыгай и двигайся — разгон в воздухе (порт из Pulse)",
-    Default = false
-}):OnChanged(function(v)
+local function sgApply(v)
     SG.On = v
+    getgenv().CWH_SGOn = v
     local h = getHum(getChar(LocalPlayer))
     if v then
         if h then sgBaseWS = h.WalkSpeed end
@@ -4370,7 +4428,20 @@ Tabs.World:AddToggle("SGlitchOn", {
     else
         sgReset(h)
     end
-end)
+end
+local SGToggle = Tabs.World:AddToggle("SGlitchOn", {
+    Title = "🏃 Speed Glitch",
+    Description = "Прыгай и двигайся — разгон в воздухе (порт из Pulse)",
+    Default = false
+})
+SGToggle:OnChanged(function(v) sgApply(v) end)
+
+-- [v1.6] мост для кейбинда и кнопки на телефоне (G9c)
+getgenv().CWH_ToggleSG = function()
+    local nv = not SG.On
+    local ok = SGToggle and pcall(function() SGToggle:SetValue(nv) end)
+    if not ok then sgApply(nv) end
+end
 Tabs.World:AddSlider("SGlitchMax", {
     Title = "Скорость глитча", Default = 120, Min = 30, Max = 300, Rounding = 0,
     Callback = function(v) SG.Max = v end
@@ -4381,6 +4452,240 @@ Tabs.World:AddSlider("SGlitchAccel", {
 })
 end -- [CWH SCOPE] G9b
 print("[CWH] INIT G9b OK (Dual Mirror, Speed Glitch)")
+
+do -- ═══ [CWH SCOPE] G9c: Система кейбиндов + кнопка Speed Glitch (телефон) ═══
+-- ── [v1.6] КЕЙБИНДЫ: пишешь ОДНУ английскую букву (маленькую или большую)
+-- или цифру. Понимает и полные имена клавиш (LeftShift, One и т.п.).
+local KB_MAP = {}  -- KeyCode -> функция
+local DIGIT_NAMES = { ["0"] = "Zero", ["1"] = "One", ["2"] = "Two", ["3"] = "Three",
+    ["4"] = "Four", ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine" }
+getgenv().CWH_Keybinds = { SG = "нет", Dual = "нет", Invis = "нет", Shoot = "нет" }
+
+local function kbResolve(txt)
+    local s = tostring(txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if #s == 0 then return nil, "" end
+    if #s == 1 then
+        local up = s:upper()
+        if up >= "A" and up <= "Z" then
+            local ok, kc = pcall(function() return Enum.KeyCode[up] end)
+            if ok and kc then return kc, up end
+        end
+        if DIGIT_NAMES[s] then
+            local ok, kc = pcall(function() return Enum.KeyCode[DIGIT_NAMES[s]] end)
+            if ok and kc then return kc, s end
+        end
+        return nil, nil
+    end
+    local ok, kc = pcall(function() return Enum.KeyCode[s] end)
+    if ok and kc then return kc, s end
+    return nil, nil
+end
+
+local KB_ITEMS = {
+    { key = "SG",    title = "🏃 Speed Glitch",   fn = function() pcall(getgenv().CWH_ToggleSG) end },
+    { key = "Dual",  title = "🗡 Dual Weapon",    fn = function() pcall(getgenv().CWH_ToggleDual) end },
+    { key = "Invis", title = "👻 Invisibility",   fn = function() pcall(getgenv().CWH_ToggleInvis) end },
+    { key = "Shoot", title = "🎯 Shoot Murderer", fn = function() pcall(getgenv().CWH_ShootMurderer) end },
+}
+
+local function kbBind(item, txt)
+    local kc, disp = kbResolve(txt)
+    if disp == "" then
+        getgenv().CWH_Keybinds[item.key] = "нет"
+        for k, f in pairs(KB_MAP) do
+            if f == item.fn then KB_MAP[k] = nil end
+        end
+        Notify("Кейбинды", item.title .. " — клавиша убрана", nil, 2)
+        return
+    end
+    if not kc then
+        Notify("Кейбинды", "Только английские буквы (a/A) и цифры (5)!", nil, 3)
+        return
+    end
+    -- освобождаем клавишу: у предыдущего действия тоже сбрасываем надпись
+    for k, f in pairs(KB_MAP) do
+        if f == item.fn then KB_MAP[k] = nil end
+        if k == kc then
+            for _, other in ipairs(KB_ITEMS) do
+                if other.fn == f then getgenv().CWH_Keybinds[other.key] = "нет" end
+            end
+            KB_MAP[k] = nil
+        end
+    end
+    KB_MAP[kc] = item.fn
+    getgenv().CWH_Keybinds[item.key] = disp
+    Notify("Кейбинды", item.title .. " → клавиша " .. disp, nil, 3)
+end
+
+Tabs.Other:AddSection("⌨ Кейбинды (английские буквы/цифры)")
+for kbIdx, kbItem in ipairs(KB_ITEMS) do
+    Tabs.Other:AddInput("KB_" .. kbIdx, {
+        Title = "Клавиша: " .. kbItem.title,
+        Placeholder = "буква или цифра: q, Q, 5, E, F...",
+        Callback = function(v) kbBind(kbItem, v) end
+    })
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    local kbFn = KB_MAP[input.KeyCode]
+    if kbFn then pcall(kbFn) end
+end)
+print("[CWH] INIT G9c/1 OK (Кейбинды)")
+
+-- ── [v1.6] КНОПКА SPEED GLITCH ДЛЯ ТЕЛЕФОНА ──
+-- ТАП = вкл/выкл, ДРАГ = перенос (порог 8px — при простом нажатии не сдвигается).
+local sgGui = Instance.new("ScreenGui")
+sgGui.Name = "CWH_SGBtn"
+sgGui.Parent = gethui and gethui() or CoreGui
+sgGui.ResetOnSpawn = false
+sgGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sgGui.DisplayOrder = 5
+
+local sgBtn = Instance.new("TextButton")
+sgBtn.Name = "SG"
+sgBtn.Size = UDim2.new(0, 56, 0, 56)
+sgBtn.Position = UDim2.new(0.05, 0, 0.52, 0)
+sgBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+sgBtn.Text = "SG"
+sgBtn.TextColor3 = Color3.fromRGB(255, 170, 60)
+sgBtn.Font = Enum.Font.GothamBold
+sgBtn.TextSize = 18
+sgBtn.Active = true
+sgBtn.Parent = sgGui
+
+local sgCorner = Instance.new("UICorner")
+sgCorner.CornerRadius = UDim.new(1, 0)
+sgCorner.Parent = sgBtn
+
+local sgStroke = Instance.new("UIStroke")
+sgStroke.Color = Color3.fromRGB(120, 120, 130)
+sgStroke.Thickness = 2.5
+sgStroke.Parent = sgBtn
+
+local function sgPaint()
+    local on = getgenv().CWH_SGOn and true or false
+    sgStroke.Color = on and Color3.fromRGB(60, 220, 120) or Color3.fromRGB(120, 120, 130)
+    sgBtn.TextColor3 = on and Color3.fromRGB(120, 255, 170) or Color3.fromRGB(255, 170, 60)
+end
+
+local function sgPress()
+    pcall(getgenv().CWH_ToggleSG)
+    task.defer(sgPaint)
+end
+
+do
+    local dragging, dragMoved = false, false
+    local dragInput, dragStart, startPos = nil, nil, nil
+    sgBtn.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragMoved = false
+            dragInput = i
+            dragStart = i.Position
+            startPos = sgBtn.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    if not dragMoved then sgPress() end
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or (i.UserInputType == Enum.UserInputType.Touch and i == dragInput)) then
+            local d = i.Position - dragStart
+            if d.Magnitude > 8 then dragMoved = true end
+            if dragMoved then
+                sgBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                    startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            end
+        end
+    end)
+end
+sgPaint()
+print("[CWH] INIT G9c/2 OK (Кнопка Speed Glitch)")
+end -- [CWH SCOPE] G9c
+
+do -- ═══ [CWH SCOPE] G9d: Обводка карты (серые части как на скрине) ═══
+-- Большие серые части карты (полы/платформы) получают СЕРУЮ обводку, которую
+-- видно даже сквозь стены — удобно под картой (Invisibility) и в темноте.
+local OL = { On = false, Folder = nil, LastMap = nil }
+local OL_COLOR = Color3.fromRGB(190, 190, 190)
+
+local function olClear()
+    if OL.Folder then pcall(function() OL.Folder:Destroy() end) end
+    OL.Folder = nil
+end
+
+local function olBuild()
+    olClear()
+    local map = getMap()
+    if not map then
+        Notify("Обводка", "Карта не найдена", nil, 3)
+        return
+    end
+    local f = Instance.new("Folder")
+    f.Name = "CWH_MapOutline"
+    local n = 0
+    for _, p in ipairs(map:GetDescendants()) do
+        if p:IsA("BasePart") and p.Transparency < 1 then
+            local s = p.Size
+            if s.X * s.Y * s.Z >= 80 and math.max(s.X, s.Y, s.Z) >= 6 then
+                local ad = Instance.new("BoxHandleAdornment")
+                ad.Name = "CWH_OL"
+                ad.Adornee = p
+                ad.AlwaysOnTop = true
+                ad.ZIndex = 0
+                ad.Transparency = 0.65
+                ad.Color3 = OL_COLOR
+                ad.Size = s + Vector3.new(0.25, 0.25, 0.25)
+                ad.Parent = f
+                n = n + 1
+                if n >= 220 then break end
+            end
+        end
+    end
+    f.Parent = (gethui and gethui() or CoreGui)
+    OL.Folder = f
+    OL.LastMap = map
+    Notify("Обводка карты", "Серая обводка: " .. n .. " частей", nil, 2)
+end
+
+Tabs.Visuals:AddSection("Обводка карты")
+Tabs.Visuals:AddToggle("MapOutline", {
+    Title = "⬜ Обводка карты (серые части)",
+    Description = "Серая обводка на больших частях карты — видно сквозь стены",
+    Default = false
+}):OnChanged(function(v)
+    OL.On = v
+    if v then
+        task.spawn(olBuild)
+    else
+        olClear()
+    end
+end)
+
+-- перестроить, если карта сменилась
+task.spawn(function()
+    while task.wait(2) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if OL.On then
+                local map = getMap()
+                if map and map ~= OL.LastMap then
+                    olBuild()
+                end
+            end
+        end)
+    end
+end)
+end -- [CWH SCOPE] G9d
+print("[CWH] INIT G9d OK (Обводка карты)")
+
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
@@ -4421,22 +4726,24 @@ obGradient.Rotation = 45
 obGradient.Parent = openBtn
 
 do
-    local dragging = false
-    local dragStart, startPos
-    local totalDist = 0
+    -- [v1.6] ТАП = открыть меню, ДРАГ = перенос. Порог 8px: при простом нажатии
+    -- кнопка не сдвигается и не "улетает", второй палец драг не перехватывает.
+    local dragging, dragMoved = false, false
+    local dragInput, dragStart, startPos = nil, nil, nil
 
     openBtn.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1
         or i.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            totalDist = 0
+            dragMoved = false
+            dragInput = i
             dragStart = i.Position
             startPos = openBtn.Position
             i.Changed:Connect(function()
                 if i.UserInputState == Enum.UserInputState.End then
                     dragging = false
                     -- если пальцем почти не двигали — это ТАП, открываем меню
-                    if totalDist < 10 then
+                    if not dragMoved then
                         pcall(function() Window:Minimize() end)
                     end
                 end
@@ -4444,18 +4751,20 @@ do
         end
     end)
 
-            openBtn.InputChanged:Connect(function(i)
-            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
-                or i.UserInputType == Enum.UserInputType.Touch) then
-                local d = i.Position - dragStart
-                totalDist = d.Magnitude
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or (i.UserInputType == Enum.UserInputType.Touch and i == dragInput)) then
+            local d = i.Position - dragStart
+            if d.Magnitude > 8 then dragMoved = true end
+            if dragMoved then
                 openBtn.Position = UDim2.new(
                     startPos.X.Scale, startPos.X.Offset + d.X,
                     startPos.Y.Scale, startPos.Y.Offset + d.Y
                 )
             end
-        end)
-    end
+        end
+    end)
+end
 
-Notify("Crows Hub", "Remastered загружен!", "FluentPro | SA v3 | Speed Glitch | Dual", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.6 | Grab v3 (отсчёт) | SG + кейбинды | обводка", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
