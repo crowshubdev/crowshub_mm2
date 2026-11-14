@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.6: рука поднята, SG+кнопка, Grab v3 на отсчёте, кейбинды, fired)")
+print("[CWH] START — правильный скрипт выполняется (v1.7: Dual из Overdrive — рука поднята, курсор Overdrive на телефоне, кнопки Invis/Kill/Fling, обводка)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -205,7 +205,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.0 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -1458,33 +1458,39 @@ end)
 
 -- Kill Everyone
 Tabs.Combat:AddSection("Kill Everyone")
+-- [v1.7] вынесен в функцию: та же логика для меню и для телефонной кнопки (G9e)
+local function killEveryoneAction()
+    if not amMurderer() then Notify("KE", "Ты не Murderer!", nil, 3) return end
+    local k = equipKnife()
+    if not k then return end
+    local ev = k:FindFirstChild("Events")
+    local st = ev and ev:FindFirstChild("KnifeStabbed")
+    local to = ev and ev:FindFirstChild("HandleTouched")
+    local handle = k:FindFirstChild("Handle")
+    local n = 0
+    if st then pcall(function() st:FireServer() end) end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local c = getChar(plr)
+        local h = getHum(c)
+        local hrp = c and getHRP(c)
+        if h and h.Health > 0 and hrp then
+            if to then pcall(function() to:FireServer(hrp) end) end
+            if handle then touchGrab(handle, hrp) end
+            n += 1
+        end
+    end
+    Notify("Kill Everyone", "Атаковано: " .. n, nil, 3)
+end
 Tabs.Combat:AddButton({
     Title = "💀 Kill Everyone",
     Description = "Stab + touch по всем, без телепорта",
-    Callback = function()
-        if not amMurderer() then Notify("KE", "Ты не Murderer!", nil, 3) return end
-        local k = equipKnife()
-        if not k then return end
-        local ev = k:FindFirstChild("Events")
-        local st = ev and ev:FindFirstChild("KnifeStabbed")
-        local to = ev and ev:FindFirstChild("HandleTouched")
-        local handle = k:FindFirstChild("Handle")
-        local n = 0
-        if st then pcall(function() st:FireServer() end) end
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr == LocalPlayer then continue end
-            local c = getChar(plr)
-            local h = getHum(c)
-            local hrp = c and getHRP(c)
-            if h and h.Health > 0 and hrp then
-                if to then pcall(function() to:FireServer(hrp) end) end
-                if handle then touchGrab(handle, hrp) end
-                n += 1
-            end
-        end
-        Notify("Kill Everyone", "Атаковано: " .. n, nil, 3)
-    end
+    Callback = killEveryoneAction
 })
+-- [v1.7] мост для телефонной кнопки Kill Everyone (G9e)
+getgenv().CWH_KillEveryone = function()
+    task.spawn(killEveryoneAction)
+end
 
 -- ═══════════════════════════════════════════════════════════════
 -- SILENT AIM v3 + WALLBANG (порт метода из Pulse Hub)
@@ -2339,6 +2345,13 @@ local function stopFling()
     Notify("Fling", "Stopped", nil, 2)
 end
 
+-- [v1.7] мост для телефонных кнопок Fling Sheriff / Fling Murderer (G9e)
+getgenv().CWH_FlingTarget = function(plr)
+    if not plr then return false end
+    doFling(plr)
+    return true
+end
+
 -- ─── GUI ───
 Tabs.Combat:AddSection("Fling (Vision Hub)")
 
@@ -3090,8 +3103,66 @@ Tabs.Other:AddSection("Cursor custom")
 local CC = {
     On = false, Size = 40, Speed = 180, Mode = "Right",
     Device = "Auto", -- Auto / Phone / PC
+    Template = "Default", CustomId = "",
     rot = 0, pingpong = 1,
 }
+
+-- [v1.7] ШАБЛОНЫ КУРСОРА ИЗ OVERDRIVE (взял у крякнутого овердрайва):
+-- на телефоне/планшете картинка ставится прямо на ПРИЦЕЛ ИГРЫ
+-- (PlayerGui.GameTopbar.Crosshair — механика Overdrive),
+-- на ПК/ноутбуке остаётся наша механика (прицел за мышью).
+local OD_TEMPLATES = {
+    ["Classic"] = "rbxassetid://18132700169",
+    ["Red Triangle Dot"] = "rbxassetid://18131839526",
+    ["Heart"] = "rbxassetid://18131801840",
+    ["Glowing Heart"] = "rbxassetid://18132672452",
+    ["Pixel Heart"] = "rbxassetid://18132681170",
+    ["Kitten"] = "rbxassetid://5998624778",
+    ["Cyan Dynamic"] = "rbxassetid://18131864164",
+    ["Circle Dot"] = "rbxassetid://18131860988",
+    ["Pink Dynamic"] = "rbxassetid://358650766",
+    ["Glowing Dot"] = "rbxassetid://10891594349",
+    ["Heart V2"] = "rbxassetid://18131809504",
+    ["Star"] = "rbxassetid://18131815592",
+    ["Glowing Crucifix"] = "rbxassetid://18131910001",
+    ["Purple Dot"] = "rbxassetid://118359280121214",
+}
+-- nil = ничего кастомного не выбрано (ПК: встроенный прицел, телефон: прицел игры не трогаем)
+local function ccResolveImage()
+    if CC.Template == "Custom (ID)" then
+        local s = tostring(CC.CustomId or ""):gsub("%s+", "")
+        if s == "" then return nil end
+        if not s:find("rbxassetid") then s = "rbxassetid://" .. s end
+        return s
+    end
+    return OD_TEMPLATES[CC.Template]
+end
+
+-- прицел игры + оригинальные свойства для восстановления при выключении
+local ccCHCache, ccCHOrig = nil, nil
+local function ccGetCrosshair()
+    if ccCHCache and ccCHCache.Parent then return ccCHCache end
+    local ok, ch = pcall(function()
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local top = pg and pg:FindFirstChild("GameTopbar")
+        return top and top:FindFirstChild("Crosshair", true)
+    end)
+    if ok and ch then
+        ccCHCache = ch
+        ccCHOrig = { image = ch.Image, size = ch.Size, rot = ch.Rotation }
+    end
+    return (ok and ch) or nil
+end
+local function ccRestoreCrosshair()
+    if ccCHCache and ccCHCache.Parent and ccCHOrig then
+        pcall(function()
+            ccCHCache.Image = ccCHOrig.image
+            ccCHCache.Size = ccCHOrig.size
+            ccCHCache.Rotation = ccCHOrig.rot
+        end)
+    end
+    ccCHCache, ccCHOrig = nil, nil
+end
 
 local ccGui = Instance.new("ScreenGui")
 ccGui.Name = "CWH_Cursor"
@@ -3157,24 +3228,19 @@ local function ccApplyImage(id)
     end
 end
 
--- позиция курсора: Phone = центр экрана, PC = за мышью
-local function ccGetPosition()
+-- [v1.7] позиция/носитель: ПК = наш прицел за мышью (механика не тронута),
+-- телефон/планшет = механика Overdrive (картинка на прицеле игры)
+local function ccCurrentDevice()
     local dev = CC.Device
     if dev == "Auto" then
         dev = UserInputService.TouchEnabled and "Phone" or "PC"
     end
-    if dev == "Phone" then
-        local vp = workspace.CurrentCamera.ViewportSize
-        return vp.X / 2, vp.Y / 2
-    end
-    local m = UserInputService:GetMouseLocation()
-    return m.X, m.Y
+    return dev
 end
 
 RunService.RenderStepped:Connect(function(dt)
     if not CC.On then return end
-    local x, y = ccGetPosition()
-    ccHolder.Position = UDim2.fromOffset(x, y)
+    local dev = ccCurrentDevice()
 
     if CC.Mode == "Right" then
         CC.rot = (CC.rot + CC.Speed * dt) % 360
@@ -3185,6 +3251,37 @@ RunService.RenderStepped:Connect(function(dt)
         if CC.rot >= 90 then CC.rot = 90 CC.pingpong = -1 end
         if CC.rot <= -90 then CC.rot = -90 CC.pingpong = 1 end
     end
+
+    if dev == "Phone" then
+        -- выбранный шаблон/ID → картинка на прицеле ИГРЫ (как в Overdrive)
+        local img = ccResolveImage()
+        if img then
+            local ch = ccGetCrosshair()
+            if ch then
+                ccGui.Enabled = false
+                pcall(function()
+                    ch.Image = img
+                    ch.Size = UDim2.fromOffset(CC.Size, CC.Size)
+                    ch.Rotation = CC.rot
+                end)
+                return
+            end
+            -- прицела игры нет — покажем выбранную картинку нашим прицелом в центре
+        end
+        -- фоллбэк: наш встроенный прицел в центре (старое поведение)
+        ccRestoreCrosshair()
+        ccGui.Enabled = true
+        local vp = workspace.CurrentCamera.ViewportSize
+        ccHolder.Position = UDim2.fromOffset(vp.X / 2, vp.Y / 2)
+        ccHolder.Rotation = CC.rot
+        return
+    end
+
+    -- ПК/ноутбук: наша механика без изменений — прицел за мышью
+    ccRestoreCrosshair()
+    ccGui.Enabled = true
+    local m = UserInputService:GetMouseLocation()
+    ccHolder.Position = UDim2.fromOffset(m.X, m.Y)
     ccHolder.Rotation = CC.rot
 end)
 
@@ -3194,6 +3291,10 @@ Tabs.Other:AddToggle("CCOn", { Title = "Custom Cursor", Default = false })
     :OnChanged(function(v)
         CC.On = v
         ccGui.Enabled = v
+        if not v then
+            -- [v1.7] вернуть прицел игры, если телефонный курсор Overdrive был активен
+            pcall(ccRestoreCrosshair)
+        end
         pcall(function()
             -- прячем системный курсор только на PC
             local hide = v and (CC.Device == "PC"
@@ -3204,10 +3305,12 @@ Tabs.Other:AddToggle("CCOn", { Title = "Custom Cursor", Default = false })
 
 Tabs.Other:AddDropdown("CCDevice", {
     Title = "Device",
-    Description = "Phone — фикс в центре экрана, PC — за мышью",
+    Description = "Phone — механика Overdrive (прицел игры), PC — за мышью",
     Values = { "Auto", "Phone", "PC" }, Default = "Auto",
     Callback = function(v)
         CC.Device = v
+        -- [v1.7] при смене устройства вернуть прицел игры — цикл сам накинет нужный режим
+        pcall(ccRestoreCrosshair)
         -- пересинхронизируем скрытие системного курсора
         pcall(function()
             local hide = CC.On and (v == "PC"
@@ -3236,10 +3339,37 @@ Tabs.Other:AddDropdown("CCMode", {
     Callback = function(v) CC.Mode = v end
 })
 
+-- [v1.7] ШАБЛОНЫ OVERDRIVE (механика кастом-курсора из овердрайва):
+-- телефон/планшет — картинка на прицеле игры, ПК/ноут — в нашем прицеле за мышью
+Tabs.Other:AddDropdown("CCTemplate", {
+    Title = "Курсор (шаблоны Overdrive)",
+    Description = "Phone — прицел игры, PC — наш прицел. Default = ничего",
+    Values = { "Default", "Classic", "Red Triangle Dot", "Heart", "Glowing Heart",
+        "Pixel Heart", "Kitten", "Cyan Dynamic", "Circle Dot", "Pink Dynamic",
+        "Glowing Dot", "Heart V2", "Star", "Glowing Crucifix", "Purple Dot", "Custom (ID)" },
+    Default = "Default",
+    Callback = function(v)
+        CC.Template = v
+        local img = ccResolveImage()
+        ccApplyImage(img or "")
+    end
+})
+
 Tabs.Other:AddInput("CCImage", {
-    Title = "Image ID (пусто = встроенный прицел)",
+    Title = "Image ID (пусто = Default)",
     Placeholder = "например 123456789",
-    Callback = ccApplyImage
+    Callback = function(v)
+        local s = tostring(v or ""):gsub("%s+", "")
+        if s == "" then
+            CC.CustomId = ""
+            CC.Template = "Default"
+            ccApplyImage("")
+        else
+            CC.CustomId = s
+            CC.Template = "Custom (ID)"
+            ccApplyImage(ccResolveImage())
+        end
+    end
 })
 
 Tabs.Other:AddSection("Dodge Throw Knife")
@@ -3511,14 +3641,15 @@ smb.TextSize = 18
 smb.Active = true
 smb.Parent = smbGui
 
+-- [v1.7] стиль как на скрине: скругление 10px + заметная фиолетовая обводка
 local smbCorner = Instance.new("UICorner")
-smbCorner.CornerRadius = UDim.new(0, 6)
+smbCorner.CornerRadius = UDim.new(0, 10)
 smbCorner.Parent = smb
 
 local smbStroke = Instance.new("UIStroke")
-smbStroke.Color = Color3.fromRGB(120, 120, 255)
-smbStroke.Thickness = 2
-smbStroke.Transparency = 0.2
+smbStroke.Color = Color3.fromRGB(126, 126, 255)
+smbStroke.Thickness = 2.5
+smbStroke.Transparency = 0.1
 smbStroke.Parent = smb
 
 local SMB_W, SMB_H = 170, 44
@@ -3569,7 +3700,7 @@ local function doShoot()
     if ok then
         smbStroke.Color = Color3.fromRGB(255, 80, 80)
         task.delay(0.25, function()
-            smbStroke.Color = Color3.fromRGB(120, 120, 255)
+            smbStroke.Color = Color3.fromRGB(126, 126, 255)
         end)
         Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
     else
@@ -4028,6 +4159,8 @@ end)
 
 -- [v1.6] мост для системы кейбиндов (G9c)
 getgenv().CWH_ToggleInvis = invisToggle
+-- [v1.7] текущее состояние невидимости для телефонной кнопки Invis ON/OFF (G9e)
+getgenv().CWH_InvisState = function() return invisOn end
 
 end -- [CWH SCOPE] G8
 print("[CWH] INIT G8/9 OK (Invisibility)")
@@ -4106,155 +4239,136 @@ Tabs.Other:AddButton({
     end
 })
 
--- DUAL WEAPON v2.3 (Исправлен возврат руки и зеркальный поворот)
+-- ═══════════════════════════════════════════════════════════════
+-- DUAL WEAPON v3.0 — механика из Overdrive (пользователь просил взять её оттуда):
+--   1) клонируем ПРАВЫЙ грип-велд RightGrip (его создаёт сам движок при экипировке)
+--      в ЛЕВУЮ руку: Part0 = LeftHand, Part1 = клон Handle → оружие появляется в
+--      левой руке в правильном положении, ничего вручную считать не нужно;
+--   2) играем анимацию Overdrive 2464917949 на гуманоиде — ЛЕВАЯ РУКА ПОДНИМАЕТСЯ
+--      (приоритет Action и Loop ставим сами, чтобы поза держалась);
+--   3) убрал нож/пистолет из рук → клон, велд и анимация убираются, рука опускается;
+--      взял в руки → всё появляется снова (наша проверка в цикле ниже, шаг 0.1с).
+-- Зеркало Motor6D из G9b больше не нужно — флаг CWH_DualMirrorOn остаётся false.
+-- ═══════════════════════════════════════════════════════════════
 local dualOn = true
-local dualModel = nil
+local dualHandle, dualGrip = nil, nil
+local dualTrack = nil
 
--- [v1.5] подъем левой руки теперь делает ЗЕРКАЛО Motor6D.Transform (группа G9b ниже):
--- левая рука встаёт ровно в ту же позу, что и правая. Старый C0-хак удалён —
--- аниматор каждый кадр перезаписывает Transform, поэтому C0-правка и не работала.
-local function resetLeftArmAnimation(_char)
+local dualAnim = Instance.new("Animation")
+dualAnim.AnimationId = "rbxassetid://2464917949" -- анимация Overdrive: поднятая левая рука
+
+local function removeDual()
+    if dualGrip then pcall(function() dualGrip:Destroy() end) end
+    if dualHandle then pcall(function() dualHandle:Destroy() end) end
+    dualGrip, dualHandle = nil, nil
+    if dualTrack then
+        pcall(function() dualTrack:Stop(0.1) end)
+        dualTrack = nil
+    end
     getgenv().CWH_DualMirrorOn = false
 end
 
-local function applyLeftArmAnimation(_char)
-    getgenv().CWH_DualMirrorOn = true
+local function dualPlayTrack()
+    if dualTrack then
+        local playing = true
+        pcall(function() playing = dualTrack.IsPlaying end)
+        if not playing then
+            pcall(function() dualTrack:Play(0.15) end)
+        end
+        return
+    end
+    local hum = getHum(getChar(LocalPlayer))
+    if not hum then return end
+    local animator = hum:FindFirstChildOfClass("Animator") or hum
+    local ok, tr = pcall(function() return animator:LoadAnimation(dualAnim) end)
+    if not ok or not tr then
+        Notify("Dual", "Анимация руки не загрузилась (клип недоступен)", nil, 3)
+        return
+    end
+    pcall(function() tr.Priority = Enum.AnimationPriority.Action end)
+    pcall(function() tr.Looped = true end)
+    dualTrack = tr
+    pcall(function() tr:Play(0.15) end)
 end
 
-local function removeDual()
-    local char = LocalPlayer.Character
-    if char then
-        resetLeftArmAnimation(char)
-    end
-    if dualModel then
-        pcall(function() dualModel:Destroy() end)
-        dualModel = nil
-    end
+local function dualToolName()
+    local r = getRole(LocalPlayer)
+    if r == "Murderer" then return "Knife" end
+    if r == "Sheriff" or r == "Hero" then return "Gun" end
+    return nil
 end
 
 local function addDual()
     removeDual()
-    local char = LocalPlayer.Character
+    local char = getChar(LocalPlayer)
     if not char then return end
 
-    local myRole = getRole(LocalPlayer)
-    local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
+    local toolName = dualToolName()
     if not toolName then return end
 
     local tool = char:FindFirstChild(toolName)
-    if not tool then return end
+    if not tool or not tool:IsA("Tool") then return end
 
-    local leftArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand") or char:FindFirstChild("LeftUpperArm")
-    local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand") or char:FindFirstChild("RightUpperArm")
-    if not leftArm or not rightArm then return end
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return end
 
-    local gripWeld = nil
-    for _, w in ipairs(rightArm:GetDescendants()) do
-        if (w:IsA("Weld") or w:IsA("Motor6D")) and w.Part1 and w.Part1:IsDescendantOf(tool) then
-            gripWeld = w
-            break
+    local rightHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+    local leftHand = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
+    if not (rightHand and leftHand) then return end
+
+    -- RightGrip создаёт сам движок при экипировке; если ещё не успел появиться —
+    -- просто выходим, цикл повторит попытку через 0.1с
+    local rightGrip = rightHand:FindFirstChild("RightGrip")
+    if not rightGrip or not (rightGrip:IsA("Weld") or rightGrip:IsA("Motor6D")) then return end
+
+    -- [Overdrive] клон Handle кладём прямо В ТУЛ (как в оригинале), грип-клон — в левую руку
+    local handleClone = handle:Clone()
+    handleClone.Name = "Handle1"
+    handleClone.CanCollide = false
+    handleClone.Massless = true
+    for _, d in ipairs(handleClone:GetChildren()) do
+        if d:IsA("TouchTransmitter") or d:IsA("Script") or d:IsA("LocalScript") then
+            d:Destroy()
         end
     end
+    handleClone.Parent = tool
 
-    local srcParts = {}
-    local handleSrc = nil
-    for _, c in ipairs(tool:GetDescendants()) do
-        if c:IsA("BasePart") then
-            srcParts[#srcParts + 1] = c
-            if c.Name == "Handle" or handleSrc == nil then handleSrc = c end
-        end
-    end
-    if not handleSrc then return end
+    local gripClone = rightGrip:Clone()
+    gripClone.Name = "LeftGrip"
+    gripClone.Part0 = leftHand
+    gripClone.Part1 = handleClone
+    gripClone.Parent = leftHand
 
-    local holder = Instance.new("Model")
-    holder.Name = "CWH_DualWeapon"
-    local clones = {}
-    for _, p in ipairs(srcParts) do
-        local c = p:Clone()
-        for _, d in ipairs(c:GetChildren()) do
-            if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript")
-                or d:IsA("Weld") or d:IsA("Motor6D") or d:IsA("WeldConstraint") then
-                d:Destroy()
-            end
-        end
-        c.CanCollide = false
-        c.Massless = true
-        c.Anchored = true
-        c.Name = "CWH_Dual_" .. p.Name
-        clones[p] = c
-        c.Parent = holder
-    end
-
-    local newHandle = clones[handleSrc]
-    if not newHandle then holder:Destroy() return end
-
-    local gripC0 = gripWeld and gripWeld.C0 or tool.Grip
-    local gripC1 = gripWeld and gripWeld.C1 or CFrame.new()
-    -- [v1.5] честное ЗЕРКАЛО грипа по сагиттальной плоскости (x → -x) вместо разворота
-    -- на 180°: дуло смотрит туда же, куда у правой руки, а не назад в плечо
-    local gripRel = gripC0 * gripC1:Inverse()
-    local gx, gy, gz, gr00, gr01, gr02, gr10, gr11, gr12, gr20, gr21, gr22 = gripRel:GetComponents()
-    local gripMirror = CFrame.new(-gx, gy, gz,
-        gr00, -gr01, -gr02,
-        -gr10, gr11, gr12,
-        -gr20, gr21, gr22)
-
-    local targetArmPart = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftHand")
-    if not targetArmPart then targetArmPart = leftArm end
-
-    local handleCF = targetArmPart.CFrame * gripMirror
-
-    newHandle.CFrame = handleCF
-    for src, c in pairs(clones) do
-        if src ~= handleSrc then
-            c.CFrame = handleCF * handleSrc.CFrame:ToObjectSpace(src.CFrame)
-        end
-    end
-
-    holder.Parent = char
-
-    for src, c in pairs(clones) do
-        c.Anchored = false
-        local w = Instance.new("Weld")
-        if src == handleSrc then
-            w.Part0 = targetArmPart
-            w.Part1 = c
-            w.C0 = gripMirror
-            w.C1 = CFrame.new()
-        else
-            w.Part0 = newHandle
-            w.Part1 = c
-            w.C0 = handleSrc.CFrame:ToObjectSpace(src.CFrame)
-        end
-        w.Parent = c
-    end
-
-    applyLeftArmAnimation(char)
-    dualModel = holder
+    dualHandle, dualGrip = handleClone, gripClone
+    dualPlayTrack()
 end
 
--- Цикл проверки состояния оружия
+-- Цикл проверки состояния оружия (наша часть: взял ли я в руку нож/пистолет?)
 task.spawn(function()
     while task.wait(0.1) do
         if dualOn then
-            local char = LocalPlayer.Character
-            if char then
-                local myRole = getRole(LocalPlayer)
-                local toolName = (myRole == "Murderer" and "Knife") or ((myRole == "Sheriff" or myRole == "Hero") and "Gun")
-                local hasToolInHand = toolName and char:FindFirstChild(toolName)
-
-                if hasToolInHand then
-                    if not dualModel or not dualModel.Parent then
-                        pcall(addDual)
+            local char = getChar(LocalPlayer)
+            local toolName = char and dualToolName()
+            local inHands = toolName and char:FindFirstChild(toolName)
+            if inHands then
+                local alive = dualHandle and dualHandle.Parent and dualGrip and dualGrip.Parent
+                if not alive then
+                    pcall(addDual)
+                elseif dualTrack then
+                    -- страховка: пока оружие в руках, левая рука должна оставаться поднятой
+                    local playing = true
+                    pcall(function() playing = dualTrack.IsPlaying end)
+                    if not playing then
+                        pcall(function() dualTrack:Play(0.15) end)
                     end
-                else
-                    if dualModel then
-                        removeDual()
-                    end
+                end
+            else
+                if dualHandle or dualGrip or dualTrack then
+                    removeDual()
                 end
             end
         else
-            if dualModel then
+            if dualHandle or dualGrip or dualTrack then
                 removeDual()
             end
         end
@@ -4262,7 +4376,7 @@ task.spawn(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    dualModel = nil
+    dualHandle, dualGrip, dualTrack = nil, nil, nil
     getgenv().CWH_DualMirrorOn = false
 end)
 
@@ -4273,7 +4387,7 @@ Tabs.Other:AddSection("Dual Weapon")
 
 local DualToggle = Tabs.Other:AddToggle("DualOn", {
     Title = "🗡 Dual Weapon",
-    Description = "Второе оружие в левой руке (3D-модель, без слота в хотбаре)",
+    Description = "Второе оружие в левой руке (механика Overdrive: клон грипа + поднятая рука)",
     Default = false
 })
 DualToggle:OnChanged(function(v)
@@ -4686,6 +4800,137 @@ end)
 end -- [CWH SCOPE] G9d
 print("[CWH] INIT G9d OK (Обводка карты)")
 
+do -- ═══ [CWH SCOPE] G9e: Кнопки для телефона (Invis / Kill Everyone / Fling Sheriff / Fling Murderer) ═══
+-- [v1.7] 4 круглые кнопки как SG: ТАП = действие, ДРАГ = перенос (порог 8px — не "улетают").
+-- Invis показывает состояние: ON = зелёная обводка и надпись, OFF = серая.
+local pbGui = Instance.new("ScreenGui")
+pbGui.Name = "CWH_PhoneBtns"
+pbGui.Parent = gethui and gethui() or CoreGui
+pbGui.ResetOnSpawn = false
+pbGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pbGui.DisplayOrder = 5
+
+local invisBtn, invisStroke = nil, nil
+
+local function paintInvis()
+    if not invisBtn then return end
+    local on = false
+    pcall(function() on = getgenv().CWH_InvisState and getgenv().CWH_InvisState() or false end)
+    invisBtn.Text = on and "Invis ON" or "Invis OFF"
+    invisBtn.TextColor3 = on and Color3.fromRGB(120, 255, 170) or Color3.new(1, 1, 1)
+    invisStroke.Color = on and Color3.fromRGB(60, 220, 120) or Color3.fromRGB(120, 120, 130)
+end
+
+local function pressAction(id)
+    if id == "Invis" then
+        pcall(getgenv().CWH_ToggleInvis)
+        task.defer(paintInvis)
+    elseif id == "Kill" then
+        pcall(getgenv().CWH_KillEveryone)
+    elseif id == "FlingS" then
+        local s = getSheriff()
+        if s and getgenv().CWH_FlingTarget then
+            pcall(getgenv().CWH_FlingTarget, s)
+        else
+            Notify("Fling", "Sheriff не найден", nil, 3)
+        end
+    elseif id == "FlingM" then
+        local m = getMurderer()
+        if m and getgenv().CWH_FlingTarget then
+            pcall(getgenv().CWH_FlingTarget, m)
+        else
+            Notify("Fling", "Murderer не найден", nil, 3)
+        end
+    end
+end
+
+local function pbDraggable(btn)
+    local dragging, dragMoved = false, false
+    local dragInput, dragStart, startPos = nil, nil, nil
+    btn.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragMoved = false
+            dragInput = i
+            dragStart = i.Position
+            startPos = btn.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    if not dragMoved then
+                        pressAction(btn:GetAttribute("CWHId"))
+                    end
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or (i.UserInputType == Enum.UserInputType.Touch and i == dragInput)) then
+            local d = i.Position - dragStart
+            if d.Magnitude > 8 then dragMoved = true end
+            if dragMoved then
+                btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                    startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            end
+        end
+    end)
+end
+
+local PB_LIST = {
+    { id = "Invis",  text = "Invis OFF",      color = Color3.new(1, 1, 1),          pos = UDim2.new(0.05, 0, 0.60, 0) },
+    { id = "Kill",   text = "Kill\nEveryone", color = Color3.fromRGB(255, 90, 90),  pos = UDim2.new(0.05, 0, 0.675, 0) },
+    { id = "FlingS", text = "Fling\nSheriff", color = Color3.fromRGB(90, 170, 255), pos = UDim2.new(0.05, 0, 0.75, 0) },
+    { id = "FlingM", text = "Fling\nMurderer", color = Color3.fromRGB(255, 140, 60), pos = UDim2.new(0.05, 0, 0.825, 0) },
+}
+
+for _, cfg in ipairs(PB_LIST) do
+    local btn = Instance.new("TextButton")
+    btn.Name = "PB_" .. cfg.id
+    btn:SetAttribute("CWHId", cfg.id)
+    btn.Size = UDim2.new(0, 56, 0, 56)
+    btn.Position = cfg.pos
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    btn.Text = cfg.text
+    btn.TextColor3 = cfg.color
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.TextWrapped = true
+    btn.Active = true
+    btn.Parent = pbGui
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = btn
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(120, 120, 130)
+    stroke.Thickness = 2.5
+    stroke.Parent = btn
+    if cfg.id == "Invis" then
+        invisBtn, invisStroke = btn, stroke
+    end
+    pbDraggable(btn)
+end
+
+-- индикатор Invis ON/OFF: поллим состояние (меню/кейбинд тоже его меняют)
+task.spawn(function()
+    while task.wait(0.4) do
+        if pbGui.Enabled then paintInvis() end
+    end
+end)
+
+Tabs.Other:AddSection("📞 Кнопки для телефона")
+Tabs.Other:AddToggle("PhoneBtnsShow", {
+    Title = "📞 Invis / Kill Everyone / Fling Sheriff / Fling Murderer",
+    Description = "Круглые кнопки на экране: тап = действие, драг = перенос. Invis показывает ON/OFF",
+    Default = UserInputService.TouchEnabled
+}):OnChanged(function(v) pbGui.Enabled = v end)
+pbGui.Enabled = UserInputService.TouchEnabled
+paintInvis()
+
+print("[CWH] INIT G9e OK (Кнопки телефона: Invis/Kill/Fling)")
+end -- [CWH SCOPE] G9e
+
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
@@ -4766,5 +5011,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.6 | Grab v3 (отсчёт) | SG + кейбинды | обводка", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.7 | Dual из Overdrive | курсор Overdrive (телефон) | кнопки Invis/Kill/Fling", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
