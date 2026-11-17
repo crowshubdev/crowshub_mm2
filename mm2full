@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.8: бесконечный Grab v3, Round Timer, Pulse Spoof + Force Shoot, звук щелчка, кнопки в стиле Shoot Murderer + Kill Sheriff, Animations/эмоции, Potato Mode, кейбинд меню)")
+print("[CWH] START — правильный скрипт выполняется (v1.9: Obsidian UI, V4-предикт Pulse, Force origin, Griddy-эмоции + бандлы анимаций, кейбинд меню)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -30,23 +30,22 @@ end)
 getgenv().CWH_Window = nil
 task.wait(0.25)
 
--- ═══ FLUENT PRO LOADER ═══
-local Fluent = nil
+-- ═══ [v1.9] OBSIDIAN UI (адаптер Fluent-API поверх Obsidian от deividcomsono) ═══
+-- Obsidian = Linoria-подобная UI: норм на телефоне (2 кнопки: лок + тоггл меню)
+-- и на ПК, свои темы, SaveManager. Наш код остаётся на Fluent-сигнатурах —
+-- адаптер внизу мапит AddToggle/AddSection/AddSlider/... в Obsidian.
+local OBS = nil
 for attempt = 1, 5 do
     local ok, src = pcall(function()
-        return game:HttpGet("https://github.com/StyearX/Fluent-modded/releases/download/Fluent/FluentPro")
+        return game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua")
     end)
-    if ok and type(src) == "string" and #src > 1000 then
+    if ok and type(src) == "string" and #src > 10000 then
         local chunk = loadstring(src)
         if chunk then
             local ok2, res = pcall(chunk)
             if ok2 and type(res) == "table" and type(res.CreateWindow) == "function" then
-                Fluent = res
-                print("[CWH] FluentPro OK, попытка " .. attempt)
-                break
-            elseif type(getgenv().Fluent) == "table" and type(getgenv().Fluent.CreateWindow) == "function" then
-                Fluent = getgenv().Fluent
-                print("[CWH] FluentPro OK (getgenv), попытка " .. attempt)
+                OBS = res
+                print("[CWH] Obsidian UI OK, попытка " .. attempt)
                 break
             end
         end
@@ -54,9 +53,108 @@ for attempt = 1, 5 do
     warn("[CWH] попытка " .. attempt .. " не удалась, повтор...")
     task.wait(2)
 end
-if not Fluent then
-    warn("[CWH] FluentPro не загрузился за 5 попыток")
+if not OBS then
+    warn("[CWH] Obsidian не загрузился за 5 попыток")
     return
+end
+getgenv().CWH_Obsidian = OBS
+
+local Fluent = { _lib = OBS }
+
+function Fluent:Notify(info)
+    pcall(function()
+        OBS:Notify({
+            Title = info.Title or "CWH",
+            Description = (info.Content or "")
+                .. ((info.SubContent and info.SubContent ~= "") and ("\n" .. info.SubContent) or ""),
+            Time = info.Duration or 4,
+        })
+    end)
+end
+
+function Fluent:SetTheme(name)
+    -- темы Obsidian переключаются через ThemeManager; мягкий фоллбэк без ошибки
+    print("[CWH] SetTheme(" .. tostring(name) .. "): в Obsidian темы меняются в UI Settings (ThemeManager)")
+    Notify("Theme", "В Obsidian темы: UI Settings → ThemeManager", nil, 3)
+end
+
+function Fluent:CreateWindow(cfg)
+    local win = OBS:CreateWindow({
+        Title = cfg.Title or "Crows Hub",
+        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.9 | Obsidian",
+        ToggleKeybind = cfg.MinimizeKey or Enum.KeyCode.LeftAlt, -- [v1.9] дефолт LeftAlt, меняется в Settings
+        MobileButtonsSide = "Left", -- [v1.9] кнопки ЛОК + ТОГГЛ на телефоне
+        NotifySide = "Right",
+    })
+    local W = { _win = win }
+    function W:Minimize()
+        pcall(function() win:Toggle() end)
+    end
+    function W:AddTab(info)
+        local tab = win:AddTab(info.Title or "Tab", info.Icon or "package")
+        local T = { _tab = tab, _cur = nil, _side = "Left" }
+        function T:_box()
+            if not self._cur then
+                self._cur = self._tab:AddGroupbox({ Name = "Crows Hub", Side = self._side })
+            end
+            return self._cur
+        end
+        -- AddSection = новый groupbox, стороны чередуем Left/Right (как две колонки)
+        function T:AddSection(name)
+            self._side = (self._side == "Left") and "Right" or "Left"
+            self._cur = self._tab:AddGroupbox({ Name = name, Side = self._side })
+            return self
+        end
+        function T:AddToggle(id, o)
+            return self:_box():AddToggle(id, {
+                Text = o.Title or id,
+                Tooltip = o.Description,
+                Default = o.Default,
+                Callback = o.Callback,
+            })
+        end
+        function T:AddSlider(id, o)
+            return self:_box():AddSlider(id, {
+                Text = o.Title or id,
+                Tooltip = o.Description,
+                Default = o.Default or 0,
+                Min = o.Min or 0,
+                Max = o.Max or 100,
+                Rounding = o.Rounding or 0,
+                Callback = o.Callback,
+            })
+        end
+        function T:AddDropdown(id, o)
+            return self:_box():AddDropdown(id, {
+                Text = o.Title or id,
+                Tooltip = o.Description,
+                Values = o.Values or {},
+                Default = o.Default,
+                Multi = false,
+                Searchable = (o.Values and #o.Values > 8) or false,
+                Callback = o.Callback,
+            })
+        end
+        function T:AddInput(id, o)
+            return self:_box():AddInput(id, {
+                Text = o.Title or id,
+                Tooltip = o.Description,
+                Default = o.Default or "",
+                Placeholder = o.Placeholder or "",
+                Finished = false,
+                Callback = o.Callback,
+            })
+        end
+        function T:AddButton(o)
+            return self:_box():AddButton({
+                Text = o.Title or "Button",
+                Tooltip = o.Description,
+                Func = o.Callback,
+            })
+        end
+        return T
+    end
+    return W
 end
 getgenv().CWH_RUN = true
 
@@ -205,7 +303,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.1 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.1a by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -233,24 +331,28 @@ getgenv().CWH_ClickSound = function()
     end)
 end
 
--- все кнопки внутри меню Fluent: вкладки + обычные кнопки — щелчок на каждое нажатие
+-- все кнопки внутри меню Obsidian: вкладки + обычные кнопки — щелчок на каждое нажатие
 task.spawn(function()
     local core = gethui and gethui() or game:GetService("CoreGui")
     local gui = nil
     for _ = 1, 40 do
-        gui = core:FindFirstChild("Fluent")
-        if not gui then
-            for _, g in ipairs(core:GetChildren()) do
-                if g:IsA("ScreenGui") and g.Name:lower():find("fluent") then
-                    gui = g
-                    break
-                end
+        for _, g in ipairs(core:GetChildren()) do
+            if g:IsA("ScreenGui") and (g.Name:lower():find("obsidian") or g.Name:lower():find("fluent")) then
+                gui = g
+                break
             end
         end
         if not gui then
             pcall(function()
                 local pg = LocalPlayer:FindFirstChild("PlayerGui")
-                gui = pg and pg:FindFirstChild("Fluent")
+                if pg then
+                    for _, g in ipairs(pg:GetChildren()) do
+                        if g:IsA("ScreenGui") and (g.Name:lower():find("obsidian") or g.Name:lower():find("fluent")) then
+                            gui = g
+                            break
+                        end
+                    end
+                end
             end)
         end
         if gui then break end
@@ -294,7 +396,7 @@ Tabs.Main:AddToggle("FOVOn", { Title = "Enable FOV Changer", Default = false })
         if not v then Camera.FieldOfView = DefaultFOV end
     end)
 Tabs.Main:AddSlider("FOVVal", {
-    Title = "FOV Value", Default = 120, Min = 30, Max = 270, Rounding = 0,
+    Title = "FOV Value", Default = 120, Min = 30, Max = 200, Rounding = 0,
     Callback = function(v) TargetFOV = v end
 })
 RunService.RenderStepped:Connect(function()
@@ -1639,7 +1741,65 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 -- ═══════════════════════════════════════════════════════════════
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
-              Spoof = false, ForceOn = false, ForceInterval = 1.0, ForceLast = 0 }
+              Spoof = false, ForceOn = false, ForceInterval = 1.0, ForceLast = 0,
+              V4 = true, V4Lead = 0.05, ForceOffset = 15 }
+
+-- ═══ [v1.9] SA4-PRED: ядро предсказания из нового Pulse (V4-движок) ═══
+-- Каждый кадр пишем сэмплы позиции КАЖДОГО игрока; скорость и ускорение —
+-- сглаженные по окну истории. Прицельная точка = pos + v*dt + 0.5*a*dt².
+-- Это то, из-за чего Pulse-аим почти не мисает на движущихся целях.
+local pred4 = { samples = {} }
+local pred4Conn = RunService.Heartbeat:Connect(function()
+    local now = os.clock()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local root = getHRP(p.Character)
+            if root then
+                local list = pred4.samples[p]
+                if not list then list = {} pred4.samples[p] = list end
+                list[#list + 1] = { t = now, pos = root.Position }
+                while #list > 25 or (list[1] and now - list[1].t > 1.0) do
+                    table.remove(list, 1)
+                end
+            else
+                pred4.samples[p] = nil
+            end
+        end
+    end
+end)
+
+local function pred4Velocity(t)
+    local list = pred4.samples[t]
+    if not list or #list < 2 then return nil end
+    local a, b = list[1], list[#list]
+    local dt = b.t - a.t
+    if dt <= 0.02 then return nil end
+    return (b.pos - a.pos) / dt
+end
+
+local function pred4Accel(t)
+    local list = pred4.samples[t]
+    if not list or #list < 6 then return Vector3.zero end
+    local mid = math.floor(#list / 2)
+    local dt1 = list[mid].t - list[1].t
+    local dt2 = list[#list].t - list[mid].t
+    if dt1 <= 0.02 or dt2 <= 0.02 then return Vector3.zero end
+    local v1 = (list[mid].pos - list[1].pos) / dt1
+    local v2 = (list[#list].pos - list[mid].pos) / dt2
+    return (v2 - v1) / ((dt1 + dt2) / 2)
+end
+
+local function pred4Pos(t, curPos, dt)
+    local v = pred4Velocity(t)
+    if not v then return curPos end
+    local a = pred4Accel(t)
+    local p = curPos + v * dt + a * (0.5 * dt * dt)
+    -- [v1.9] против "улетевших" точек: не дальше 6 студов от реальной позиции
+    if (p - curPos).Magnitude > 6 then
+        p = curPos + (p - curPos).Unit * 6
+    end
+    return p
+end
 local WS3, origM3, origT3, hooked3 = nil, nil, nil, false
 local SA3Bypass = false -- true: хук отдаёт настоящую мышь, чтобы не мешать нашему выстрелу
 
@@ -1687,11 +1847,16 @@ local function sa3AimPos(targetPlayer)
     if SA3.Predict then
         local root = getHRP(c)
         if root then
-            local vel = root.AssemblyLinearVelocity or Vector3.zero
             local ping = 0
             pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
             if ping > 1 then ping = ping / 1000 end
-            pos = pos + vel * (ping + 0.05)
+            local dt = ping + (SA3.V4Lead or 0.05)
+            if SA3.V4 then
+                -- [v1.9] V4-предикт Pulse: сглаженная скорость + ускорение
+                pos = pred4Pos(t, pos, dt)
+            else
+                pos = pos + (root.AssemblyLinearVelocity or Vector3.zero) * dt
+            end
         end
     end
     return pos
@@ -1735,13 +1900,14 @@ function sa3FireShot(targetPlayer)
         else
             local d = myHRP.Position - pos
             local away = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
-            origin = pos + away * 3
+            origin = pos + away * (SA3.ForceOffset or 15)
         end
     elseif SA3.Wallbang or targetPlayer then
-        -- точка в 3 студах от жертвы В НАШУ СТОРОНУ = сразу за стеной (трюк Pulse)
+        -- точка в offset студах от жертвы В НАШУ СТОРОНУ (stand_off из shitaro-new:
+        -- origin 3..40, дефолт 15 — серверу виднее, что пуля летит изнутри)
         local d = myHRP.Position - pos
         local away = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
-        origin = pos + away * 3
+        origin = pos + away * (SA3.ForceOffset or 15)
     else
         origin = myHRP.Position
     end
@@ -1911,7 +2077,17 @@ Tabs.Combat:AddSlider("SA3AutoInt", {
     Title = "Auto Shoot интервал (сек)", Default = 1.5, Min = 0.3, Max = 5, Rounding = 1,
     Callback = function(v) SA3.Interval = v end
 })
--- [v1.8] Pulse Spoof: origin по скорости жертвы (механика из нового Pulse)
+-- [v1.9] V4-предикт (Pulse): история сэмплов + скорость + ускорение
+Tabs.Combat:AddToggle("SA3V4", {
+    Title = "V4 Prediction (Pulse)",
+    Description = "[v1.9] Ядро предсказания нового Pulse: сглаженная скорость+ускорение по истории — не мисает на движущихся",
+    Default = true
+}):OnChanged(function(v) SA3.V4 = v end)
+Tabs.Combat:AddSlider("SA3V4Lead", {
+    Title = "V4 опережение (сек)", Default = 0.05, Min = 0, Max = 0.3, Rounding = 2,
+    Callback = function(v) SA3.V4Lead = v end
+})
+-- [v1.9] Pulse Spoof: origin по скорости жертвы (механика из нового Pulse)
 Tabs.Combat:AddToggle("SA3Spoof", {
     Title = "Pulse Spoof (origin по скорости)",
     Description = "[v1.8] Пуля летит вдоль траектории жертвы и проходит сквозь неё (как spoofPlan в Pulse)",
@@ -1926,6 +2102,11 @@ Tabs.Combat:AddToggle("SA3Force", {
 Tabs.Combat:AddSlider("SA3ForceInt", {
     Title = "Force Shoot интервал (сек)", Default = 1.0, Min = 0.3, Max = 5, Rounding = 1,
     Callback = function(v) SA3.ForceInterval = v end
+})
+-- [v1.9] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
+Tabs.Combat:AddSlider("SA3ForceOffset", {
+    Title = "Force origin (studs)", Default = 15, Min = 3, Max = 40, Rounding = 0,
+    Callback = function(v) SA3.ForceOffset = v end
 })
 Tabs.Combat:AddButton({
     Title = "🔍 Debug WeaponService",
@@ -4631,42 +4812,26 @@ Tabs.Settings:AddButton({
     Callback = function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end
 })
 
--- ═══ [v1.8] МЕНЮ: кейбинд открытия/закрытия + звук щелчка ═══
-local menuKeyName = ""
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    if menuKeyName == "" then return end
-    if input.KeyCode and input.KeyCode.Name == menuKeyName then
-        pcall(getgenv().CWH_ClickSound)
-        pcall(function() Window:Minimize() end)
-    end
-end)
-
+-- ═══ [v1.9] МЕНЮ: кейбинд открытия/закрытия (Obsidian ToggleKeybind) ═══
+-- Дефолт — LeftAlt (как у тебя было). Любую клавишу можно вписать ниже:
+-- Obsidian сам тогглит меню по ToggleKeybind, свой обработчик больше не нужен.
 Tabs.Settings:AddSection("Menu")
 Tabs.Settings:AddInput("MenuKeyBind", {
     Title = "⌨ Клавиша меню (открыть/закрыть)",
-    Description = "Тот же принцип, что кейбинды Shoot/Invis. LeftAlt работает всегда",
+    Description = "По умолчанию LeftAlt. Впиши любую клавишу: M, N, P, RightControl...",
     Placeholder = "например: M, N, P, RightControl...",
     Callback = function(v)
         local n = tostring(v or ""):gsub("^%s+", ""):gsub("%s+$", "")
         if n == "" then
-            menuKeyName = ""
-            Notify("Menu Keybind", "Клавиша меню убрана (осталась LeftAlt)", nil, 2)
+            pcall(function() getgenv().CWH_Obsidian.ToggleKeybind = Enum.KeyCode.LeftAlt end)
+            Notify("Menu Keybind", "Сброшено на LeftAlt", nil, 2)
             return
         end
         local ok, key = pcall(function() return Enum.KeyCode[n] end)
         if ok and key then
-            if n == "LeftAlt" then
-                menuKeyName = ""
-                Notify("Menu Keybind", "LeftAlt и так открывает меню", nil, 2)
-                return
-            end
-            menuKeyName = n
-            pcall(function() Window.MinimizeKey = key end) -- если Fluent поддерживает — пусть тоже знает
-            Notify("Menu Keybind", "Меню по клавише: " .. n .. " (LeftAlt тоже работает)", nil, 2)
+            pcall(function() getgenv().CWH_Obsidian.ToggleKeybind = key end)
+            Notify("Menu Keybind", "Меню по клавише: " .. n, nil, 2)
         else
-            menuKeyName = ""
             Notify("Menu Keybind", "Нет такой клавиши: " .. n, nil, 3)
         end
     end
@@ -5229,7 +5394,21 @@ do -- ═══ [CWH SCOPE] G9f: Animations (эмоции + ходьба/пры�
 local anim = { Emote = nil, EmoteOn = false, CustomEmoteId = "", WalkId = "", JumpId = "" }
 local emoteTrack = nil
 local syncEmotes = nil
-local emoteNames = { "Custom (ID)" }
+-- [v1.9] пресеты эмоций (проверенные UGC-эмоты каталога):
+-- Get Griddy 121966805049108, Griddy 106715239721951, Griddy Dance 139951283663754, Get Sturdy 117695604334759
+local PRESET_EMOTES = {
+    ["🔥 Griddy (Get Griddy)"] = "121966805049108",
+    ["🔥 Griddy 2 (Animations World)"] = "106715239721951",
+    ["🔥 Griddy Dance"] = "139951283663754",
+    ["🔥 Get Sturdy"] = "117695604334759",
+}
+local emoteNames = {
+    "Custom (ID)",
+    "🔥 Griddy (Get Griddy)",
+    "🔥 Griddy 2 (Animations World)",
+    "🔥 Griddy Dance",
+    "🔥 Get Sturdy",
+}
 
 do
     local ok, db = pcall(function()
@@ -5248,7 +5427,6 @@ do
                 end
             end
             table.sort(names)
-            emoteNames = { "Custom (ID)" }
             for _, n in ipairs(names) do emoteNames[#emoteNames + 1] = n end
         end
     end
@@ -5269,8 +5447,12 @@ local function playEmote(value)
         Notify("Emote", "Нет персонажа", nil, 3)
         return
     end
-    local id = anim.CustomEmoteId
-    if value ~= "Custom (ID)" then
+    local id = nil
+    if value == "Custom (ID)" then
+        id = anim.CustomEmoteId
+    elseif PRESET_EMOTES[value] then
+        id = PRESET_EMOTES[value]
+    else
         local data = syncEmotes and syncEmotes[value]
         if data and data.AnimationID then
             id = tostring(data.AnimationID):match("%d+") or tostring(data.AnimationID)
@@ -5302,10 +5484,10 @@ end
 
 Tabs.Other:AddSection("Animations")
 Tabs.Other:AddDropdown("EmoteSelect", {
-    Title = "Эмоция (из игры)",
-    Description = "Список берётся у игры (Database.Sync). Ходьба/прыжок её не прерывают",
+    Title = "Эмоция (пресеты + из игры)",
+    Description = "[v1.9] Griddy-пресеты + эмоции игры (Database.Sync). Ходьба/прыжок её не прерывают",
     Values = emoteNames,
-    Default = emoteNames[1],
+    Default = emoteNames[2],
     Callback = function(v)
         anim.Emote = v
         if anim.EmoteOn then playEmote(v) end
@@ -5394,6 +5576,139 @@ Tabs.Other:AddInput("JumpAnimId", {
         else
             anim.JumpId = ""
         end
+    end
+})
+
+-- [v1.9] пер-действие: idle / run / fall / climb / swim (как в плагине Overdrive)
+local EXTRA_ACTIONS = { { "idle", "IdleAnimId", "Idle Anim ID" }, { "run", "RunAnimId", "Run Anim ID" },
+    { "fall", "FallAnimId", "Fall Anim ID" }, { "climb", "ClimbAnimId", "Climb Anim ID" },
+    { "swim", "SwimAnimId", "Swim Anim ID" } }
+for _, act in ipairs(EXTRA_ACTIONS) do
+    local kind, flagId, label = act[1], act[2], act[3]
+    Tabs.Other:AddInput(flagId, {
+        Title = label .. " (пусто = стандарт)",
+        Placeholder = "rbxassetid анимации",
+        Callback = function(v)
+            local s = tostring(v or ""):gsub("%s+", "")
+            anim[kind] = s
+            if s ~= "" then
+                if applyAnimateId(kind, s) then
+                    Notify("Animations", "Анимация '" .. kind .. "' заменена", nil, 2)
+                else
+                    Notify("Animations", "Animate." .. kind .. " не найден", nil, 3)
+                end
+            end
+        end
+    })
+end
+
+-- [v1.9] АНИМАЦИОННЫЕ БАНДЛЫ (механика плагина BundleAnimations из Overdrive):
+-- AvatarEditorService:GetItemDetails → анимации бандла → HumanoidDescription →
+-- CreateHumanoidModelFromDescription → Animate модели раскладывает по действиям
+-- (idle/walk/run/jump/fall/climb/swim) → применяем к своему персонажу.
+local ANIM_ACTION_NAMES = {
+    IdleAnimation = { "idle" }, WalkAnimation = { "walk" }, RunAnimation = { "run" },
+    JumpAnimation = { "jump" }, FallAnimation = { "fall" }, ClimbAnimation = { "climb" },
+    SwimAnimation = { "swim", "swimidle" },
+}
+local AES = game:GetService("AvatarEditorService")
+
+local function applyBundle(bundleId)
+    bundleId = tonumber(bundleId)
+    if not bundleId then
+        Notify("Bundle", "Впиши числовой ID бандла", nil, 3)
+        return
+    end
+    local ok, details = pcall(function()
+        return AES:GetItemDetails(bundleId, Enum.AvatarItemType.Bundle)
+    end)
+    if not ok or type(details) ~= "table" then
+        Notify("Bundle", "Бандл не найден (rate limit?)", nil, 4)
+        return
+    end
+    local items = details.BundledItems or details.itemAssets or details.Items or {}
+    if #items == 0 then
+        Notify("Bundle", "Бандл пуст", nil, 3)
+        return
+    end
+    local desc = Instance.new("HumanoidDescription")
+    local got = 0
+    for _, it in ipairs(items) do
+        local t = tostring(it.AssetType or (it.itemType and it.itemType.Name) or "")
+        local aid = tonumber(it.Id or it.id)
+        if aid and ANIM_ACTION_NAMES[t] then
+            pcall(function()
+                desc[t] = aid
+                got += 1
+            end)
+        end
+    end
+    if got == 0 then
+        Notify("Bundle", "В бандле нет анимаций", nil, 3)
+        return
+    end
+    local ok2, model = pcall(function()
+        return Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
+    end)
+    if not ok2 or not model then
+        Notify("Bundle", "Модель не собралась", nil, 4)
+        return
+    end
+    -- Animate модели знает, какая анимация для какого действия
+    local found = {}
+    local modelAnimate = model:FindFirstChild("Animate")
+    if modelAnimate then
+        for _, action in pairs(ANIM_ACTION_NAMES) do
+            for _, n in ipairs(action) do
+                local folder = modelAnimate:FindFirstChild(n)
+                local a = folder and folder:FindFirstChildOfClass("Animation")
+                if a and a.AnimationId ~= "" then
+                    found[action[1]] = a.AnimationId
+                    break
+                end
+            end
+        end
+    end
+    pcall(function() model:Destroy() end)
+    if not next(found) then
+        Notify("Bundle", "Animate модели не дал анимации", nil, 3)
+        return
+    end
+    local char = getChar(LocalPlayer)
+    local myAnimate = char and char:FindFirstChild("Animate")
+    if not myAnimate then
+        Notify("Bundle", "Твой Animate не найден", nil, 3)
+        return
+    end
+    local applied = 0
+    for folderName, id in pairs(found) do
+        local folder = myAnimate:FindFirstChild(folderName)
+        if folder then
+            for _, a in ipairs(folder:GetChildren()) do
+                if a:IsA("Animation") then
+                    if not animApply[a] then animApply[a] = a.AnimationId end
+                    a.AnimationId = id
+                    applied += 1
+                end
+            end
+        end
+    end
+    restartAnimate(char)
+    Notify("Bundle", (details.Name or "Бандл") .. ": применено " .. applied .. " анимаций", nil, 4)
+end
+
+Tabs.Other:AddInput("BundleId", {
+    Title = "🧩 Bundle ID (пак анимаций)",
+    Description = "ID бандла с каталога Roblox — применит его анимации на ВСЕ действия сразу",
+    Placeholder = "например 1234567",
+    Callback = function(v) anim.BundleId = tostring(v or ""):gsub("%s+", "") end
+})
+
+Tabs.Other:AddButton({
+    Title = "🧩 Применить бандл",
+    Description = "Возьмёт анимации бандла и разложит по idle/walk/run/jump/fall/climb/swim",
+    Callback = function()
+        task.spawn(applyBundle, anim.BundleId)
     end
 })
 
@@ -5617,5 +5932,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.8 | Grab v3 ∞ | Round Timer | Force Shoot | эмоции | Potato Mode", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.9 | Obsidian UI | V4-предикт | Griddy + бандлы | меню: LeftAlt (или своя клавиша)", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
