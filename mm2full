@@ -1,4 +1,6 @@
-print("[CWH] START — правильный скрипт выполняется (v1.9: Obsidian UI, V4-предикт Pulse, Force origin, Griddy-эмоции + бандлы анимаций, кейбинд меню)")
+
+
+   print("[CWH] START — правильный скрипт выполняется (v1.10: Shoot Murderer над головой, Bullet Tracer из Pulse, конфиги SaveManager, Force origin 8, анти-телепорт V4)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -81,7 +83,7 @@ end
 function Fluent:CreateWindow(cfg)
     local win = OBS:CreateWindow({
         Title = cfg.Title or "Crows Hub",
-        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.9 | Obsidian",
+        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.10 | Obsidian",
         ToggleKeybind = cfg.MinimizeKey or Enum.KeyCode.LeftAlt, -- [v1.9] дефолт LeftAlt, меняется в Settings
         MobileButtonsSide = "Left", -- [v1.9] кнопки ЛОК + ТОГГЛ на телефоне
         NotifySide = "Right",
@@ -176,6 +178,81 @@ local realFireTouch = (type(firetouchinterest) == "function") and firetouchinter
 local function Notify(t, c, s, d)
     pcall(function()
         Fluent:Notify({ Title = t or "CWH", Content = c or "", SubContent = s or "", Duration = d or 4 })
+    end)
+end
+
+-- ═══ [v1.10] BULLET TRACER (ядро трейсеров из Pulse): летящая «голова» пули + хвост ═══
+-- Голова трейсера летит от origin к цели со скоростью Speed (st/s), за ней тянется
+-- хвост; всё исчезает через Life секунд. Цвет/толщина/стиль — в Combat.
+local TR = { On = false, Life = 1.2, Width = 100, Speed = 520, Rainbow = false,
+             Style = "Energy", ColorName = "Красный" }
+local TR_COLORS = {
+    ["Красный"] = Color3.fromRGB(255, 80, 80), ["Зелёный"] = Color3.fromRGB(80, 255, 120),
+    ["Синий"] = Color3.fromRGB(80, 140, 255), ["Белый"] = Color3.fromRGB(240, 240, 240),
+    ["Жёлтый"] = Color3.fromRGB(255, 220, 60), ["Оранжевый"] = Color3.fromRGB(255, 150, 50),
+    ["Розовый"] = Color3.fromRGB(255, 90, 180), ["Фиолетовый"] = Color3.fromRGB(170, 90, 255),
+}
+local function cwhTracer(from, to)
+    if not TR.On or not from or not to then return end
+    task.spawn(function()
+        pcall(function()
+            local dist = (to - from).Magnitude
+            if dist < 1 then return end
+            local function mkPart(p)
+                local pt = Instance.new("Part")
+                pt.Anchored = true
+                pt.CanCollide = false
+                pt.CanQuery = false
+                pt.CanTouch = false
+                pt.CastShadow = false
+                pt.Transparency = 1
+                pt.Size = Vector3.new(0.05, 0.05, 0.05)
+                pt.CFrame = CFrame.new(p)
+                pt.Parent = workspace
+                local at = Instance.new("Attachment")
+                at.Parent = pt
+                return pt, at
+            end
+            local headPart, headAtt = mkPart(from)
+            local tailPart, tailAtt = mkPart(from)
+            local beam = Instance.new("Beam")
+            beam.Attachment0 = tailAtt
+            beam.Attachment1 = headAtt
+            beam.FaceCamera = true
+            local w = math.clamp(TR.Width, 40, 250) / 100 * 0.35
+            beam.Width0 = w
+            beam.Width1 = w * 0.3
+            if TR.Style == "Energy" then
+                beam.LightEmission = 1
+                beam.LightInfluence = 0
+                beam.Brightness = 4
+            end
+            beam.Transparency = NumberSequence.new(0.15)
+            local base = TR_COLORS[TR.ColorName] or TR_COLORS["Красный"]
+            beam.Color = ColorSequence.new(base, base)
+            beam.Parent = headPart
+            local t0 = os.clock()
+            local life = math.clamp(TR.Life, 0.3, 4)
+            local conn
+            conn = RunService.Heartbeat:Connect(function()
+                local el = os.clock() - t0
+                local headT = math.min(1, el * TR.Speed / dist)
+                headPart.CFrame = CFrame.new(from:Lerp(to, headT))
+                local tailLen = math.min(dist * 0.35, 24)
+                local tailT = math.clamp((headT * dist - tailLen) / dist, 0, 1)
+                tailPart.CFrame = CFrame.new(from:Lerp(to, tailT))
+                if TR.Rainbow then
+                    local hue = (el * 0.35) % 1
+                    local c = Color3.fromHSV(hue, 1, 1)
+                    beam.Color = ColorSequence.new(c, c)
+                end
+            end)
+            task.delay(life, function()
+                pcall(function() conn:Disconnect() end)
+                pcall(function() headPart:Destroy() end)
+                pcall(function() tailPart:Destroy() end)
+            end)
+        end)
     end)
 end
 
@@ -383,6 +460,20 @@ local Tabs = {
     Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
+
+-- ═══ [v1.10] КОНФИГИ (SaveManager от Obsidian): создать / выбрать / загрузить / удалить ═══
+-- В Settings появится бокс «Configuration»: вписал имя → Create config; выбрал из
+-- списка → Load; ненужный → Delete. Плюс автозагрузка выбранного конфига при входе.
+pcall(function()
+    local SaveManager = loadstring(game:HttpGet(
+        "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/addons/SaveManager.lua"))()
+    SaveManager:SetLibrary(OBS)
+    SaveManager:IgnoreThemeSettings()
+    SaveManager:SetFolder("CrowsHub/MM2")
+    SaveManager:BuildConfigSection(Tabs.Settings._tab)
+    print("[CWH] SaveManager готов: Settings → Configuration")
+end)
+
 print("[CWH] INIT 1/3: окно и вкладки готовы")
  
 -- ═══ MAIN ═══
@@ -1742,7 +1833,7 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
               Spoof = false, ForceOn = false, ForceInterval = 1.0, ForceLast = 0,
-              V4 = true, V4Lead = 0.05, ForceOffset = 15 }
+              V4 = true, V4Lead = 0.05, ForceOffset = 8 }
 
 -- ═══ [v1.9] SA4-PRED: ядро предсказания из нового Pulse (V4-движок) ═══
 -- Каждый кадр пишем сэмплы позиции КАЖДОГО игрока; скорость и ускорение —
@@ -1757,6 +1848,13 @@ local pred4Conn = RunService.Heartbeat:Connect(function()
             if root then
                 local list = pred4.samples[p]
                 if not list then list = {} pred4.samples[p] = list end
+                -- [v1.10] анти-телепорт: скачок >25 студов = сброс истории,
+                -- иначе V4-предикт улетает за телепортом/респавном цели
+                local last = list[#list]
+                if last and (root.Position - last.pos).Magnitude > 25 then
+                    list = {}
+                    pred4.samples[p] = list
+                end
                 list[#list + 1] = { t = now, pos = root.Position }
                 while #list > 25 or (list[1] and now - list[1].t > 1.0) do
                     table.remove(list, 1)
@@ -1863,7 +1961,7 @@ local function sa3AimPos(targetPlayer)
 end
 
 -- ручной выстрел ремоутом Shoot (метод Pulse Hub) — работает ЧЕРЕЗ СТЕНЫ
-function sa3FireShot(targetPlayer)
+function sa3FireShot(targetPlayer, fromAbove)
     local myChar = getChar(LocalPlayer)
     local myHRP = myChar and getHRP(myChar)
     local gun = myChar and myChar:FindFirstChild("Gun")
@@ -1885,7 +1983,11 @@ function sa3FireShot(targetPlayer)
     local pos = sa3AimPos(targetPlayer)
     if not pos then return false end
     local origin
-    if SA3.Spoof and targetPlayer then
+    if fromAbove then
+        -- [v1.10] классика Shoot Murderer: пуля появляется НАД ГОЛОВОЙ мардера
+        -- и летит вниз в него (как было раньше — «пуля над головой летит в него»)
+        origin = Vector3.new(pos.X, pos.Y + 6, pos.Z)
+    elseif SA3.Spoof and targetPlayer then
         -- [v1.8] SPOOF из нового Pulse (AimEngine.spoofPlan): origin по ВЕКТОРУ
         -- СКОРОСТИ жертвы — пуля летит вдоль траектории жертвы и проходит сквозь
         -- неё. Дистанция = скорость * 0.1с (клампим 80..300, как в Pulse).
@@ -1917,6 +2019,7 @@ function sa3FireShot(targetPlayer)
         shoot:FireServer(cf, CFrame.new(pos))
     end)
     SA3Bypass = false
+    if ok then cwhTracer(origin, pos) end -- [v1.10] след пули
     return ok
 end
 
@@ -2103,10 +2206,75 @@ Tabs.Combat:AddSlider("SA3ForceInt", {
     Title = "Force Shoot интервал (сек)", Default = 1.0, Min = 0.3, Max = 5, Rounding = 1,
     Callback = function(v) SA3.ForceInterval = v end
 })
--- [v1.9] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
+-- [v1.10] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
+-- (дефолт 8 — в v1.9 стояло 15 и Force Shoot частенько промахивался)
 Tabs.Combat:AddSlider("SA3ForceOffset", {
-    Title = "Force origin (studs)", Default = 15, Min = 3, Max = 40, Rounding = 0,
+    Title = "Force origin (studs)", Default = 8, Min = 3, Max = 40, Rounding = 0,
     Callback = function(v) SA3.ForceOffset = v end
+})
+
+-- ═══ [v1.10] BULLET TRACER (из Pulse): след пули после выстрела ═══
+Tabs.Combat:AddToggle("BTOn", {
+    Title = "Bullet Tracer (Pulse)",
+    Description = "Цветная полоса-след пули после каждого выстрела (Force Shoot / Shoot Murderer / кнопка)",
+    Default = false
+}):OnChanged(function(v) TR.On = v end)
+Tabs.Combat:AddDropdown("BTStyle", {
+    Title = "Tracer Style",
+    Description = "Classic — обычная полоса, Energy — светящаяся",
+    Values = { "Classic", "Energy" },
+    Default = "Energy",
+    Callback = function(v) TR.Style = v end
+})
+Tabs.Combat:AddDropdown("BTColor", {
+    Title = "Цвет трейсера",
+    Values = { "Красный", "Зелёный", "Синий", "Белый", "Жёлтый", "Оранжевый", "Розовый", "Фиолетовый" },
+    Default = "Красный",
+    Callback = function(v) TR.ColorName = v end
+})
+Tabs.Combat:AddToggle("BTRainbow", {
+    Title = "🌈 Радуга",
+    Description = "Цвет трейсера переливается по всему спектру",
+    Default = false
+}):OnChanged(function(v) TR.Rainbow = v end)
+Tabs.Combat:AddSlider("BTLife", {
+    Title = "Исчезает через (сек)", Default = 1.2, Min = 0.3, Max = 4, Rounding = 1,
+    Callback = function(v) TR.Life = v end
+})
+Tabs.Combat:AddSlider("BTWidth", {
+    Title = "Толщина (%)", Default = 100, Min = 40, Max = 250, Rounding = 0,
+    Callback = function(v) TR.Width = v end
+})
+Tabs.Combat:AddSlider("BTSpeed", {
+    Title = "Скорость пули (st/s)", Default = 520, Min = 150, Max = 1500, Rounding = 0,
+    Callback = function(v) TR.Speed = v end
+})
+Tabs.Combat:AddButton({
+    Title = "👁 Preview Tracer",
+    Description = "Показать трейсер до ближайшего игрока (без выстрела)",
+    Callback = function()
+        task.spawn(function()
+            pcall(function()
+                local my = getHRP(getChar(LocalPlayer))
+                local near, nd = nil, math.huge
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer then
+                        local r = getHRP(p.Character)
+                        if r then
+                            local d = (r.Position - my.Position).Magnitude
+                            if d < nd then near, nd = r.Position, d end
+                        end
+                    end
+                end
+                if my and near then
+                    cwhTracer(my.Position, near)
+                    Notify("Tracer", "Превью трейсера", nil, 2)
+                else
+                    Notify("Tracer", "Рядом никого нет", nil, 2)
+                end
+            end)
+        end)
+    end
 })
 Tabs.Combat:AddButton({
     Title = "🔍 Debug WeaponService",
@@ -4081,8 +4249,9 @@ local function doShoot()
     task.delay(1.2, function()
         pcall(function() smb.Text = "Shoot Murderer" end)
     end)
-    -- прямой выстрел ремоутом Shoot в Murderer (SA3/Pulse-метод — пробивает стены)
-    local ok = sa3FireShot(mur)
+    -- прямой выстрел ремоутом Shoot в Murderer (SA3/Pulse-метод — пробивает стены);
+    -- [v1.10] origin НАД головой мардера — пуля летит сверху вниз, как раньше
+    local ok = sa3FireShot(mur, true)
     shooting = false
 
     if ok then
@@ -5932,5 +6101,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.9 | Obsidian UI | V4-предикт | Griddy + бандлы | меню: LeftAlt (или своя клавиша)", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.10 | трейсеры пуль | конфиги в Settings | Shoot Murderer — над головой", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
