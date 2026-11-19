@@ -1,6 +1,4 @@
-
-
-   print("[CWH] START — правильный скрипт выполняется (v1.10: Shoot Murderer над головой, Bullet Tracer из Pulse, конфиги SaveManager, Force origin 8, анти-телепорт V4)")
+print("[CWH] START — правильный скрипт выполняется (v1.11: Force Shoot удалён, валбэнг-система сайлента, умный предикт, Spectate, Visual 2 (SkyFX из Pulse), Fly, Gun Aura, лобби 16/520/15, длина трейсера)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -83,7 +81,7 @@ end
 function Fluent:CreateWindow(cfg)
     local win = OBS:CreateWindow({
         Title = cfg.Title or "Crows Hub",
-        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.10 | Obsidian",
+        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.11 | Obsidian",
         ToggleKeybind = cfg.MinimizeKey or Enum.KeyCode.LeftAlt, -- [v1.9] дефолт LeftAlt, меняется в Settings
         MobileButtonsSide = "Left", -- [v1.9] кнопки ЛОК + ТОГГЛ на телефоне
         NotifySide = "Right",
@@ -185,7 +183,7 @@ end
 -- Голова трейсера летит от origin к цели со скоростью Speed (st/s), за ней тянется
 -- хвост; всё исчезает через Life секунд. Цвет/толщина/стиль — в Combat.
 local TR = { On = false, Life = 1.2, Width = 100, Speed = 520, Rainbow = false,
-             Style = "Energy", ColorName = "Красный" }
+             Style = "Energy", ColorName = "Красный", Tail = 30 }
 local TR_COLORS = {
     ["Красный"] = Color3.fromRGB(255, 80, 80), ["Зелёный"] = Color3.fromRGB(80, 255, 120),
     ["Синий"] = Color3.fromRGB(80, 140, 255), ["Белый"] = Color3.fromRGB(240, 240, 240),
@@ -238,7 +236,7 @@ local function cwhTracer(from, to)
                 local el = os.clock() - t0
                 local headT = math.min(1, el * TR.Speed / dist)
                 headPart.CFrame = CFrame.new(from:Lerp(to, headT))
-                local tailLen = math.min(dist * 0.35, 24)
+                local tailLen = math.max(0.5, math.min(TR.Tail or 30, dist)) -- [v1.11] длина полосы слайдером
                 local tailT = math.clamp((headT * dist - tailLen) / dist, 0, 1)
                 tailPart.CFrame = CFrame.new(from:Lerp(to, tailT))
                 if TR.Rainbow then
@@ -380,7 +378,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.1a by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -455,6 +453,8 @@ local Tabs = {
     Main = Window:AddTab({ Title = "Main", Icon = "user" }),
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     World = Window:AddTab({ Title = "World", Icon = "globe" }),
+    Spectate = Window:AddTab({ Title = "Spectate", Icon = "video" }),   -- [v1.11] следить за игроками
+    Visuals2 = Window:AddTab({ Title = "Visual 2", Icon = "sparkles" }), -- [v1.11] ауры/небо из Pulse
     Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
     Farm = Window:AddTab({ Title = "Auto Farm", Icon = "coins" }),
     Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
@@ -1098,6 +1098,10 @@ Tabs.World:AddButton({
                 for _, v in ipairs(sp:GetChildren()) do
                     if v:IsA("BasePart") then hrp.CFrame = v.CFrame + Vector3.new(0, 5, 0) break end
                 end
+            else
+                -- [v1.11] MM2 обновился: спавны лобби не нашлись — фиксированная точка
+                pcall(function() hrp.CFrame = CFrame.new(16, 520, 15) end)
+                pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
             end
         elseif tpTarget == "Map Spawn" then
             local m = getMap()
@@ -1128,11 +1132,11 @@ Tabs.World:AddButton({
     end
 })
 
--- [v1.3] ТП в лобби по ФИКСИРОВАННЫМ координатам из Crows Lite (564, 462, 1) —
--- работает всегда, даже когда getLobby() не находит спавны лобби
+-- [v1.11] ТП в лобби по ФИКСИРОВАННЫМ координатам (16, 520, 15) —
+-- MM2 обновился, старые 564, 462, 1 больше не работают
 Tabs.World:AddButton({
     Title = "🏠 Телепорт в лобби (координаты фермы)",
-    Description = "Фиксированная точка лобби 564, 462, 1 — та же, что в Crows Lite",
+    Description = "Фиксированная точка лобби 16, 520, 15 — после обновления MM2",
     Callback = function()
         task.spawn(function()
             local hrp = getHRP(getChar(LocalPlayer))
@@ -1140,9 +1144,9 @@ Tabs.World:AddButton({
                 Notify("Телепорт", "Персонаж не найден", nil, 3)
                 return
             end
-            pcall(function() hrp.CFrame = CFrame.new(564, 462, 1) end)
+            pcall(function() hrp.CFrame = CFrame.new(16, 520, 15) end)
             pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
-            Notify("Телепорт", "В лобби (координаты фермы)!", nil, 2)
+            Notify("Телепорт", "В лобби (16, 520, 15)!", nil, 2)
         end)
     end
 })
@@ -1832,7 +1836,7 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 -- ═══════════════════════════════════════════════════════════════
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
-              Spoof = false, ForceOn = false, ForceInterval = 1.0, ForceLast = 0,
+              Spoof = false, Smart = true,
               V4 = true, V4Lead = 0.05, ForceOffset = 8 }
 
 -- ═══ [v1.9] SA4-PRED: ядро предсказания из нового Pulse (V4-движок) ═══
@@ -1949,11 +1953,16 @@ local function sa3AimPos(targetPlayer)
             pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
             if ping > 1 then ping = ping / 1000 end
             local dt = ping + (SA3.V4Lead or 0.05)
-            if SA3.V4 then
-                -- [v1.9] V4-предикт Pulse: сглаженная скорость + ускорение
+            local vel = root.AssemblyLinearVelocity or Vector3.zero
+            -- [v1.11] умный предикт: стоит (<2 st/s) → точно в AimPart (торс/голова),
+            -- идёт → перехват по вектору скорости (пуля летит «с изгибом-упреждением»,
+            -- но долетает и попадает — как просил)
+            if SA3.Smart and Vector3.new(vel.X, 0, vel.Z).Magnitude < 2 then
+                pos = part.Position
+            elseif SA3.V4 then
                 pos = pred4Pos(t, pos, dt)
             else
-                pos = pos + (root.AssemblyLinearVelocity or Vector3.zero) * dt
+                pos = pos + vel * dt
             end
         end
     end
@@ -2102,38 +2111,10 @@ task.spawn(function()
     end
 end)
 
--- [v1.8] FORCE SHOOT (метод из shitaro: can_force-проверки + ПРЯМОЙ вызов
--- shoot + проверка, что сервер принял): сам стреляет по Murderer ремоутом
--- Shoot через стены (spoof/wallbang origin), когда ванильный клиент не даёт
--- выстрелить. Интервал ставится слайдером ниже.
-task.spawn(function()
-    while task.wait(0.1) do
-        if not getgenv().CWH_RUN then break end
-        if SA3.On and SA3.ForceOn then
-            local now = os.clock()
-            if now - SA3.ForceLast >= SA3.ForceInterval then
-                -- can_force (shitaro): цель жива И у нас есть чем стрелять
-                local mur = getMurderer()
-                local mc = mur and getChar(mur)
-                local mhum = mc and getHum(mc)
-                local mhrp = mc and getHRP(mc)
-                local alive = mhum and mhum.Health > 0 and mhrp
-                local myc = getChar(LocalPlayer)
-                local mybp = LocalPlayer:FindFirstChild("Backpack")
-                local hasGun = (myc and myc:FindFirstChild("Gun"))
-                    or (mybp and mybp:FindFirstChild("Gun"))
-                if alive and hasGun then
-                    SA3.ForceLast = now
-                    local ok = sa3FireShot(mur)
-                    if not ok then
-                        -- сервер не принял — как в shitaro: ретраим на следующем интервале
-                        print("[CWH] Force Shoot: выстрел не прошёл, ретрай")
-                    end
-                end
-            end
-        end
-    end
-end)
+-- [v1.11] FORCE SHOOT УДАЛЁН (просил убрать): валбэнг теперь — единая система
+-- сайлента: Silent Aim + Wallbang → клик/тап стреляет сквозь стены с spoof-origin
+-- (ветка SA3.Spoof/Wallbang в sa3FireShot, origin по вектору скорости — spoofPlan
+-- из нового Pulse). Auto Shoot выше продолжает работать.
 
 Tabs.Combat:AddSection("Silent Aim v3 (Pulse)")
 Tabs.Combat:AddToggle("SA3On", { Title = "Enable Silent Aim", Default = false })
@@ -2196,20 +2177,17 @@ Tabs.Combat:AddToggle("SA3Spoof", {
     Description = "[v1.8] Пуля летит вдоль траектории жертвы и проходит сквозь неё (как spoofPlan в Pulse)",
     Default = false
 }):OnChanged(function(v) SA3.Spoof = v end)
--- [v1.8] Force Shoot (shitaro): can_force + прямой выстрел ремоутом
-Tabs.Combat:AddToggle("SA3Force", {
-    Title = "Force Shoot (Shitaro)",
-    Description = "[v1.8] Сам стреляет по Murderer прямым ремоутом Shoot через стены (can_force-проверки как в shitaro)",
-    Default = false
-}):OnChanged(function(v) SA3.ForceOn = v end)
-Tabs.Combat:AddSlider("SA3ForceInt", {
-    Title = "Force Shoot интервал (сек)", Default = 1.0, Min = 0.3, Max = 5, Rounding = 1,
-    Callback = function(v) SA3.ForceInterval = v end
-})
+-- [v1.11] Force Shoot (тоггл + интервал) удалены; остался только origin-слайдер
+-- [v1.11] умный предикт: стоит → точно в торс/голову, идёт → перехват по скорости
+Tabs.Combat:AddToggle("SA3Smart", {
+    Title = "🧠 Умный предикт",
+    Description = "Мардер стоит — пуля точно в AimPart (торс/голова). Пошёл — перехват по вектору скорости с учётом пинга",
+    Default = true
+}):OnChanged(function(v) SA3.Smart = v end)
 -- [v1.10] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
--- (дефолт 8 — в v1.9 стояло 15 и Force Shoot частенько промахивался)
+-- (используется веткой spoof/wallbang в sa3FireShot)
 Tabs.Combat:AddSlider("SA3ForceOffset", {
-    Title = "Force origin (studs)", Default = 8, Min = 3, Max = 40, Rounding = 0,
+    Title = "Wallbang origin (studs)", Default = 8, Min = 3, Max = 40, Rounding = 0,
     Callback = function(v) SA3.ForceOffset = v end
 })
 
@@ -2240,6 +2218,11 @@ Tabs.Combat:AddToggle("BTRainbow", {
 Tabs.Combat:AddSlider("BTLife", {
     Title = "Исчезает через (сек)", Default = 1.2, Min = 0.3, Max = 4, Rounding = 1,
     Callback = function(v) TR.Life = v end
+})
+-- [v1.11] длина полосы: от крошечной (2 studs) до длинной трассы (250 studs)
+Tabs.Combat:AddSlider("BTTail", {
+    Title = "Длина полосы (studs)", Default = 30, Min = 2, Max = 250, Rounding = 0,
+    Callback = function(v) TR.Tail = v end
 })
 Tabs.Combat:AddSlider("BTWidth", {
     Title = "Толщина (%)", Default = 100, Min = 40, Max = 250, Rounding = 0,
@@ -5162,7 +5145,8 @@ do -- ═══ [CWH SCOPE] G9c: Система кейбиндов + кнопк�
 local KB_MAP = {}  -- KeyCode -> функция
 local DIGIT_NAMES = { ["0"] = "Zero", ["1"] = "One", ["2"] = "Two", ["3"] = "Three",
     ["4"] = "Four", ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine" }
-getgenv().CWH_Keybinds = { SG = "нет", Dual = "нет", Invis = "нет", Shoot = "нет" }
+getgenv().CWH_Keybinds = { SG = "нет", Dual = "нет", Invis = "нет", Shoot = "нет",
+                           Fly = "нет", Spec = "нет" } -- [v1.11] +Fly/Spec
 
 local function kbResolve(txt)
     local s = tostring(txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -5189,6 +5173,18 @@ local KB_ITEMS = {
     { key = "Dual",  title = "🗡 Dual Weapon",    fn = function() pcall(getgenv().CWH_ToggleDual) end },
     { key = "Invis", title = "👻 Invisibility",   fn = function() pcall(getgenv().CWH_ToggleInvis) end },
     { key = "Shoot", title = "🎯 Shoot Murderer", fn = function() pcall(getgenv().CWH_ShootMurderer) end },
+    -- [v1.11] Fly: тоггл полёта; Spec: следить за мардером / вернуть камеру
+    { key = "Fly",  title = "✈ Fly", fn = function() pcall(getgenv().CWH_ToggleFly) end },
+    { key = "Spec", title = "🎬 Spectate Murderer", fn = function()
+        pcall(function()
+            if getgenv().CWH_SpecOn and getgenv().CWH_SpecOn() then
+                getgenv().CWH_SpecStop()
+                Notify("Spectate", "Камера вернулась к тебе", nil, 2)
+            elseif getgenv().CWH_SpecStart then
+                getgenv().CWH_SpecStart(getMurderer())
+            end
+        end)
+    end },
 }
 
 local function kbBind(item, txt)
@@ -6020,6 +6016,564 @@ end)
 print("[CWH] INIT G9g OK (Potato Mode)")
 end -- [CWH SCOPE] G9g
 
+do -- ═══ [CWH SCOPE] G10: SPECTATE (следим за игроком) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.11] Камера следует за выбранным игроком (мардером/шерифом/кем угодно).
+-- Выход — кнопка «Стоп» или цель вышла из игры: камера сама вернётся к тебе.
+local specSel = nil      -- имя выбранного игрока (из дропдауна)
+local specTarget = nil   -- Player, за которым следим
+local specOn = false
+local specConn = nil
+
+local function specStop()
+    specOn = false
+    if specConn then pcall(function() specConn:Disconnect() end) specConn = nil end
+    local c = getChar(LocalPlayer)
+    local hum = c and getHum(c)
+    if hum then pcall(function() workspace.CurrentCamera.CameraSubject = hum end) end
+end
+
+local function specStart(pl)
+    specStop()
+    if not pl then
+        Notify("Spectate", "Игрок не найден", nil, 3)
+        return
+    end
+    specTarget = pl
+    specOn = true
+    specConn = RunService.RenderStepped:Connect(function()
+        if not specOn then return end
+        local tc = specTarget and specTarget.Character
+        local thum = tc and getHum(tc)
+        if thum then
+            pcall(function() workspace.CurrentCamera.CameraSubject = thum end)
+        else
+            -- цель вышла/удалилась — вернуть камеру и погасить тоггл
+            specStop()
+            pcall(function()
+                local T = OBS.Toggles
+                if T and T["SpecWatch"] then T["SpecWatch"]:SetValue(false) end
+            end)
+            Notify("Spectate", "Цель пропала — камера вернулась к тебе", nil, 2)
+        end
+    end)
+    Notify("Spectate", "👀 Смотрим: " .. pl.Name, nil, 2)
+end
+getgenv().CWH_SpecStart = specStart
+getgenv().CWH_SpecStop = specStop
+getgenv().CWH_SpecOn = function() return specOn end
+
+Tabs.Spectate:AddSection("🎬 Spectate — следим за игроком")
+local function specList()
+    local n = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(n, p.Name) end
+    end
+    return n
+end
+local specDD = Tabs.Spectate:AddDropdown("SpecTargetDD", {
+    Title = "Игрок",
+    Description = "Выбери, за кем следить; список обновляется кнопкой ниже",
+    Values = specList(),
+    Default = nil,
+    Callback = function(v) specSel = v end
+})
+Tabs.Spectate:AddButton({
+    Title = "🔄 Обновить список",
+    Description = "Заново собрать всех игроков на сервере",
+    Callback = function()
+        pcall(function() specDD:SetValues(specList()) end)
+        Notify("Spectate", "Список обновлён", nil, 2)
+    end
+})
+Tabs.Spectate:AddToggle("SpecWatch", {
+    Title = "👀 Следить (Spectate)",
+    Description = "ВКЛ — камера у выбранного игрока, ВЫКЛ — вернуть камеру себе",
+    Default = false
+}):OnChanged(function(v)
+    if v then
+        specStart(specSel and Players:FindFirstChild(specSel) or nil)
+    else
+        specStop()
+    end
+end)
+Tabs.Spectate:AddButton({
+    Title = "👀 Следить за Murderer",
+    Description = "Автоматически находит мардера и ведёт камеру за ним",
+    Callback = function()
+        local mur = getMurderer()
+        if mur then
+            pcall(function()
+                local T = OBS.Toggles
+                if T and T["SpecWatch"] then T["SpecWatch"]:SetValue(true) end
+            end)
+            specSel = mur.Name
+            specStart(mur)
+        else
+            Notify("Spectate", "Murderer ещё не известен", nil, 3)
+        end
+    end
+})
+Tabs.Spectate:AddButton({
+    Title = "👀 Следить за Sheriff",
+    Description = "Автоматически находит шерифа и ведёт камеру за ним",
+    Callback = function()
+        local shf = getSheriff()
+        if shf then
+            pcall(function()
+                local T = OBS.Toggles
+                if T and T["SpecWatch"] then T["SpecWatch"]:SetValue(true) end
+            end)
+            specSel = shf.Name
+            specStart(shf)
+        else
+            Notify("Spectate", "Sheriff ещё не известен", nil, 3)
+        end
+    end
+})
+print("[CWH] INIT G10 OK (Spectate)")
+end -- [CWH SCOPE] G10
+
+do -- ═══ [CWH SCOPE] G11: VISUAL 2 (освещение + SkyFX из Pulse) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.11] Освещение (FullBright/время/туман/атмосфера) + небо из Pulse:
+-- звёзды, падающие звёзды, кометы, пыль (текстуры прямо из SKY_FX_TEXTURES).
+local Lighting = game:GetService("Lighting")
+
+local savedLight = nil
+local function lightSave()
+    if savedLight then return end
+    savedLight = {
+        Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
+        Brightness = Lighting.Brightness, FogEnd = Lighting.FogEnd,
+        FogStart = Lighting.FogStart, ClockTime = Lighting.ClockTime,
+        GlobalShadows = Lighting.GlobalShadows,
+    }
+    pcall(function()
+        local at = Lighting:FindFirstChildOfClass("Atmosphere")
+        if at then savedLight.AtmoDensity = at.Density end
+    end)
+end
+
+local function lightRestore()
+    if not savedLight then return end
+    pcall(function()
+        for k, v in pairs(savedLight) do
+            if k ~= "AtmoDensity" then Lighting[k] = v end
+        end
+        local at = Lighting:FindFirstChildOfClass("Atmosphere")
+        if at and savedLight.AtmoDensity then at.Density = savedLight.AtmoDensity end
+    end)
+    savedLight = nil
+end
+
+Tabs.Visuals2:AddSection("💡 Освещение")
+local VB = { FullBright = false, NoFog = false }
+Tabs.Visuals2:AddToggle("VBFullBright", {
+    Title = "☀ FullBright",
+    Description = "Всё светло, теней нет — видно в тёмных углах",
+    Default = false
+}):OnChanged(function(v)
+    VB.FullBright = v
+    if v then
+        lightSave()
+        pcall(function()
+            Lighting.Brightness = 3
+            Lighting.Ambient = Color3.fromRGB(140, 140, 140)
+            Lighting.OutdoorAmbient = Color3.fromRGB(140, 140, 140)
+            Lighting.GlobalShadows = false
+        end)
+    else
+        lightRestore()
+    end
+end)
+Tabs.Visuals2:AddToggle("VBNoFog", {
+    Title = "🌫 Убрать туман",
+    Description = "Дальность прорисовки — до горизонта",
+    Default = false
+}):OnChanged(function(v)
+    VB.NoFog = v
+    if v then
+        lightSave()
+        pcall(function()
+            Lighting.FogEnd = 100000
+            Lighting.FogStart = 0
+        end)
+    else
+        lightRestore()
+    end
+end)
+Tabs.Visuals2:AddSlider("VBBrightness", {
+    Title = "Яркость", Default = 1, Min = 1, Max = 15, Rounding = 0,
+    Callback = function(v)
+        pcall(function() Lighting.Brightness = v end)
+    end
+})
+Tabs.Visuals2:AddSlider("VBTime", {
+    Title = "Время суток (часы)", Default = 14, Min = 0, Max = 24, Rounding = 1,
+    Callback = function(v)
+        pcall(function() Lighting.ClockTime = v end)
+    end
+})
+Tabs.Visuals2:AddSlider("VBAtmo", {
+    Title = "Атмосфера (плотность)", Default = 0.4, Min = 0, Max = 1, Rounding = 2,
+    Callback = function(v)
+        pcall(function()
+            local at = Lighting:FindFirstChildOfClass("Atmosphere")
+            if at then at.Density = v end
+        end)
+    end
+})
+
+-- ── SkyFX из Pulse ──
+local TEX = { dot = "rbxassetid://16512006463", soft = "rbxassetid://1075864321",
+              spark = "rbxassetid://14590086212", sharp = "rbxassetid://17391818367" }
+local TINTS = {
+    Natural = { Color3.fromRGB(232, 240, 255), Color3.fromRGB(170, 200, 255), Color3.fromRGB(255, 226, 190) },
+    Cold = { Color3.fromRGB(205, 225, 255), Color3.fromRGB(140, 185, 255), Color3.fromRGB(190, 240, 255) },
+    Warm = { Color3.fromRGB(255, 238, 214), Color3.fromRGB(255, 205, 150), Color3.fromRGB(255, 180, 140) },
+    Pastel = { Color3.fromRGB(255, 205, 236), Color3.fromRGB(195, 255, 232), Color3.fromRGB(214, 196, 255) },
+}
+local DUST = {
+    Gold = { Color3.fromRGB(255, 220, 130), Color3.fromRGB(255, 190, 90) },
+    Silver = { Color3.fromRGB(235, 242, 255), Color3.fromRGB(190, 210, 255) },
+    Pink = { Color3.fromRGB(255, 170, 220), Color3.fromRGB(255, 120, 190) },
+    Aqua = { Color3.fromRGB(140, 255, 235), Color3.fromRGB(110, 200, 255) },
+}
+local SKY = { Stars = false, StarDensity = 60, StarTint = "Natural",
+              Meteors = false, Comets = false, Dust = false, DustSet = "Gold" }
+
+local skyHost, emStars, emMeteors, emComets = nil, nil, nil, nil
+local dustPart, dustConn, dustEm = nil, nil, nil
+
+local function skySeq(t)
+    return ColorSequence.new(t[1], t[2], t[3])
+end
+
+local function skyHostPart()
+    if skyHost and skyHost.Parent then return skyHost end
+    local p = Instance.new("Part")
+    p.Name = "CWH_SkyFX_Host"
+    p.Anchored = true
+    p.CanCollide = false
+    p.CanQuery = false
+    p.CanTouch = false
+    p.CastShadow = false
+    p.Transparency = 1
+    p.Size = Vector3.new(650, 650, 650)
+    local cf = nil
+    local m = getMap()
+    if m then
+        pcall(function() cf = m:GetModelCFrame() end)
+        if not cf then
+            local pp = m:FindFirstChildWhichIsA("BasePart", true)
+            if pp then cf = pp.CFrame end
+        end
+    end
+    if not cf then cf = CFrame.new(0, 200, 0) end
+    p.CFrame = cf + Vector3.new(0, 380, 0)
+    p.Parent = workspace
+    skyHost = p
+    return p
+end
+
+local function mkEmitter(host, props)
+    local e = Instance.new("ParticleEmitter")
+    for k, v in pairs(props) do e[k] = v end
+    e.Parent = host
+    return e
+end
+
+local function skyApply()
+    -- Звёзды: статичные точки в объёме неба (LockedToPart, как в Pulse)
+    if SKY.Stars then
+        local host = skyHostPart()
+        if not emStars then
+            emStars = mkEmitter(host, {
+                Texture = TEX.dot, LightEmission = 1, LightInfluence = 0,
+                LockedToPart = true, Rate = SKY.StarDensity,
+                Lifetime = NumberRange.new(9, 12),
+                Speed = NumberRange.new(0.05, 0.15),
+                Size = NumberSequence.new(3.2, 3.2),
+                Transparency = NumberSequence.new(0.25, 0.25),
+                Rotation = NumberRange.new(0, 360), RotSpeed = NumberRange.new(-4, 4),
+            })
+        end
+        emStars.Rate = SKY.StarDensity
+        emStars.Color = skySeq(TINTS[SKY.StarTint] or TINTS.Natural)
+        emStars.Enabled = true
+    elseif emStars then
+        emStars.Enabled = false
+    end
+    -- Падающие звёзды: редкие быстрые искры сверху вниз
+    if SKY.Meteors then
+        local host = skyHostPart()
+        if not emMeteors then
+            emMeteors = mkEmitter(host, {
+                Texture = TEX.spark, LightEmission = 1, LightInfluence = 0,
+                Rate = 3, LockedToPart = false, EmissionDirection = Enum.NormalId.Bottom,
+                Lifetime = NumberRange.new(1.6, 2.4), Speed = NumberRange.new(90, 140),
+                Acceleration = Vector3.new(0, -60, 0),
+                Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4),
+                    NumberSequenceKeypoint.new(0.5, 1.6), NumberSequenceKeypoint.new(1, 0) }),
+                Transparency = NumberSequence.new(0, 0.3),
+            })
+        end
+        emMeteors.Color = skySeq(TINTS[SKY.StarTint] or TINTS.Natural)
+        emMeteors.Enabled = true
+    elseif emMeteors then
+        emMeteors.Enabled = false
+    end
+    -- Кометы: крупные медленные
+    if SKY.Comets then
+        local host = skyHostPart()
+        if not emComets then
+            emComets = mkEmitter(host, {
+                Texture = TEX.sharp, LightEmission = 1, LightInfluence = 0,
+                Rate = 2, LockedToPart = false, EmissionDirection = Enum.NormalId.Bottom,
+                Lifetime = NumberRange.new(2.5, 3.5), Speed = NumberRange.new(55, 80),
+                Acceleration = Vector3.new(0, -35, 0),
+                Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8),
+                    NumberSequenceKeypoint.new(0.5, 3.5), NumberSequenceKeypoint.new(1, 0) }),
+                Transparency = NumberSequence.new(0, 0.35),
+            })
+        end
+        emComets.Color = ColorSequence.new(Color3.fromRGB(120, 210, 255))
+        emComets.Enabled = true
+    elseif emComets then
+        emComets.Enabled = false
+    end
+    -- Пыль: мягкие частицы вокруг персонажа
+    if SKY.Dust then
+        if not dustPart then
+            dustPart = Instance.new("Part")
+            dustPart.Name = "CWH_Dust_Host"
+            dustPart.Anchored = true
+            dustPart.CanCollide = false
+            dustPart.CanQuery = false
+            dustPart.CanTouch = false
+            dustPart.CastShadow = false
+            dustPart.Transparency = 1
+            dustPart.Size = Vector3.new(14, 14, 14)
+            dustEm = mkEmitter(dustPart, {
+                Texture = TEX.soft, LightEmission = 1, LightInfluence = 0,
+                Rate = 22, LockedToPart = true,
+                Lifetime = NumberRange.new(2.5, 3.5), Speed = NumberRange.new(0.6, 1.6),
+                Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4),
+                    NumberSequenceKeypoint.new(0.5, 1.4), NumberSequenceKeypoint.new(1, 0) }),
+                Transparency = NumberSequence.new(0.35, 0.55),
+            })
+            dustPart.Parent = workspace
+        end
+        dustEm.Color = skySeq(DUST[SKY.DustSet] or DUST.Gold)
+        dustEm.Enabled = true
+        if not dustConn then
+            dustConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local hrp = getHRP(getChar(LocalPlayer))
+                    if hrp and dustPart and dustPart.Parent then
+                        dustPart.CFrame = hrp.CFrame
+                    end
+                end)
+            end)
+        end
+    elseif dustPart then
+        if dustEm then dustEm.Enabled = false end
+        if dustConn then pcall(function() dustConn:Disconnect() end) dustConn = nil end
+        pcall(function() dustPart:Destroy() end)
+        dustPart, dustEm = nil, nil
+    end
+end
+
+local function skyCleanup()
+    pcall(function() if skyHost then skyHost:Destroy() end end)
+    skyHost, emStars, emMeteors, emComets = nil, nil, nil, nil
+end
+
+Tabs.Visuals2:AddSection("🌌 Небо (SkyFX из Pulse)")
+Tabs.Visuals2:AddToggle("SkyStars", {
+    Title = "⭐ Звёзды",
+    Description = "Небо заполняется мерцающими звёздами",
+    Default = false
+}):OnChanged(function(v) SKY.Stars = v skyApply() end)
+Tabs.Visuals2:AddSlider("SkyStarDensity", {
+    Title = "Плотность звёзд (%)", Default = 60, Min = 10, Max = 200, Rounding = 0,
+    Callback = function(v) SKY.StarDensity = v if emStars then emStars.Rate = v end end
+})
+Tabs.Visuals2:AddDropdown("SkyStarTint", {
+    Title = "Цвет звёзд",
+    Values = { "Natural", "Cold", "Warm", "Pastel" },
+    Default = "Natural",
+    Callback = function(v)
+        SKY.StarTint = v
+        if emStars then emStars.Color = skySeq(TINTS[v] or TINTS.Natural) end
+        if emMeteors then emMeteors.Color = skySeq(TINTS[v] or TINTS.Natural) end
+    end
+})
+Tabs.Visuals2:AddToggle("SkyMeteors", {
+    Title = "🌠 Падающие звёзды",
+    Description = "Редкие искры летят сверху вниз",
+    Default = false
+}):OnChanged(function(v) SKY.Meteors = v skyApply() end)
+Tabs.Visuals2:AddToggle("SkyComets", {
+    Title = "☄ Кометы",
+    Description = "Крупные медленные хвосты через небо",
+    Default = false
+}):OnChanged(function(v) SKY.Comets = v skyApply() end)
+Tabs.Visuals2:AddToggle("SkyDust", {
+    Title = "✨ Пыль вокруг тебя",
+    Description = "Мягкие частицы кружатся рядом с персонажем",
+    Default = false
+}):OnChanged(function(v) SKY.Dust = v skyApply() end)
+Tabs.Visuals2:AddDropdown("SkyDustSet", {
+    Title = "Цвет пыли",
+    Values = { "Gold", "Silver", "Pink", "Aqua" },
+    Default = "Gold",
+    Callback = function(v)
+        SKY.DustSet = v
+        if dustEm then dustEm.Color = skySeq(DUST[v] or DUST.Gold) end
+    end
+})
+Tabs.Visuals2:AddButton({
+    Title = "↩ Вернуть как было",
+    Description = "Выключить всё небо и вернуть исходное освещение",
+    Callback = function()
+        SKY.Stars, SKY.Meteors, SKY.Comets, SKY.Dust = false, false, false, false
+        skyApply()
+        skyCleanup()
+        VB.FullBright, VB.NoFog = false, false
+        lightRestore()
+        pcall(function()
+            local T = OBS.Toggles
+            if T then
+                for _, id in ipairs({ "VBFullBright", "VBNoFog", "SkyStars", "SkyMeteors", "SkyComets", "SkyDust" }) do
+                    if T[id] then T[id]:SetValue(false) end
+                end
+            end
+        end)
+        Notify("Visual 2", "Освещение и небо вернул как было", nil, 2)
+    end
+})
+print("[CWH] INIT G11 OK (Visual 2)")
+end -- [CWH SCOPE] G11
+
+do -- ═══ [CWH SCOPE] G12: FLY (полёт из Overdrive) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.11] WASD/джойстик — движение (Humanoid.MoveDirection сам понимает
+-- камеру и мобильный стик), Space/прыжок — вверх, Ctrl/Shift — вниз.
+local flyOn, flySpeed = false, 80
+
+local function flyStop()
+    local c = getChar(LocalPlayer)
+    local hrp = c and getHRP(c)
+    if hrp then pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end) end
+end
+
+local function flyToggle()
+    flyOn = not flyOn
+    pcall(function()
+        local T = OBS.Toggles
+        if T and T["CWHFlyOn"] then T["CWHFlyOn"]:SetValue(flyOn) end
+    end)
+    if not flyOn then flyStop() end
+    Notify("Fly", flyOn and ("✈ ВКЛ (" .. tostring(flySpeed) .. " st/s): Space — вверх, Ctrl/Shift — вниз")
+        or "ВЫКЛ", nil, 3)
+end
+getgenv().CWH_ToggleFly = flyToggle
+getgenv().CWH_FlyOn = function() return flyOn end
+
+task.spawn(function()
+    while task.wait() do
+        if not getgenv().CWH_RUN then break end
+        if flyOn then
+            pcall(function()
+                local c = getChar(LocalPlayer)
+                local hrp = getHRP(c)
+                local hum = getHum(c)
+                if not (hrp and hum and hum.Health > 0) then return end
+                local md = hum.MoveDirection
+                local y = 0
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) or hum.Jump then y = 1 end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+                    or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then y = -1 end
+                local dir = Vector3.new(md.X, y, md.Z)
+                if dir.Magnitude > 0.05 then
+                    hrp.AssemblyLinearVelocity = dir.Unit * flySpeed
+                else
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                end
+            end)
+        end
+    end
+end)
+
+Tabs.Main:AddSection("✈ Fly (Overdrive)")
+Tabs.Main:AddToggle("CWHFlyOn", {
+    Title = "Fly",
+    Description = "Полёт: WASD/джойстик — движение, Space/прыжок — вверх, Ctrl/Shift — вниз. Кейбинд — в Other → Кейбинды",
+    Default = false
+}):OnChanged(function(v)
+    flyOn = v
+    if not v then flyStop() end
+end)
+Tabs.Main:AddSlider("CWHFlySpeed", {
+    Title = "Скорость полёта (st/s)", Default = 80, Min = 10, Max = 250, Rounding = 0,
+    Callback = function(v) flySpeed = v end
+})
+print("[CWH] INIT G12 OK (Fly)")
+end -- [CWH SCOPE] G12
+
+do -- ═══ [CWH SCOPE] G13: GUN AURA (магнит к упавшей пушке) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.11] Как коин-аура, только для пистолета: как только GunDrop появился
+-- на карте — пушка подбирается дистанционно (firetouch), чуть дальше —
+-- тебя мягко тянет к ней скоростью (без телепортов).
+local gunAuraOn, gunAuraSpeed = false, 70
+
+task.spawn(function()
+    while task.wait(0.15) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not gunAuraOn then return end
+            local c = getChar(LocalPlayer)
+            local hrp = getHRP(c)
+            local hum = getHum(c)
+            if not (hrp and hum and hum.Health > 0) then return end
+            local farmRef = getgenv().CWH_FarmRef
+            if farmRef and farmRef.Enabled then return end
+            local bp = LocalPlayer:FindFirstChild("Backpack")
+            if (c and c:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun")) then return end
+            local map = getMap()
+            local drop = map and map:FindFirstChild("GunDrop", true)
+            if not drop then return end
+            local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
+            local pos = part and part.Position
+            if not pos then return end
+            local d = (pos - hrp.Position).Magnitude
+            if d < 40 and realFireTouch then
+                realFireTouch(drop, hrp, 1)
+                realFireTouch(drop, hrp, 0)
+            elseif d < 150 then
+                local dir = (pos - hrp.Position) / d
+                pcall(function() hrp.AssemblyLinearVelocity = dir * gunAuraSpeed end)
+            end
+        end)
+    end
+end)
+
+Tabs.World:AddSection("🧲 Gun Aura")
+Tabs.World:AddToggle("CWHGunAura", {
+    Title = "Gun Aura (автоподбор пушки)",
+    Description = "Как только пистолет упал — подбор дистанционно (firetouch) или мягкое притяжение, как коин-аура",
+    Default = false
+}):OnChanged(function(v) gunAuraOn = v end)
+Tabs.World:AddSlider("CWHGunAuraSpeed", {
+    Title = "Скорость притяжения (st/s)", Default = 70, Min = 30, Max = 150, Rounding = 0,
+    Callback = function(v) gunAuraSpeed = v end
+})
+print("[CWH] INIT G13 OK (Gun Aura)")
+end -- [CWH SCOPE] G13
+
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
@@ -6101,5 +6655,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.10 | трейсеры пуль | конфиги в Settings | Shoot Murderer — над головой", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.11 | без форс-шота | Spectate | Visual 2 | Fly | Gun Aura | лобби 16,520,15", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
