@@ -1,4 +1,6 @@
-print("[CWH] START — правильный скрипт выполняется (v1.11: Force Shoot удалён, валбэнг-система сайлента, умный предикт, Spectate, Visual 2 (SkyFX из Pulse), Fly, Gun Aura, лобби 16/520/15, длина трейсера)")
+
+    
+  print("[CWH] START — правильный скрипт выполняется (v1.12: Auto Farm Lite механика, No Coin с кейбиндом, ESP Overdrive (Highlights/Chams + шрифт), ауры Pulse VFX из rbxm, трейсер Shitaro)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -81,7 +83,7 @@ end
 function Fluent:CreateWindow(cfg)
     local win = OBS:CreateWindow({
         Title = cfg.Title or "Crows Hub",
-        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.11 | Obsidian",
+        Footer = (cfg.SubTitle or "Remastered MM2") .. " | v1.12 | Obsidian",
         ToggleKeybind = cfg.MinimizeKey or Enum.KeyCode.LeftAlt, -- [v1.9] дефолт LeftAlt, меняется в Settings
         MobileButtonsSide = "Left", -- [v1.9] кнопки ЛОК + ТОГГЛ на телефоне
         NotifySide = "Right",
@@ -183,7 +185,7 @@ end
 -- Голова трейсера летит от origin к цели со скоростью Speed (st/s), за ней тянется
 -- хвост; всё исчезает через Life секунд. Цвет/толщина/стиль — в Combat.
 local TR = { On = false, Life = 1.2, Width = 100, Speed = 520, Rainbow = false,
-             Style = "Energy", ColorName = "Красный", Tail = 30 }
+             Style = "Energy", ColorName = "Красный", Tail = 30, Kind = "Pulse (полёт)" }
 local TR_COLORS = {
     ["Красный"] = Color3.fromRGB(255, 80, 80), ["Зелёный"] = Color3.fromRGB(80, 255, 120),
     ["Синий"] = Color3.fromRGB(80, 140, 255), ["Белый"] = Color3.fromRGB(240, 240, 240),
@@ -231,22 +233,48 @@ local function cwhTracer(from, to)
             beam.Parent = headPart
             local t0 = os.clock()
             local life = math.clamp(TR.Life, 0.3, 4)
-            local conn
-            conn = RunService.Heartbeat:Connect(function()
-                local el = os.clock() - t0
-                local headT = math.min(1, el * TR.Speed / dist)
-                headPart.CFrame = CFrame.new(from:Lerp(to, headT))
-                local tailLen = math.max(0.5, math.min(TR.Tail or 30, dist)) -- [v1.11] длина полосы слайдером
-                local tailT = math.clamp((headT * dist - tailLen) / dist, 0, 1)
-                tailPart.CFrame = CFrame.new(from:Lerp(to, tailT))
-                if TR.Rainbow then
-                    local hue = (el * 0.35) % 1
-                    local c = Color3.fromHSV(hue, 1, 1)
-                    beam.Color = ColorSequence.new(c, c)
-                end
-            end)
+            local tailLen = math.max(0.5, math.min(TR.Tail or 30, dist)) -- [v1.11] длина полосы
+            local conn = nil
+
+            if TR.Kind == "Shitaro (ретракт)" then
+                -- [v1.12] стиль из shitaro: луч виден СРАЗУ, ширина нормализуется
+                -- по дистанции до камеры (постоянная видимая толщина вдоль луча),
+                -- в конце жизни — плавный ретракт с Sine-easing
+                local cam = workspace.CurrentCamera
+                local cp = cam and cam.CFrame.Position
+                local d0 = cp and (cp - from).Magnitude or dist
+                local d1 = cp and (cp - to).Magnitude or dist
+                local k = math.clamp(TR.Width, 40, 250) / 100 * 0.035
+                beam.Width0 = math.clamp(d0 * k, 0.05, 6)
+                beam.Width1 = math.clamp(d1 * k, 0.05, 6)
+                beam.Transparency = NumberSequence.new(0)
+                headPart.CFrame = CFrame.new(to)
+                tailPart.CFrame = CFrame.new(from:Lerp(to, math.clamp((dist - tailLen) / dist, 0, 1)))
+                task.delay(life * 0.78, function()
+                    pcall(function()
+                        game:GetService("TweenService"):Create(beam,
+                            TweenInfo.new(math.max(life * 0.22, 0.05),
+                                Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                            { Width0 = 0, Width1 = 0 }):Play()
+                    end)
+                end)
+            else
+                -- [v1.10-1.11] стиль pulse: летящая голова-снаряд + хвост
+                conn = RunService.Heartbeat:Connect(function()
+                    local el = os.clock() - t0
+                    local headT = math.min(1, el * TR.Speed / dist)
+                    headPart.CFrame = CFrame.new(from:Lerp(to, headT))
+                    local tailT = math.clamp((headT * dist - tailLen) / dist, 0, 1)
+                    tailPart.CFrame = CFrame.new(from:Lerp(to, tailT))
+                    if TR.Rainbow then
+                        local hue = (el * 0.35) % 1
+                        local c = Color3.fromHSV(hue, 1, 1)
+                        beam.Color = ColorSequence.new(c, c)
+                    end
+                end)
+            end
             task.delay(life, function()
-                pcall(function() conn:Disconnect() end)
+                pcall(function() if conn then conn:Disconnect() end end)
                 pcall(function() headPart:Destroy() end)
                 pcall(function() tailPart:Destroy() end)
             end)
@@ -378,7 +406,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.2.0 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -584,7 +612,10 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══ VISUALS: ESP (цвета ролей Pulse; ник — текст над головой в цвете роли, без панели) ═══
-local ESP = { HL = false, Names = false, Dist = false, HP = false, Gun = false }
+-- [v1.12] + стиль из Overdrive: Highlights (fill/outline 0.25) или Chams
+-- (BoxHandleAdornment 0.7/Z10 по каждой части тела); детект ролей НЕ тронут
+local ESP = { HL = false, Names = false, Dist = false, HP = false, Gun = false,
+              Style = "Обычный", NameFont = "Обычный" }
 local gunHL = nil
 
 -- цвета ролей как в Pulse Hub
@@ -705,9 +736,53 @@ task.spawn(function()
 
                             local hl = c:FindFirstChild("CWH_ESP")
                             if hl then
-                                hl.Enabled = ESP.HL
-                                hl.FillColor = color
-                                hl.OutlineColor = color
+                                if ESP.HL and ESP.Style == "Overdrive Chams" then
+                                    hl.Enabled = false -- боксы вместо Highlight
+                                else
+                                    hl.Enabled = ESP.HL
+                                    hl.FillColor = color
+                                    hl.OutlineColor = color
+                                    if ESP.Style == "Overdrive Highlights" then
+                                        -- [v1.12] дизайн из Overdrive: fill/outline 0.25
+                                        hl.FillTransparency = 0.25
+                                        hl.OutlineTransparency = 0.25
+                                    else
+                                        hl.FillTransparency = 0.6
+                                        hl.OutlineTransparency = 0.2
+                                    end
+                                end
+                            end
+
+                            -- [v1.12] Chams из Overdrive: BoxHandleAdornment на каждую
+                            -- часть тела (Transparency 0.7, AlwaysOnTop, ZIndex 10)
+                            local chamFolder = c:FindFirstChild("CWH_CHAMS")
+                            if ESP.HL and ESP.Style == "Overdrive Chams" then
+                                if not chamFolder then
+                                    chamFolder = Instance.new("Folder")
+                                    chamFolder.Name = "CWH_CHAMS"
+                                    chamFolder.Parent = c
+                                end
+                                for _, part in ipairs(c:GetChildren()) do
+                                    if part:IsA("BasePart")
+                                        and not part:FindFirstChild("CWH_CHAM_" .. plr.Name) then
+                                        pcall(function()
+                                            local box = Instance.new("BoxHandleAdornment")
+                                            box.Name = "CWH_CHAM_" .. plr.Name
+                                            box.Adornee = part
+                                            box.Size = part.Size + Vector3.new(0.15, 0.15, 0.15)
+                                            box.Transparency = 0.7
+                                            box.Color3 = color
+                                            box.AlwaysOnTop = true
+                                            box.ZIndex = 10
+                                            box.Parent = chamFolder
+                                        end)
+                                    end
+                                end
+                                for _, box in ipairs(chamFolder:GetChildren()) do
+                                    if box:IsA("BoxHandleAdornment") then box.Color3 = color end
+                                end
+                            elseif chamFolder then
+                                chamFolder:Destroy()
                             end
 
                             local hrp = getHRP(c)
@@ -720,6 +795,28 @@ task.spawn(function()
                                 if nm then
                                     nm.Text = ESP.Names and (plr.Name .. " " .. espWeaponOf(plr)) or ""
                                     nm.TextColor3 = color
+                                    if ESP.NameFont == "Overdrive" then
+                                        -- [v1.12] дизайн ника из Overdrive: Code 13 + цветной UIStroke
+                                        nm.Font = Enum.Font.Code
+                                        nm.TextSize = 13
+                                        nm.TextStrokeTransparency = 1
+                                        local st = nm:FindFirstChild("CWH_ODStroke")
+                                        if not st then
+                                            st = Instance.new("UIStroke")
+                                            st.Name = "CWH_ODStroke"
+                                            st.Thickness = 2
+                                            st.Transparency = 0.55
+                                            st.Parent = nm
+                                        end
+                                        st.Color = color
+                                    else
+                                        nm.Font = Enum.Font.GothamBold
+                                        nm.TextSize = 15
+                                        nm.TextStrokeTransparency = 0
+                                        nm.TextStrokeColor3 = Color3.new(0, 0, 0)
+                                        local st = nm:FindFirstChild("CWH_ODStroke")
+                                        if st then st:Destroy() end
+                                    end
                                 end
                                 if inf then
                                     local parts = {}
@@ -801,6 +898,31 @@ Tabs.Visuals:AddToggle("GunHere", {
 Tabs.Visuals:AddSection("Player ESP")
 Tabs.Visuals:AddToggle("EspHL", { Title = "Highlight (Roles)", Default = false })
     :OnChanged(function(v) ESP.HL = v end)
+-- [v1.12] стиль боксов из Overdrive: Highlights или Chams (роль-детект прежний)
+Tabs.Visuals:AddDropdown("EspStyle", {
+    Title = "Стиль ESP (Overdrive)",
+    Description = "Обычный — Highlight 0.6/0.2; Overdrive Highlights — fill/outline 0.25; Overdrive Chams — боксы на каждой части тела",
+    Values = { "Обычный", "Overdrive Highlights", "Overdrive Chams" },
+    Default = "Обычный",
+    Callback = function(v)
+        ESP.Style = v
+        -- при смене стиля снести старые боксы/подсветку, чтобы не висели
+        for _, p in ipairs(Players:GetPlayers()) do
+            local pc = p.Character
+            if pc then
+                local f = pc:FindFirstChild("CWH_CHAMS")
+                if f then f:Destroy() end
+            end
+        end
+    end
+})
+Tabs.Visuals:AddDropdown("EspNameFont", {
+    Title = "Дизайн ника",
+    Description = "Обычный — GothamBold 15 с чёрной обводкой; Overdrive — шрифт Code 13 с цветной обводкой роли",
+    Values = { "Обычный", "Overdrive" },
+    Default = "Обычный",
+    Callback = function(v) ESP.NameFont = v end
+})
 Tabs.Visuals:AddToggle("EspNames", { Title = "Names & Roles", Default = false })
     :OnChanged(function(v) ESP.Names = v end)
 Tabs.Visuals:AddToggle("EspHP", { Title = "Health", Default = false })
@@ -2224,6 +2346,14 @@ Tabs.Combat:AddSlider("BTTail", {
     Title = "Длина полосы (studs)", Default = 30, Min = 2, Max = 250, Rounding = 0,
     Callback = function(v) TR.Tail = v end
 })
+-- [v1.12] стиль трейсера: Pulse (летящая полоса) или Shitaro (луч-ретракт)
+Tabs.Combat:AddDropdown("BTRKind", {
+    Title = "Стиль трейсера",
+    Description = "Pulse — полоса летит как снаряд; Shitaro — луч виден сразу и плавно втягивается в конце (Sine)",
+    Values = { "Pulse (полёт)", "Shitaro (ретракт)" },
+    Default = "Pulse (полёт)",
+    Callback = function(v) TR.Kind = v end
+})
 Tabs.Combat:AddSlider("BTWidth", {
     Title = "Толщина (%)", Default = 100, Min = 40, Max = 250, Rounding = 0,
     Callback = function(v) TR.Width = v end
@@ -3060,21 +3190,48 @@ end)
 -- ═══ FARM ═══
 
 -- ═══ FARM (исправленный: без джиттера, мгновенный ретаргет) ═══
+-- [v1.12] Auto Farm Lite: движок из лайт-версии (mm2farm) — новая механика:
+-- pcall-итерации (ошибка не убивает ферму), обход СТОЯЩЕГО мардера по монетам,
+-- режимы Normal / Safe Standing / Safe Lying, безопасное выключение из-под пола,
+-- реальный счётчик собранных (count_if_gone), CoinTarget, AfterCollect, авто-рестарт.
 local AutoFarmSystem = {
-    Enabled = false, Mode = "Basic", AvoidMurder = false,
-    AutoReset = false, CollectedCount = 0,
+    Enabled = false, Mode = "Normal", AvoidMurder = false,
+    AfterCollect = "Ничего", CollectedCount = 0, CoinTarget = 0,
     Target = nil, LastTouch = 0, NoclipCache = {},
-    Speed = 23, TweenMode = false, TweenSpeed = 35, YDepth = 4,
+    TweenMode = false, TweenSpeed = 35, YDepth = 6,
+    NoclipActive = false, HoverCF = nil, LastSafeCF = nil,
+    sawCoins = false, -- видели монеты В ЭТОМ раунде (защита от старого счётчика в лобби)
+    AutoRestart = true, -- после конца сбора фарм сам включится на новом раунде
+    Speed = 23,
 }
 getgenv().CWH_FarmRef = AutoFarmSystem
+
+-- флаг активного флинга: ферма замирает, анти-флинг не мешает
+local flinging = false
+
+-- [v1.12] координаты лобби обновлены после апдейта MM2 (просил: 16, 520, 15)
+local CL_LOBBY_CF = CFrame.new(16, 520, 15)
 
 local FARM_SPEED = 23
 local DOWN_RISE_XZ = 4
 local AVOID_DIST = 40
 local RISE_SAFE_DIST = 20
 local touchedCoins = {} -- [coin] = время touch
-local blockedCoins = {}
-local touchCounts = {} -- [coin] = сколько раз touch не сработал
+local blockedCoins = {} -- [coin] = время блока (застряла 3 раза)
+local touchCounts = {}  -- [coin] = сколько раз touch не сработал
+local countedCoins = {} -- [coin] = true (уже засчитана как СОБРАННАЯ — анти-дубль)
+local MURD_COIN_DIST = 35 -- монеты ближе этого к мардеру пропускаем (обход стоящего мардера)
+local roundDone = false   -- конец сбора (килл/ТП) отрабатывает 1 раз за раунд
+local autoRestartArmed = false -- взводится после конца сбора → ловим новый раунд
+local maybeRoundDone = nil -- назначается ниже (единый конец сбора)
+
+local function farm_is_down()
+    return AutoFarmSystem.Mode ~= "Normal"
+end
+local function farm_is_lying()
+    return AutoFarmSystem.Mode == "Safe Lying"
+end
+
 local function farm_hrp()
     local c = getChar(LocalPlayer)
     return c and getHRP(c)
@@ -3087,12 +3244,39 @@ local function coin_available(v)
         and not v:GetAttribute("Collected")
         and not v:GetAttribute("Delete")
 end
+local function coin_part(c)
+    if not c or not c.Parent then return nil end
+    if c:IsA("BasePart") then return c end
+    if c:IsA("Model") then return c:FindFirstChildWhichIsA("BasePart", true) end
+    return nil
+end
+
 local function available_coins()
     local list = {}
-    local cs = game:GetService("CollectionService")
-    for _, v in ipairs(cs:GetTagged("CoinVisual")) do
-        if coin_available(v) then list[#list + 1] = v end
+    -- 1) тег CoinVisual — так ищет рабочая полная версия
+    local okTag, tagged = pcall(function()
+        return game:GetService("CollectionService"):GetTagged("CoinVisual")
+    end)
+    if okTag and tagged then
+        for _, v in ipairs(tagged) do
+            if coin_available(v) then list[#list + 1] = v end
+        end
     end
+    -- 2) Coin_Server в CoinContainer (свежий сурс; у монеты должен быть TouchInterest)
+    if #list == 0 then
+        local map = getMap()
+        local cont = map and map:FindFirstChild("CoinContainer")
+        if cont then
+            for _, c in ipairs(cont:GetChildren()) do
+                if c.Name == "Coin_Server" and not c:FindFirstChild("CollectedCoin")
+                    and c:FindFirstChild("TouchInterest") then
+                    local p = coin_part(c)
+                    if p then list[#list + 1] = p end
+                end
+            end
+        end
+    end
+    -- 3) последний фолбэк: скан по имени
     if #list == 0 then
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("BasePart")
@@ -3104,18 +3288,29 @@ local function available_coins()
     end
     return list
 end
-local function nearest_coin(pos, list)
-    local best, bd = nil, math.huge
+local function nearest_coin(pos, list, mpos)
     local now = os.clock()
-    for _, v in ipairs(list) do
-        local tT = touchedCoins[v]
-        local tB = blockedCoins[v]
-        if not (tT and now - tT < 1.5) and not (tB and now - tB < 10) then
-            local d = (v.Position - pos).Magnitude
-            if d < bd then bd = d best = v end
+    local function pass(skipMurder)
+        local best, bd = nil, math.huge
+        for _, v in ipairs(list) do
+            local tT = touchedCoins[v]
+            local tB = blockedCoins[v]
+            if not (tT and now - tT < 1.5) and not (tB and now - tB < 10) then
+                -- обход мардера: монета прямо у него — летим к другой
+                if not (skipMurder and mpos and flat_dist(v.Position, mpos) <= MURD_COIN_DIST) then
+                    local d = (v.Position - pos).Magnitude
+                    if d < bd then bd = d best = v end
+                end
+            end
         end
+        return best
     end
-    return best
+    -- если мардер стоит у ВСЕХ оставшихся монет — берём просто ближайшую (не стоим вечно)
+    if mpos then
+        local b = pass(true)
+        if b then return b end
+    end
+    return pass(false)
 end
 
 local function set_farm_noclip(on, lying)
@@ -3123,7 +3318,7 @@ local function set_farm_noclip(on, lying)
     local hum = getHum(char)
     if on then
         if not char then return end
-        -- PlatformStand ТОЛЬКО в Down режиме — в Basic он и есть причина джиттера
+        -- PlatformStand ТОЛЬКО в режиме лёжа — стоя он даёт джиттер
         if hum and lying then
             pcall(function() hum.PlatformStand = true end)
         end
@@ -3135,13 +3330,81 @@ local function set_farm_noclip(on, lying)
                 p.CanCollide = false
             end
         end
+        AutoFarmSystem.NoclipActive = true
     else
         if hum then pcall(function() hum.PlatformStand = false end) end
         for p, v in pairs(AutoFarmSystem.NoclipCache) do
             if p and p.Parent then pcall(function() p.CanCollide = v end) end
         end
         AutoFarmSystem.NoclipCache = {}
+        AutoFarmSystem.NoclipActive = false
     end
+end
+
+-- страховка: движок любит вернуть CanCollide — применяем каждый физ-шаг,
+-- но только пока ноклип реально нужен (иначе в Normal проваливаемся сквозь пол)
+RunService.Stepped:Connect(function()
+    if AutoFarmSystem.Enabled and AutoFarmSystem.NoclipActive and getChar(LocalPlayer) then
+        set_farm_noclip(true, farm_is_lying())
+    end
+end)
+
+-- жёсткая фиксация позиции (Safe без монет/таргета): не даёт утонуть в войд
+local function hover_hold(hrp, lying)
+    if not AutoFarmSystem.HoverCF then AutoFarmSystem.HoverCF = hrp.CFrame end
+    local cf = CFrame.new(AutoFarmSystem.HoverCF.Position)
+    if lying then cf = cf * CFrame.Angles(-math.pi * 0.5, 0, 0) end
+    pcall(function()
+        hrp.CFrame = cf
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+-- выключение фарма без падения сквозь пол:
+-- если мы под полом (Safe) — сначала поднимаемся наверх с ноклипом, там возвращаем коллизии
+local safeDisableBusy = false
+local lastFloorY, lastFloorYT = nil, 0
+local function farm_safe_disable()
+    local hrp = farm_hrp()
+    if safeDisableBusy then return end
+    if not hrp then set_farm_noclip(false) return end
+    -- уровень пола берём по монете (или спавну), кэш на 2 сек
+    local nowC = os.clock()
+    if not lastFloorY or nowC - lastFloorYT > 2 then
+        lastFloorY = nil
+        local c0 = available_coins()[1]
+        if c0 then lastFloorY = c0.Position.Y end
+        if not lastFloorY then
+            local map = getMap()
+            local sp = map and map:FindFirstChild("Spawns")
+            local s0 = sp and sp:FindFirstChildWhichIsA("BasePart", true)
+            if s0 then lastFloorY = s0.Position.Y end
+        end
+        lastFloorYT = nowC
+    end
+    local floorY = lastFloorY
+    if not floorY or hrp.Position.Y > floorY - 2 then
+        set_farm_noclip(false) -- мы над полом — просто вернуть коллизии
+        return
+    end
+    -- мы под полом: поднимаемся наверх с ноклипом, там возвращаем коллизии
+    safeDisableBusy = true
+    task.spawn(function()
+        pcall(function()
+            local pos = Vector3.new(hrp.Position.X, floorY + 6, hrp.Position.Z)
+            for _ = 1, 15 do
+                set_farm_noclip(true, false)
+                hrp.CFrame = CFrame.new(pos)
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                task.wait(0.03)
+            end
+            -- пауза С ноклипом: физика успевает вытолкнуть из геометрии
+            task.wait(0.15)
+        end)
+        set_farm_noclip(false)
+        safeDisableBusy = false
+    end)
 end
 
 local function murderer_hrp()
@@ -3172,6 +3435,18 @@ local function touch_targets(coin)
     return list
 end
 
+-- считаем только РЕАЛЬНО собранные монеты: через 0.6с после touch проверяем,
+-- что монета исчезла. Неудачные попытки больше не надувают счётчик
+local function count_if_gone(coin)
+    if countedCoins[coin] then return end
+    task.delay(0.6, function()
+        if not coin_available(coin) and not countedCoins[coin] then
+            countedCoins[coin] = true
+            AutoFarmSystem.CollectedCount = AutoFarmSystem.CollectedCount + 1
+        end
+    end)
+end
+
 local function fire_touch(coin)
     if not realFireTouch or not coin or not coin.Parent then return false end
     local now = os.clock()
@@ -3183,28 +3458,28 @@ local function fire_touch(coin)
         pcall(realFireTouch, hrp, p, 0)
         pcall(realFireTouch, hrp, p, 1)
     end
-    -- ФИКС: помечаем монету — не летим в неё повторно
     touchedCoins[coin] = now
-    -- застряли: 3-й touch той же монеты — блокируем её на 10 сек
     touchCounts[coin] = (touchCounts[coin] or 0) + 1
     if touchCounts[coin] >= 3 then
         blockedCoins[coin] = now
         touchCounts[coin] = nil
     end
-    AutoFarmSystem.CollectedCount = AutoFarmSystem.CollectedCount + 1
+    count_if_gone(coin)
     return true
 end
 
 local function farm_move(hrp, dest, dt)
+    AutoFarmSystem.HoverCF = nil -- движение сбрасывает пин позиции
     local dir = dest - hrp.Position
     local dist = dir.Magnitude
-    local speed = AutoFarmSystem.TweenMode and (AutoFarmSystem.TweenSpeed or 35) or FARM_SPEED
+    local speed = AutoFarmSystem.TweenMode and (AutoFarmSystem.TweenSpeed or 35) or (AutoFarmSystem.Speed or FARM_SPEED)
     local np = dest
     if dist > 0.1 then
         np = hrp.Position + dir.Unit * math.min(speed * dt, dist)
     end
     local cf = CFrame.new(np)
-    if AutoFarmSystem.Mode == "Down" then
+    -- лёжа: разворот персонажа лицом к полу
+    if farm_is_lying() then
         cf = cf * CFrame.Angles(-math.pi * 0.5, 0, 0)
     end
     pcall(function()
@@ -3249,100 +3524,252 @@ local function coin_bags_full()
     return any
 end
 
+local function farm_reset()
+    AutoFarmSystem.Target = nil
+    touchedCoins = {}
+    touchCounts = {}
+    blockedCoins = {}
+    countedCoins = {}
+    AutoFarmSystem.NoclipCache = {}
+    AutoFarmSystem.HoverCF = nil
+    AutoFarmSystem.LastSafeCF = nil
+    -- счётчик собранных монет и флаг «конец сбора» сбрасываются каждый раунд
+    AutoFarmSystem.CollectedCount = 0
+    AutoFarmSystem.sawCoins = false
+    roundDone = false
+end
+
+-- ═══ ГЛАВНЫЙ ЦИКЛ ФАРМА (pcall-итерация — ошибка НЕ убивает ферму) ═══
 local lastFrame = os.clock()
+local lastDiag = 0
+local lastWaitLog = 0
+
+local function farm_iteration(now, dt)
+    -- чистим старые метки
+    for coin, t in pairs(touchedCoins) do
+        if not coin.Parent or now - t > 3 then touchedCoins[coin] = nil end
+    end
+    for coin, t in pairs(blockedCoins) do
+        if not coin.Parent or now - t > 15 then blockedCoins[coin] = nil end
+    end
+    for coin in pairs(touchCounts) do
+        if not coin.Parent then touchCounts[coin] = nil end
+    end
+    for coin in pairs(countedCoins) do
+        if not coin.Parent then countedCoins[coin] = nil end
+    end
+
+    if not AutoFarmSystem.Enabled then return end
+
+    local hrp = farm_hrp()
+    if not hrp then return end
+
+    -- спасение из войда: помним последнюю нормальную позицию
+    local py = hrp.Position.Y
+    if py > -100 then
+        AutoFarmSystem.LastSafeCF = hrp.CFrame
+    elseif py < -250 and AutoFarmSystem.LastSafeCF then
+        pcall(function()
+            hrp.CFrame = AutoFarmSystem.LastSafeCF + Vector3.new(0, 3, 0)
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end)
+        AutoFarmSystem.Target = nil
+        return
+    end
+
+    -- флинг активен: ферма замирает (иначе дёргает персонажа и ломает флинг)
+    if flinging or rawget(getgenv(), "CWH_FlingActive") == true then
+        AutoFarmSystem.Target = nil
+        return
+    end
+
+    -- цель по монетам (0 = без лимита): проверяем только если в ЭТОМ раунде
+    -- уже видели монеты — иначе старый счётчик прошлого раунда выключал фарм в лобби
+    if AutoFarmSystem.CoinTarget > 0 and AutoFarmSystem.sawCoins
+        and AutoFarmSystem.CollectedCount >= AutoFarmSystem.CoinTarget then
+        maybeRoundDone("target")
+        return
+    end
+
+    local isDown = farm_is_down()
+    local isLying = farm_is_lying()
+    local list = available_coins()
+    if #list > 0 then AutoFarmSystem.sawCoins = true end
+
+    -- F9-диагностика раз в 2 секунды
+    if now - lastDiag > 2 then
+        lastDiag = now
+        local tname = AutoFarmSystem.Target and AutoFarmSystem.Target.Name or "нет"
+        print(string.format("[CWH] farm: режим=%s | монет=%d | таргет=%s | собрано=%d | noclip=%s",
+            AutoFarmSystem.Mode, #list, tname, AutoFarmSystem.CollectedCount,
+            tostring(AutoFarmSystem.NoclipActive)))
+    end
+
+    if getMap() and coin_bags_full() then
+        -- сумка полна = конец сбора (только на карте: GUI прошлого раунда в лобби не срабатывает)
+        maybeRoundDone("bags")
+        return
+    end
+
+    if #list == 0 then
+        AutoFarmSystem.Target = nil
+        -- собирали В ЭТОМ РАУНДЕ и монет не осталось → конец сбора
+        if AutoFarmSystem.sawCoins and AutoFarmSystem.CollectedCount > 0 then
+            maybeRoundDone("exhausted")
+            return
+        end
+        -- монет ещё нет (лобби или не заспавнились) — ЖДЁМ, фарм остаётся включённым
+        if now - lastWaitLog > 5 then
+            lastWaitLog = now
+            print("[CWH] farm: монет нет — жду начала раунда (фарм остаётся включённым)")
+        end
+        if isDown and getMap() then
+            set_farm_noclip(true, isLying)
+            hover_hold(hrp, isLying)
+        else
+            farm_safe_disable()
+            task.wait(0.2)
+        end
+        return
+    end
+
+    local mhrp = AutoFarmSystem.AvoidMurder and murderer_hrp() or nil
+    local mpos = mhrp and mhrp.Position or nil
+
+    -- обход СТОЯЩЕГО мардера: он встал у нашей монеты → сброс и путь к другой
+    if AutoFarmSystem.Target and mpos
+        and flat_dist(AutoFarmSystem.Target.Position, mpos) <= MURD_COIN_DIST then
+        AutoFarmSystem.Target = nil
+    end
+
+    if not AutoFarmSystem.Target or not coin_available(AutoFarmSystem.Target)
+        or touchedCoins[AutoFarmSystem.Target] then
+        AutoFarmSystem.Target = nearest_coin(hrp.Position, list, mpos)
+    end
+
+    if AutoFarmSystem.Target then
+        set_farm_noclip(true, isLying)
+        local cpos = AutoFarmSystem.Target.Position
+        local dest = cpos
+
+        if isDown then
+            -- Safe: летим под полом на глубине YDepth ниже монеты
+            local xz = flat_dist(hrp.Position, cpos)
+            local safe_to_rise = (not mpos) or flat_dist(hrp.Position, mpos) > RISE_SAFE_DIST
+            if xz <= DOWN_RISE_XZ then
+                fire_touch(AutoFarmSystem.Target)
+                AutoFarmSystem.Target = nil
+                if realFireTouch then
+                    -- тач бьёт через пол: мардер рядом НЕ мешает — остаёмся на глубине
+                    dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
+                elseif safe_to_rise then
+                    dest = cpos -- нет firetouchinterest — поднимаемся к монете по-честному
+                else
+                    dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
+                end
+            else
+                dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
+            end
+        elseif (cpos - hrp.Position).Magnitude <= 6 then
+            fire_touch(AutoFarmSystem.Target)
+            AutoFarmSystem.Target = nil
+        end
+
+        if AutoFarmSystem.Target or isDown then
+            dest = avoid_steer(hrp.Position, dest, mpos)
+            farm_move(hrp, dest, dt)
+        end
+    elseif mpos then
+        set_farm_noclip(true, isLying)
+        local away = Vector3.new(hrp.Position.X - mpos.X, 0, hrp.Position.Z - mpos.Z)
+        if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
+        away = away.Unit
+        farm_move(hrp, hrp.Position + away * 40, dt)
+    else
+        -- таргета нет (все монеты затроганы/заблокированы):
+        -- в Safe жёстко висим под полом, в Normal стоим на карте
+        if isDown then
+            set_farm_noclip(true, isLying)
+            hover_hold(hrp, isLying)
+        else
+            farm_safe_disable()
+            task.wait(0.2)
+        end
+    end
+end
+
+-- ЕДИНЫЙ конец сбора (1 раз за раунд): стоп фарма → «после сбора» → авто-рестарт.
+-- Auto Kill Everyone (G5) срабатывает отдельно по CollectedCount/сумкам — не дублируем.
+maybeRoundDone = function(reason)
+    if roundDone then return end
+    roundDone = true
+    local wasOn = AutoFarmSystem.Enabled
+    task.spawn(function()
+        if wasOn then
+            AutoFarmSystem.Enabled = false
+            farm_safe_disable()
+            pcall(function()
+                local T = OBS.Toggles
+                if T and T["AutoFarm"] then T["AutoFarm"]:SetValue(false) end
+            end)
+        end
+        if reason == "target" then
+            Notify("Auto Farm", "Цель собрана: " .. AutoFarmSystem.CollectedCount .. " монет!", nil, 4)
+        else
+            Notify("Auto Farm", "Монеты закончились!", nil, 3)
+        end
+        task.wait(0.5) -- даём подняться из-под пола
+        local after = AutoFarmSystem.AfterCollect or "Ничего"
+        if after == "Телепорт в лобби" then
+            local hrp = farm_hrp()
+            if hrp then
+                pcall(function() hrp.CFrame = CL_LOBBY_CF end)
+                Notify("Auto Farm", "Телепорт в лобби (16, 520, 15)", nil, 3)
+            end
+        elseif after == "Респавн" then
+            local hum = getHum(getChar(LocalPlayer))
+            if hum then pcall(function() hum.Health = 0 end) end
+        end
+        -- АВТО-РЕСТАРТ: взводим флаг — как только начнётся новый раунд,
+        -- сторожевой цикл сам включит фарм (тоггл в меню тоже включится)
+        if wasOn and AutoFarmSystem.AutoRestart then
+            autoRestartArmed = true
+            print("[CWH] авто-рестарт взведён — жду новый раунд")
+        end
+    end)
+end
+
+-- СТОРОЖЕВОЙ ЦИКЛ АВТО-РЕСТАРТА: фарм сам включается на новом раунде
+task.spawn(function()
+    while task.wait(0.5) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if autoRestartArmed and AutoFarmSystem.AutoRestart
+                and not AutoFarmSystem.Enabled and not roundDone and getMap() then
+                autoRestartArmed = false
+                AutoFarmSystem.Enabled = true
+                pcall(function()
+                    local T = OBS.Toggles
+                    if T and T["AutoFarm"] then T["AutoFarm"]:SetValue(true) end
+                end)
+                Notify("Auto Farm", "Новый раунд — фарм включён автоматически", nil, 3)
+            end
+        end)
+    end
+end)
+
 task.spawn(function()
     while true do
-    if not getgenv().CWH_RUN then break end
+        if not getgenv().CWH_RUN then break end
         local now = os.clock()
         local dt = math.min(now - lastFrame, 0.1)
         lastFrame = now
-
-        -- чистим старые метки
-        for coin, t in pairs(touchedCoins) do
-            if not coin.Parent or now - t > 3 then touchedCoins[coin] = nil end
-        end
-
-        for coin, t in pairs(blockedCoins) do
-            if not coin.Parent or now - t > 15 then blockedCoins[coin] = nil end
-        end
-        for coin in pairs(touchCounts) do
-            if not coin.Parent then touchCounts[coin] = nil end
-        end
-
-        if AutoFarmSystem.Enabled then
-            local hrp = farm_hrp()
-            if hrp then
-                local list = available_coins()
-
-                local function finish()
-                    AutoFarmSystem.Target = nil
-                    set_farm_noclip(false)
-                    if AutoFarmSystem.AutoReset then
-                        local hum = getHum(getChar(LocalPlayer))
-                        if hum then pcall(function() hum.Health = 0 end) end
-                    end
-                end
-
-                if coin_bags_full() then
-                    finish()
-                    task.wait(1)
-                    continue
-                end
-
-                if #list > 0 then
-                    local mhrp = AutoFarmSystem.AvoidMurder and murderer_hrp() or nil
-                    local mpos = mhrp and mhrp.Position or nil
-
-                    -- ФИКС: таргет сбрасываем если монета собралась/помечена
-                    if not AutoFarmSystem.Target or not coin_available(AutoFarmSystem.Target)
-                        or touchedCoins[AutoFarmSystem.Target] then
-                        AutoFarmSystem.Target = nearest_coin(hrp.Position, list)
-                    end
-
-                    if AutoFarmSystem.Target then
-                        set_farm_noclip(true, AutoFarmSystem.Mode == "Down")
-                        local cpos = AutoFarmSystem.Target.Position
-                        local dest = cpos
-
-                        if AutoFarmSystem.Mode == "Down" then
-                            local xz = flat_dist(hrp.Position, cpos)
-                            local safe_to_rise = (not mpos) or flat_dist(hrp.Position, mpos) > RISE_SAFE_DIST
-                            if xz <= DOWN_RISE_XZ and safe_to_rise then
-                                dest = cpos
-                                fire_touch(AutoFarmSystem.Target)
-                                -- ФИКС: сразу новый таргет после touch
-                                AutoFarmSystem.Target = nil
-                            else
-                                dest = Vector3.new(cpos.X, cpos.Y - AutoFarmSystem.YDepth, cpos.Z)
-                            end
-                        elseif (cpos - hrp.Position).Magnitude <= 6 then
-                            fire_touch(AutoFarmSystem.Target)
-                            AutoFarmSystem.Target = nil -- сразу дальше, не висим
-                        end
-
-                        if AutoFarmSystem.Target or AutoFarmSystem.Mode == "Down" then
-                            dest = avoid_steer(hrp.Position, dest, mpos)
-                            farm_move(hrp, dest, dt)
-                        end
-                    elseif mpos then
-                        set_farm_noclip(true, AutoFarmSystem.Mode == "Down")
-                        local away = Vector3.new(hrp.Position.X - mpos.X, 0, hrp.Position.Z - mpos.Z)
-                        if away.Magnitude < 0.1 then away = Vector3.new(1, 0, 0) end
-                        away = away.Unit
-                        local y = hrp.Position.Y
-                        if AutoFarmSystem.Mode == "Down" then
-                            y = y
-                        end
-                        farm_move(hrp, hrp.Position + away * 40 + Vector3.new(0, 0, 0), dt)
-                    else
-                        set_farm_noclip(false)
-                        task.wait(0.2)
-                    end
-                else
-                    AutoFarmSystem.Target = nil
-                    set_farm_noclip(false)
-                end
-            end
+        -- pcall: ошибка внутри больше не убивает ферму — пишем в F9 и продолжаем
+        local ok, err = pcall(farm_iteration, now, dt)
+        if not ok then
+            warn("[CWH] FARM ERROR: " .. tostring(err))
+            AutoFarmSystem.Target = nil
         end
         task.wait(0.03)
     end
@@ -3351,7 +3778,10 @@ end)
 LocalPlayer.CharacterAdded:Connect(function()
     AutoFarmSystem.Target = nil
     touchedCoins = {}
+    touchCounts = {}
+    countedCoins = {}
     AutoFarmSystem.NoclipCache = {}
+    AutoFarmSystem.HoverCF = nil
 end)
 
 task.spawn(function()
@@ -3360,27 +3790,103 @@ task.spawn(function()
     end)
     if ok and remote then
         remote.OnClientEvent:Connect(function()
-            AutoFarmSystem.Target = nil
-            touchedCoins = {}
+            farm_reset() -- новый раунд: сброс цели/счётчика/флага конца сбора
         end)
     end
 end)
 
+-- ═══ [v1.12] NO COIN ═══
+-- Монеты для ТЕБЯ исчезают (Transparency=1) и их нельзя взять (CanTouch=false):
+-- спид-глитч по всей карте без сбора монет → нет «неверной позиции» от анти-чита.
+-- Текущая цель фермы НЕ трогается — фарм продолжает собирать. Кейбинд — в Other.
+local noCoinOn = false
+local noCoinCache = {} -- [part] = {t = исходная Transparency}
+local function noCoinScan()
+    local seen = {}
+    local farmRef = getgenv().CWH_FarmRef
+    local exempt = farmRef and farmRef.Target or nil
+    local list = {}
+    local okTag, tagged = pcall(function()
+        return game:GetService("CollectionService"):GetTagged("CoinVisual")
+    end)
+    if okTag and tagged then
+        for _, v in ipairs(tagged) do
+            if v and v:IsA("BasePart") and v.Parent then list[#list + 1] = v end
+        end
+    end
+    local map = getMap()
+    local cont = map and map:FindFirstChild("CoinContainer")
+    if cont then
+        for _, c in ipairs(cont:GetChildren()) do
+            local p = c:IsA("BasePart") and c or c:FindFirstChildWhichIsA("BasePart", true)
+            if p then list[#list + 1] = p end
+        end
+    end
+    for _, p in ipairs(list) do
+        if not seen[p] and p.Parent and p ~= exempt then
+            seen[p] = true
+            if noCoinCache[p] == nil then
+                noCoinCache[p] = { t = p.Transparency }
+            end
+            pcall(function()
+                p.Transparency = 1
+                p.CanTouch = false
+            end)
+        end
+    end
+end
+local function noCoinRestore()
+    for p, v in pairs(noCoinCache) do
+        if p and p.Parent then
+            pcall(function()
+                p.Transparency = v.t
+                p.CanTouch = true
+            end)
+        end
+    end
+    noCoinCache = {}
+end
+local function noCoinToggle()
+    noCoinOn = not noCoinOn
+    pcall(function()
+        local T = OBS.Toggles
+        if T and T["NoCoinOn"] then T["NoCoinOn"]:SetValue(noCoinOn) end
+    end)
+    if not noCoinOn then noCoinRestore() end
+    Notify("No Coin", noCoinOn
+        and "🪙 ВКЛ: монеты для тебя исчезли и не собираются (цель фермы не тронута)"
+        or "ВЫКЛ: монеты видны и собираются снова", nil, 3)
+end
+getgenv().CWH_NoCoinToggle = noCoinToggle
+getgenv().CWH_NoCoinOn = function() return noCoinOn end
+
+task.spawn(function()
+    while task.wait(0.4) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not noCoinOn then return end
+            noCoinScan()
+        end)
+    end
+end)
 -- GUI Farm (твоя структура)
-Tabs.Farm:AddSection("Auto Farm")
+Tabs.Farm:AddSection("Auto Farm (Lite — новая механика)")
 Tabs.Farm:AddToggle("AutoFarm", { Title = "Enable Auto Farm", Default = false })
     :OnChanged(function(Value)
         AutoFarmSystem.Enabled = Value
         if Value then
             AutoFarmSystem.CollectedCount = 0
+            AutoFarmSystem.sawCoins = false
             touchedCoins = {}
+            countedCoins = {}
             Notify("Auto Farm", "Started!", nil, 3)
         else
-            set_farm_noclip(false)
+            farm_safe_disable()
         end
     end)
 Tabs.Farm:AddDropdown("FarmMode", {
-    Title = "Mode", Values = { "Basic", "Down" }, Default = "Basic",
+    Title = "Mode", Values = { "Normal", "Safe Standing", "Safe Lying" }, Default = "Normal",
+    Description = "Normal — по карте; Safe Standing — под полом стоя; Safe Lying — под полом лёжа",
     Callback = function(Value) AutoFarmSystem.Mode = Value end
 })
 Tabs.Farm:AddSlider("FarmSpeedSlider", {
@@ -3398,7 +3904,7 @@ Tabs.Farm:AddSlider("FarmTweenSpeed", {
     Callback = function(Value) AutoFarmSystem.TweenSpeed = Value end
 })
 Tabs.Farm:AddSlider("FarmYDepth", {
-    Title = "Down Y Depth", Default = 4, Min = 1, Max = 8, Rounding = 0,
+    Title = "Safe Y Depth (глубина под полом)", Default = 6, Min = 1, Max = 12, Rounding = 0,
     Callback = function(Value) AutoFarmSystem.YDepth = Value end
 })
 Tabs.Farm:AddToggle("AvoidMurder", { Title = "Avoid Murderer", Default = false })
@@ -3406,9 +3912,39 @@ Tabs.Farm:AddToggle("AvoidMurder", { Title = "Avoid Murderer", Default = false }
         AutoFarmSystem.AvoidMurder = Value
         AutoFarmSystem.Target = nil
     end)
+Tabs.Farm:AddSlider("FarmCoinTarget", {
+    Title = "Coin Target (0 = без лимита)", Default = 0, Min = 0, Max = 100, Rounding = 0,
+    Callback = function(Value) AutoFarmSystem.CoinTarget = Value end
+})
+Tabs.Farm:AddDropdown("FarmAfterCollect", {
+    Title = "После сбора",
+    Values = { "Ничего", "Телепорт в лобби", "Респавн" },
+    Default = "Ничего",
+    Callback = function(Value) AutoFarmSystem.AfterCollect = Value end
+})
 Tabs.Farm:AddToggle("AutoReset", {
-    Title = "Auto Reset (когда сумки полные)", Default = false
-}):OnChanged(function(Value) AutoFarmSystem.AutoReset = Value end)
+    Title = "Auto Restart (новый раунд)", Default = true,
+    Description = "После конца сбора фарм сам включится на новом раунде"
+}):OnChanged(function(Value) AutoFarmSystem.AutoRestart = Value end)
+
+-- [v1.12] No Coin: монеты исчезают и не собираются — спид-глитч по всей карте
+-- без «неверной позиции» от анти-чита. Текущая цель фермы не трогается.
+Tabs.Farm:AddSection("🪙 No Coin")
+Tabs.Farm:AddToggle("NoCoinOn", {
+    Title = "No Coin (монеты исчезают)",
+    Description = "Монеты для тебя невидимы и их нельзя взять — спид-глитч везде без кика за неверную позицию. Цель фермы продолжает собираться. Кейбинд — в Other",
+    Default = false
+}):OnChanged(function(v)
+    if v ~= noCoinOn then noCoinToggle() end
+end)
+Tabs.Farm:AddButton({
+    Title = "↩ Вернуть монеты",
+    Description = "Вернуть видимость и touch всем монетам вручную",
+    Callback = function()
+        noCoinRestore()
+        Notify("No Coin", "Монеты восстановлены", nil, 2)
+    end
+})
 
 end -- [CWH SCOPE] G4
 print("[CWH] INIT G4/9 OK (Kill Sound, Shot Sound, Перезарядка)")
@@ -5146,7 +5682,7 @@ local KB_MAP = {}  -- KeyCode -> функция
 local DIGIT_NAMES = { ["0"] = "Zero", ["1"] = "One", ["2"] = "Two", ["3"] = "Three",
     ["4"] = "Four", ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine" }
 getgenv().CWH_Keybinds = { SG = "нет", Dual = "нет", Invis = "нет", Shoot = "нет",
-                           Fly = "нет", Spec = "нет" } -- [v1.11] +Fly/Spec
+                           Fly = "нет", Spec = "нет", Coin = "нет" } -- [v1.12] +No Coin
 
 local function kbResolve(txt)
     local s = tostring(txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -5175,6 +5711,8 @@ local KB_ITEMS = {
     { key = "Shoot", title = "🎯 Shoot Murderer", fn = function() pcall(getgenv().CWH_ShootMurderer) end },
     -- [v1.11] Fly: тоггл полёта; Spec: следить за мардером / вернуть камеру
     { key = "Fly",  title = "✈ Fly", fn = function() pcall(getgenv().CWH_ToggleFly) end },
+    -- [v1.12] No Coin: монеты исчезают и не собираются (механика как Invis — тоггл по кейбинду)
+    { key = "Coin", title = "🪙 No Coin", fn = function() pcall(getgenv().CWH_NoCoinToggle) end },
     { key = "Spec", title = "🎬 Spectate Murderer", fn = function()
         pcall(function()
             if getgenv().CWH_SpecOn and getgenv().CWH_SpecOn() then
@@ -6441,6 +6979,7 @@ Tabs.Visuals2:AddButton({
         SKY.Stars, SKY.Meteors, SKY.Comets, SKY.Dust = false, false, false, false
         skyApply()
         skyCleanup()
+        pcall(auraDestroyAll) -- [v1.12] сносим ауры персонажа
         VB.FullBright, VB.NoFog = false, false
         lightRestore()
         pcall(function()
@@ -6454,6 +6993,774 @@ Tabs.Visuals2:AddButton({
         Notify("Visual 2", "Освещение и небо вернул как было", nil, 2)
     end
 })
+
+-- ═══ [v1.12] АУРЫ ПЕРСОНАЖА (Pulse VFX из rbxm: MagicAura/WaterVortex/FrozenBloom) ═══
+-- Свойства эмиттеров извлечены из .rbxm (интерливнутый парсер) и воспроизводятся кодом.
+local CWH_PULSE_AURAS = {
+["MagicAura"] = {
+        { Name = "Floor1",
+            Texture = "rbxassetid://16956569427",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.8196, 0.4549, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.8196, 0.4549, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 3.1553)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.293, 0), NumberSequenceKeypoint.new(0.4969, 0), NumberSequenceKeypoint.new(0.7008, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 1),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 0),
+            Speed = NumberRange.new(0.001, 0.001),
+            Rate = 1.5,
+            Brightness = 5,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = true,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "Floor2",
+            Texture = "rbxassetid://14591895021",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.8196, 0.4549, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.8196, 0.4549, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 4.2), NumberSequenceKeypoint.new(1, 4.2)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.4969, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 1),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 0),
+            Speed = NumberRange.new(0.001, 0.001),
+            Rate = 1.5,
+            Brightness = 5,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = true,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "Floor3",
+            Texture = "rbxassetid://16956497860",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.8196, 0.4549, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.8196, 0.4549, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 3.5), NumberSequenceKeypoint.new(1, 3.5)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.4969, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 1),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 0),
+            Speed = NumberRange.new(0.001, 0.001),
+            Rate = 1.5,
+            Brightness = 5,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = true,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+    },
+    ["WaterVortex"] = {
+        { Name = "AAA",
+            Texture = "rbxassetid://13405951462",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.0361, 9.6988), NumberSequenceKeypoint.new(0.1258, 16.0761), NumberSequenceKeypoint.new(0.2466, 17.4047), NumberSequenceKeypoint.new(0.4882, 18.6004), NumberSequenceKeypoint.new(0.7995, 19.929), NumberSequenceKeypoint.new(1, 20.7262)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.1877, 0), NumberSequenceKeypoint.new(0.2816, 0.1375), NumberSequenceKeypoint.new(0.4268, 0.5), NumberSequenceKeypoint.new(0.5882, 0.75), NumberSequenceKeypoint.new(0.7885, 0.8687), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.4, 0.4),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0213, 0.0213),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "Grad",
+            Texture = "rbxassetid://8943878058",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 15.7464), NumberSequenceKeypoint.new(0.1, 17.4705), NumberSequenceKeypoint.new(0.2, 18.7096), NumberSequenceKeypoint.new(0.3, 19.7102), NumberSequenceKeypoint.new(0.4, 20.5513), NumberSequenceKeypoint.new(0.5, 21.2713), NumberSequenceKeypoint.new(0.6, 21.8923), NumberSequenceKeypoint.new(0.7, 22.4288), NumberSequenceKeypoint.new(0.8, 22.8909), NumberSequenceKeypoint.new(0.9, 23.286), NumberSequenceKeypoint.new(1, 23.6196), NumberSequenceKeypoint.new(1, 23.6196)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.1877, 0), NumberSequenceKeypoint.new(0.2816, 0.1375), NumberSequenceKeypoint.new(0.4268, 0.5), NumberSequenceKeypoint.new(0.5882, 0.75), NumberSequenceKeypoint.new(0.7885, 0.8687), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.2, 0.2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0139, 0.0139),
+            Rate = 5,
+            Brightness = 0.3,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(-0, -0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "Grad",
+            Texture = "rbxassetid://4609193944",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.0361, 10.1035), NumberSequenceKeypoint.new(0.1258, 16.747), NumberSequenceKeypoint.new(0.2466, 18.131), NumberSequenceKeypoint.new(0.4882, 19.3766), NumberSequenceKeypoint.new(0.7995, 20.7607), NumberSequenceKeypoint.new(1, 21.5911)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.1877, 0), NumberSequenceKeypoint.new(0.2816, 0.1375), NumberSequenceKeypoint.new(0.4268, 0.5), NumberSequenceKeypoint.new(0.5882, 0.75), NumberSequenceKeypoint.new(0.7885, 0.8687), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.2, 0.2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0221, 0.0221),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "OOOHNNOO",
+            Texture = "rbxassetid://14312599234",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 15.7464), NumberSequenceKeypoint.new(0.1, 17.4705), NumberSequenceKeypoint.new(0.2, 18.7096), NumberSequenceKeypoint.new(0.3, 19.7102), NumberSequenceKeypoint.new(0.4, 20.5513), NumberSequenceKeypoint.new(0.5, 21.2713), NumberSequenceKeypoint.new(0.6, 21.8923), NumberSequenceKeypoint.new(0.7, 22.4288), NumberSequenceKeypoint.new(0.8, 22.8909), NumberSequenceKeypoint.new(0.9, 23.286), NumberSequenceKeypoint.new(1, 23.6196), NumberSequenceKeypoint.new(1, 23.6196)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.4, 0.4),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0139, 0.0139),
+            Rate = 5,
+            Brightness = 3,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, -1.29127e+20),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "OOOHNNOO",
+            Texture = "rbxassetid://14002381549",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 8), NumberSequenceKeypoint.new(0.1, 11.5038), NumberSequenceKeypoint.new(0.2, 14.0219), NumberSequenceKeypoint.new(0.3, 16.0553), NumberSequenceKeypoint.new(0.4, 17.7646), NumberSequenceKeypoint.new(0.5, 19.2277), NumberSequenceKeypoint.new(0.6, 20.4898), NumberSequenceKeypoint.new(0.7, 21.5801), NumberSequenceKeypoint.new(0.8, 22.5192), NumberSequenceKeypoint.new(0.9, 23.322), NumberSequenceKeypoint.new(1, 24), NumberSequenceKeypoint.new(1, 24)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.3, 0.45),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0153, 0.0153),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "Initial",
+            Texture = "rbxassetid://17256185841",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 12), NumberSequenceKeypoint.new(0.1, 16.3798), NumberSequenceKeypoint.new(0.2, 19.5274), NumberSequenceKeypoint.new(0.3, 22.0691), NumberSequenceKeypoint.new(0.4, 24.2058), NumberSequenceKeypoint.new(0.5, 26.0346), NumberSequenceKeypoint.new(0.6, 27.6122), NumberSequenceKeypoint.new(0.7, 28.9751), NumberSequenceKeypoint.new(0.8, 30.149), NumberSequenceKeypoint.new(0.9, 31.1525), NumberSequenceKeypoint.new(1, 32), NumberSequenceKeypoint.new(1, 32)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.3, 0.45),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0186, 0.0186),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "First",
+            Texture = "rbxassetid://15314598587",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 7.8408), NumberSequenceKeypoint.new(0.1, 11.2749), NumberSequenceKeypoint.new(0.2, 13.7429), NumberSequenceKeypoint.new(0.3, 15.7358), NumberSequenceKeypoint.new(0.4, 17.4111), NumberSequenceKeypoint.new(0.5, 18.8451), NumberSequenceKeypoint.new(0.6, 20.082), NumberSequenceKeypoint.new(0.7, 21.1507), NumberSequenceKeypoint.new(0.8, 22.0711), NumberSequenceKeypoint.new(0.9, 22.8579), NumberSequenceKeypoint.new(1, 23.5224), NumberSequenceKeypoint.new(1, 23.5224)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.15, 0.2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.015, 0.015),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "First2",
+            Texture = "rbxassetid://11846119288",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 8.748), NumberSequenceKeypoint.new(0.1, 11.9409), NumberSequenceKeypoint.new(0.2, 14.2355), NumberSequenceKeypoint.new(0.3, 16.0884), NumberSequenceKeypoint.new(0.4, 17.646), NumberSequenceKeypoint.new(0.5, 18.9792), NumberSequenceKeypoint.new(0.6, 20.1293), NumberSequenceKeypoint.new(0.7, 21.1229), NumberSequenceKeypoint.new(0.8, 21.9786), NumberSequenceKeypoint.new(0.9, 22.7102), NumberSequenceKeypoint.new(1, 23.328), NumberSequenceKeypoint.new(1, 23.328)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.2, 0.3),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 0),
+            Speed = NumberRange.new(0.0089, 0.0089),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "Glow",
+            Texture = "rbxassetid://867619398",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 12), NumberSequenceKeypoint.new(0.1, 16.3798), NumberSequenceKeypoint.new(0.2, 19.5274), NumberSequenceKeypoint.new(0.3, 22.0691), NumberSequenceKeypoint.new(0.4, 24.2058), NumberSequenceKeypoint.new(0.5, 26.0346), NumberSequenceKeypoint.new(0.6, 27.6122), NumberSequenceKeypoint.new(0.7, 28.9751), NumberSequenceKeypoint.new(0.8, 30.149), NumberSequenceKeypoint.new(0.9, 31.1525), NumberSequenceKeypoint.new(1, 32), NumberSequenceKeypoint.new(1, 32)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.4, 0.4),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.015, 0.015),
+            Rate = 5,
+            Brightness = 0.5,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "UpGlow",
+            Texture = "rbxassetid://867619398",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 10.8), NumberSequenceKeypoint.new(0.1, 14.7418), NumberSequenceKeypoint.new(0.2, 17.5746), NumberSequenceKeypoint.new(0.3, 19.8622), NumberSequenceKeypoint.new(0.4, 21.7852), NumberSequenceKeypoint.new(0.5, 23.4312), NumberSequenceKeypoint.new(0.6, 24.851), NumberSequenceKeypoint.new(0.7, 26.0776), NumberSequenceKeypoint.new(0.8, 27.1341), NumberSequenceKeypoint.new(0.9, 28.0373), NumberSequenceKeypoint.new(1, 28.8), NumberSequenceKeypoint.new(1, 28.8)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1089, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.9375)}),
+            Lifetime = NumberRange.new(0.35, 0.35),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 0),
+            Speed = NumberRange.new(0.0135, 0.0135),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(2, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "OOOHNNOO",
+            Texture = "rbxassetid://14621031119",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 14.1718), NumberSequenceKeypoint.new(0.1, 15.7235), NumberSequenceKeypoint.new(0.2, 16.8387), NumberSequenceKeypoint.new(0.3, 17.7392), NumberSequenceKeypoint.new(0.4, 18.4962), NumberSequenceKeypoint.new(0.5, 19.1441), NumberSequenceKeypoint.new(0.6, 19.7031), NumberSequenceKeypoint.new(0.7, 20.1859), NumberSequenceKeypoint.new(0.8, 20.6018), NumberSequenceKeypoint.new(0.9, 20.9574), NumberSequenceKeypoint.new(1, 21.2576), NumberSequenceKeypoint.new(1, 21.2576)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.1, 0.15),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0126, 0.0126),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, -0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "Effect",
+            Texture = "rbxassetid://16030554296",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 14.1718), NumberSequenceKeypoint.new(0.1, 15.7235), NumberSequenceKeypoint.new(0.2, 16.8387), NumberSequenceKeypoint.new(0.3, 17.7392), NumberSequenceKeypoint.new(0.4, 18.4962), NumberSequenceKeypoint.new(0.5, 19.1441), NumberSequenceKeypoint.new(0.6, 19.7031), NumberSequenceKeypoint.new(0.7, 20.1859), NumberSequenceKeypoint.new(0.8, 20.6018), NumberSequenceKeypoint.new(0.9, 20.9574), NumberSequenceKeypoint.new(1, 21.2576), NumberSequenceKeypoint.new(1, 21.2576)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.15, 0.25),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(80, 160),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(-0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "Effect2",
+            Texture = "rbxassetid://12828727111",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 9.2981), NumberSequenceKeypoint.new(0.1, 10.3162), NumberSequenceKeypoint.new(0.2, 11.0478), NumberSequenceKeypoint.new(0.3, 11.6387), NumberSequenceKeypoint.new(0.4, 12.1354), NumberSequenceKeypoint.new(0.5, 12.5605), NumberSequenceKeypoint.new(0.6, 12.9272), NumberSequenceKeypoint.new(0.7, 13.244), NumberSequenceKeypoint.new(0.8, 13.5169), NumberSequenceKeypoint.new(0.9, 13.7501), NumberSequenceKeypoint.new(1, 13.9471), NumberSequenceKeypoint.new(1, 13.9471)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.7063), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.15, 0.5),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(52.488, 104.976),
+            Rate = 5,
+            Brightness = 2,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 15,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "BestSmokeEVA",
+            Texture = "rbxassetid://10034873151",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 9.4478), NumberSequenceKeypoint.new(0.1, 10.4823), NumberSequenceKeypoint.new(0.2, 11.2258), NumberSequenceKeypoint.new(0.3, 11.8261), NumberSequenceKeypoint.new(0.4, 12.3308), NumberSequenceKeypoint.new(0.5, 12.7628), NumberSequenceKeypoint.new(0.6, 13.1354), NumberSequenceKeypoint.new(0.7, 13.4573), NumberSequenceKeypoint.new(0.8, 13.7346), NumberSequenceKeypoint.new(0.9, 13.9716), NumberSequenceKeypoint.new(1, 14.1718), NumberSequenceKeypoint.new(1, 14.1718)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.015, 0.8562), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(47.2392, 141.718),
+            Rate = 5,
+            Brightness = 1,
+            LightEmission = 0,
+            LightInfluence = 1,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 5,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(-1.29127e+20, 0),
+            EmissionDirection = Enum.NormalId.Left,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "AAA",
+            Texture = "rbxassetid://13405951462",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 13.2), NumberSequenceKeypoint.new(0.1, 18.0177), NumberSequenceKeypoint.new(0.2, 21.4801), NumberSequenceKeypoint.new(0.3, 24.276), NumberSequenceKeypoint.new(0.4, 26.6263), NumberSequenceKeypoint.new(0.5, 28.6381), NumberSequenceKeypoint.new(0.6, 30.3734), NumberSequenceKeypoint.new(0.7, 31.8727), NumberSequenceKeypoint.new(0.8, 33.1639), NumberSequenceKeypoint.new(0.9, 34.2678), NumberSequenceKeypoint.new(1, 35.2), NumberSequenceKeypoint.new(1, 35.2)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.1502, 0.3812), NumberSequenceKeypoint.new(0.2328, 0.6938), NumberSequenceKeypoint.new(0.3617, 0.9062), NumberSequenceKeypoint.new(0.5607, 0.9312), NumberSequenceKeypoint.new(0.7672, 0.9375), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.5, 1.2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0283, 0.0283),
+            Rate = 5,
+            Brightness = 1,
+            LightEmission = 0.2,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "AAA",
+            Texture = "rbxassetid://13405951462",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 13.2), NumberSequenceKeypoint.new(0.1, 18.0177), NumberSequenceKeypoint.new(0.2, 21.4801), NumberSequenceKeypoint.new(0.3, 24.276), NumberSequenceKeypoint.new(0.4, 26.6263), NumberSequenceKeypoint.new(0.5, 28.6381), NumberSequenceKeypoint.new(0.6, 30.3734), NumberSequenceKeypoint.new(0.7, 31.8727), NumberSequenceKeypoint.new(0.8, 33.1639), NumberSequenceKeypoint.new(0.9, 34.2678), NumberSequenceKeypoint.new(1, 35.2), NumberSequenceKeypoint.new(1, 35.2)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.174, 0.2562), NumberSequenceKeypoint.new(0.2528, 0.475), NumberSequenceKeypoint.new(0.393, 0.7375), NumberSequenceKeypoint.new(0.602, 0.8375), NumberSequenceKeypoint.new(0.776, 0.9062), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.1, 0.6),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0283, 0.0283),
+            Rate = 5,
+            Brightness = 1,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "SMokUpTIme",
+            Texture = "rbxassetid://10034873151",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 9.4478), NumberSequenceKeypoint.new(0.1, 10.4823), NumberSequenceKeypoint.new(0.2, 11.2258), NumberSequenceKeypoint.new(0.3, 11.8261), NumberSequenceKeypoint.new(0.4, 12.3308), NumberSequenceKeypoint.new(0.5, 12.7628), NumberSequenceKeypoint.new(0.6, 13.1354), NumberSequenceKeypoint.new(0.7, 13.4573), NumberSequenceKeypoint.new(0.8, 13.7346), NumberSequenceKeypoint.new(0.9, 13.9716), NumberSequenceKeypoint.new(1, 14.1718), NumberSequenceKeypoint.new(1, 14.1718)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.0088, 0.925), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(47.2392, 141.718),
+            Rate = 5,
+            Brightness = 1,
+            LightEmission = 0,
+            LightInfluence = 1,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 5,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "Linger",
+            Texture = "rbxassetid://13405951462",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 16), NumberSequenceKeypoint.new(0.1, 23.0076), NumberSequenceKeypoint.new(0.2, 28.0438), NumberSequenceKeypoint.new(0.3, 32.1105), NumberSequenceKeypoint.new(0.4, 35.5292), NumberSequenceKeypoint.new(0.5, 38.4554), NumberSequenceKeypoint.new(0.6, 40.9795), NumberSequenceKeypoint.new(0.7, 43.1602), NumberSequenceKeypoint.new(0.8, 45.0384), NumberSequenceKeypoint.new(0.9, 46.644), NumberSequenceKeypoint.new(1, 48), NumberSequenceKeypoint.new(1, 48)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.174, 0.2562), NumberSequenceKeypoint.new(0.2528, 0.475), NumberSequenceKeypoint.new(0.393, 0.7375), NumberSequenceKeypoint.new(0.602, 0.8375), NumberSequenceKeypoint.new(0.776, 0.9062), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 4),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0283, 0.0283),
+            Rate = 5,
+            Brightness = 1,
+            LightEmission = 0.8,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "RealLinger",
+            Texture = "rbxassetid://12685367098",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.6667, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(0.6667, 1, 1))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 16), NumberSequenceKeypoint.new(0.1, 23.0076), NumberSequenceKeypoint.new(0.2, 28.0438), NumberSequenceKeypoint.new(0.3, 32.1105), NumberSequenceKeypoint.new(0.4, 35.5292), NumberSequenceKeypoint.new(0.5, 38.4554), NumberSequenceKeypoint.new(0.6, 40.9795), NumberSequenceKeypoint.new(0.7, 43.1602), NumberSequenceKeypoint.new(0.8, 45.0384), NumberSequenceKeypoint.new(0.9, 46.644), NumberSequenceKeypoint.new(1, 48), NumberSequenceKeypoint.new(1, 48)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.174, 0.2562), NumberSequenceKeypoint.new(0.2528, 0.475), NumberSequenceKeypoint.new(0.393, 0.7375), NumberSequenceKeypoint.new(0.602, 0.8375), NumberSequenceKeypoint.new(0.776, 0.9062), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 4),
+            RotSpeed = NumberRange.new(-30, 30),
+            Rotation = NumberRange.new(0, 360),
+            Speed = NumberRange.new(0.0283, 0.0283),
+            Rate = 5,
+            Brightness = 0.1,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+    },
+    ["FrozenBloom"] = {
+        { Name = "ParticleEmitter",
+            Texture = "rbxassetid://14919880888",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.4235, 0.7255, 0.9765))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.0915, 1.4689), NumberSequenceKeypoint.new(0.2351, 2.8814), NumberSequenceKeypoint.new(1, 4.6328)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.0638, 0.5557), NumberSequenceKeypoint.new(0.1641, 0.4563), NumberSequenceKeypoint.new(0.5039, 0.3373), NumberSequenceKeypoint.new(0.8268, 0.6437), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.5, 1),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(-180, 180),
+            Speed = NumberRange.new(0.0708, 0.0708),
+            Rate = 4,
+            Brightness = 5,
+            LightEmission = 1,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = -2,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(-0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "IceEmitter",
+            Texture = "rbxassetid://16879659749",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.5623, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.2902, 0.549, 0.9686))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.4497), NumberSequenceKeypoint.new(1, 0.4872)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1687, 0.1257), NumberSequenceKeypoint.new(0.5184, 0), NumberSequenceKeypoint.new(0.8896, 0.0807), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2.4),
+            RotSpeed = NumberRange.new(-130, 140),
+            Rotation = NumberRange.new(-180, 165),
+            Speed = NumberRange.new(4.9766, 9.9533),
+            Rate = 15,
+            Brightness = 4.63,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = -4,
+            Drag = 3,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "IceEmitter",
+            Texture = "rbxassetid://18671876469",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.5623, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.2902, 0.549, 0.9686))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.2602), NumberSequenceKeypoint.new(1, 0.2819)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1687, 0.1257), NumberSequenceKeypoint.new(0.5184, 0), NumberSequenceKeypoint.new(0.8896, 0.0807), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2.4),
+            RotSpeed = NumberRange.new(-130, 140),
+            Rotation = NumberRange.new(-180, 165),
+            Speed = NumberRange.new(2.88, 5.76),
+            Rate = 15,
+            Brightness = 4.63,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = -4,
+            Drag = 3,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, -0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "StarEmitter",
+            Texture = "rbxassetid://12872162107",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.5623, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.2902, 0.549, 0.9686))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.1301), NumberSequenceKeypoint.new(1, 0.1561)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.0399, 0), NumberSequenceKeypoint.new(0.4539, 0.05), NumberSequenceKeypoint.new(0.7708, 0.2812), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.5, 1.2),
+            RotSpeed = NumberRange.new(-360, 360),
+            Rotation = NumberRange.new(-180, 180),
+            Speed = NumberRange.new(5.184, 13.824),
+            Rate = 15,
+            Brightness = 4.63,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 1,
+            ZOffset = 0,
+            Drag = 6,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, -0, 0),
+            SpreadAngle = Vector2.new(0, -0),
+            EmissionDirection = Enum.NormalId.Front,
+            Orientation = Enum.ParticleOrientation.FacingCamera,
+        },
+        { Name = "water wave",
+            Texture = "rbxassetid://13992197350",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.4516, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.4235, 0.7255, 0.9765))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 1.4785), NumberSequenceKeypoint.new(1, 5.0332)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(0.5, 1),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(-1000, 1000),
+            Speed = NumberRange.new(0.0005, 0.0005),
+            Rate = 3,
+            Brightness = 15,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 0.6,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(-3.50085e+15, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "ParticleEmitter",
+            Texture = "rbxassetid://76951334461630",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.4516, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.4235, 0.7255, 0.9765))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 1.0192), NumberSequenceKeypoint.new(0.2821, 1.9478), NumberSequenceKeypoint.new(1, 3.6239)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.3553, 0.0875), NumberSequenceKeypoint.new(0.5154, 0.2688), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(-180, 180),
+            Speed = NumberRange.new(0.0052, 0.0052),
+            Rate = 3,
+            Brightness = 15,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 0.6,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+        { Name = "ParticleEmitter",
+            Texture = "rbxassetid://76951334461630",
+            Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.new(0.5137, 0.9333, 0.9373)), ColorSequenceKeypoint.new(0.4516, Color3.new(0.4235, 0.7255, 0.9765)), ColorSequenceKeypoint.new(1, Color3.new(0.4235, 0.7255, 0.9765))}),
+            Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 1.5288), NumberSequenceKeypoint.new(0.2821, 2.9218), NumberSequenceKeypoint.new(1, 5.4358)}),
+            Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.3553, 0.0875), NumberSequenceKeypoint.new(0.5154, 0.2688), NumberSequenceKeypoint.new(1, 1)}),
+            Squash = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0)}),
+            Lifetime = NumberRange.new(1, 2),
+            RotSpeed = NumberRange.new(0, 0),
+            Rotation = NumberRange.new(-180, 180),
+            Speed = NumberRange.new(0.0078, 0.0078),
+            Rate = 3,
+            Brightness = 15,
+            LightEmission = 0,
+            LightInfluence = 0,
+            TimeScale = 0.6,
+            ZOffset = 0,
+            Drag = 0,
+            LockedToPart = false,
+            Acceleration = Vector3.new(0, 0, 0),
+            SpreadAngle = Vector2.new(0, 0),
+            EmissionDirection = Enum.NormalId.Top,
+            Orientation = Enum.ParticleOrientation.VelocityParallel,
+        },
+    },
+}
+
+local auraFloor, auraBody = {}, {} -- [name] = Part
+local auraFollowConn = nil
+
+local function auraDestroyAll()
+    for _, t in ipairs({auraFloor, auraBody}) do
+        for _, p in pairs(t) do pcall(function() p:Destroy() end) end
+    end
+    auraFloor, auraBody = {}, {}
+end
+
+local function auraHost(store, name, suffix)
+    local p = store[name]
+    if p and p.Parent then return p end
+    p = Instance.new("Part")
+    p.Name = "CWH_Aura_" .. name .. suffix
+    p.Anchored = true
+    p.CanCollide = false
+    p.CanQuery = false
+    p.CanTouch = false
+    p.CastShadow = false
+    p.Transparency = 1
+    p.Size = Vector3.new(4, 4, 4)
+    p.Parent = workspace
+    store[name] = p
+    return p
+end
+
+local function auraBuild(name)
+    for _, cfg in ipairs(CWH_PULSE_AURAS[name] or {}) do
+        pcall(function()
+            local isFloor = tostring(cfg.Name):lower():find("floor") ~= nil
+            local host = isFloor and auraHost(auraFloor, name, "_F") or auraHost(auraBody, name, "_B")
+            local e = Instance.new("ParticleEmitter")
+            for k, v in pairs(cfg) do
+                if k ~= "Name" then e[k] = v end
+            end
+            e.Parent = host
+        end)
+    end
+    if not auraFollowConn then
+        auraFollowConn = RunService.Heartbeat:Connect(function()
+            for _, t in ipairs({auraFloor, auraBody}) do
+                for _, p in pairs(t) do
+                    pcall(function()
+                        local hrp = getHRP(getChar(LocalPlayer))
+                        if hrp and p and p.Parent then
+                            -- Floor-ауры стоят у ног, остальные — на корпусе
+                            if tostring(p.Name):find("_F") then
+                                p.CFrame = hrp.CFrame - Vector3.new(0, 3, 0)
+                            else
+                                p.CFrame = hrp.CFrame
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end
+
+local function auraSet(name, on)
+    if on then
+        auraBuild(name)
+        Notify("Visual 2", "Аура включена: " .. name, nil, 2)
+    else
+        for _, t in ipairs({auraFloor, auraBody}) do
+            for n, p in pairs(t) do
+                if n == name then pcall(function() p:Destroy() end) t[n] = nil end
+            end
+        end
+    end
+end
+
+Tabs.Visuals2:AddSection("🔮 Ауры персонажа (Pulse VFX)")
+Tabs.Visuals2:AddToggle("AuraMagic", {
+    Title = "🪄 Аура: Magic Aura",
+    Description = "Фиолетовые магические круги под ногами (из Pulse VFX MagicAura)",
+    Default = false
+}):OnChanged(function(v) auraSet("MagicAura", v) end)
+Tabs.Visuals2:AddToggle("AuraWater", {
+    Title = "🌊 Аура: Water Vortex",
+    Description = "Большой водяной вихрь вокруг персонажа (из Pulse VFX WaterVortex)",
+    Default = false
+}):OnChanged(function(v) auraSet("WaterVortex", v) end)
+Tabs.Visuals2:AddToggle("AuraFrozen", {
+    Title = "❄ Аура: Frozen Bloom",
+    Description = "Ледяной цветок-свечение вокруг персонажа (из Pulse VFX FrozenBloom)",
+    Default = false
+}):OnChanged(function(v) auraSet("FrozenBloom", v) end)
 print("[CWH] INIT G11 OK (Visual 2)")
 end -- [CWH SCOPE] G11
 
@@ -6655,5 +7962,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.11 | без форс-шота | Spectate | Visual 2 | Fly | Gun Aura | лобби 16,520,15", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.12 | фарм-механика Lite | No Coin | ESP Overdrive | ауры VFX | трейсер Shitaro", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
