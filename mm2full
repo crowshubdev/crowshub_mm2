@@ -1,6 +1,4 @@
-
-    
-  print("[CWH] START — правильный скрипт выполняется (v1.12: Auto Farm Lite механика, No Coin с кейбиндом, ESP Overdrive (Highlights/Chams + шрифт), ауры Pulse VFX из rbxm, трейсер Shitaro)")
+print("[CWH] START — правильный скрипт выполняется (v1.16: Magic Bullet + правка предикта, Gun Aura v2 (20–150, без телепорта, мардер-гейт), Skinchanger из базы игры, Camera Noclip/Freecam, Auto Farm Lite, No Coin, ESP Overdrive, ауры Pulse VFX, трейсер Shitaro)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -406,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.2.0 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.2 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -486,6 +484,7 @@ local Tabs = {
     Combat = Window:AddTab({ Title = "Combat", Icon = "sword" }),
     Farm = Window:AddTab({ Title = "Auto Farm", Icon = "coins" }),
     Other = Window:AddTab({ Title = "Other", Icon = "package" }),        -- НОВОЕ
+    Skins = Window:AddTab({ Title = "Skins", Icon = "shirt" }),          -- [v1.16] скинчейджер ножа/пистолета
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
 
@@ -1958,7 +1957,7 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 -- ═══════════════════════════════════════════════════════════════
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
-              Spoof = false, Smart = true,
+              Spoof = false, Smart = true, Magic = false,
               V4 = true, V4Lead = 0.05, ForceOffset = 8 }
 
 -- ═══ [v1.9] SA4-PRED: ядро предсказания из нового Pulse (V4-движок) ═══
@@ -2082,7 +2081,11 @@ local function sa3AimPos(targetPlayer)
             if SA3.Smart and Vector3.new(vel.X, 0, vel.Z).Magnitude < 2 then
                 pos = part.Position
             elseif SA3.V4 then
-                pos = pred4Pos(t, pos, dt)
+                -- [v1.13] правка предикта: смесь V4-истории и мгновенной скорости —
+                -- резкая смена направления отрабатывает быстрее; точка всё равно
+                -- клампится внутри pred4Pos (6 студов, не «улетает»)
+                local p4 = pred4Pos(t, pos, dt)
+                pos = p4:Lerp(pos + vel * dt, 0.35)
             else
                 pos = pos + vel * dt
             end
@@ -2114,7 +2117,27 @@ function sa3FireShot(targetPlayer, fromAbove)
     local pos = sa3AimPos(targetPlayer)
     if not pos then return false end
     local origin
-    if fromAbove then
+    if SA3.Magic then
+        -- [v1.16] MAGIC BULLET: пуля прилетает непредсказуемо — из-за спины,
+        -- в лицо, из-под ног или косо сверху; попадание гарантирует предикт
+        -- (для нас траектория точная, для жертвы — сюрприз)
+        local toMe = myHRP.Position - pos
+        local toMeU = toMe.Magnitude > 0.1 and toMe.Unit or Vector3.new(0, 0, 1)
+        local perp = Vector3.new(-toMeU.Z, 0, toMeU.X)
+        local head = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head")
+        local roll = math.random(1, 4)
+        if roll == 1 then
+            origin = pos - toMeU * 12 + Vector3.new(0, 1.5, 0) -- из-за спины
+        elseif roll == 2 then
+            local face = head and head.CFrame.LookVector or -toMeU -- в лицо
+            origin = pos + face * 9 + Vector3.new(0, 0.5, 0)
+        elseif roll == 3 then
+            origin = pos - Vector3.new(0, 2.5, 0) -- из-под ног, снизу вверх
+        else
+            local side = perp * (math.random(-60, 60) / 10) -- косо сверху
+            origin = pos + Vector3.new(side.X, 6.5, side.Z)
+        end
+    elseif fromAbove then
         -- [v1.10] классика Shoot Murderer: пуля появляется НАД ГОЛОВОЙ мардера
         -- и летит вниз в него (как было раньше — «пуля над головой летит в него»)
         origin = Vector3.new(pos.X, pos.Y + 6, pos.Z)
@@ -2306,6 +2329,12 @@ Tabs.Combat:AddToggle("SA3Smart", {
     Description = "Мардер стоит — пуля точно в AimPart (торс/голова). Пошёл — перехват по вектору скорости с учётом пинга",
     Default = true
 }):OnChanged(function(v) SA3.Smart = v end)
+-- [v1.16] Magic Bullet: непредсказуемый origin, точное попадание
+Tabs.Combat:AddToggle("SA3Magic", {
+    Title = "🌀 Magic Bullet",
+    Description = "[v1.16] Пуля прилетает непредсказуемо: из-за спины, в лицо, из-под ног или косо сверху — но всегда попадает по умному предикту",
+    Default = false
+}):OnChanged(function(v) SA3.Magic = v end)
 -- [v1.10] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
 -- (используется веткой spoof/wallbang в sa3FireShot)
 Tabs.Combat:AddSlider("SA3ForceOffset", {
@@ -7830,22 +7859,23 @@ Tabs.Main:AddSlider("CWHFlySpeed", {
 print("[CWH] INIT G12 OK (Fly)")
 end -- [CWH SCOPE] G12
 
-do -- ═══ [CWH SCOPE] G13: GUN AURA (магнит к упавшей пушке) ═══
+do -- ═══ [CWH SCOPE] G13: GUN AURA v2 (firetouch-подбор, как коин-аура) ═══
 -- ═══════════════════════════════════════════════════════════════
--- [v1.11] Как коин-аура, только для пистолета: как только GunDrop появился
--- на карте — пушка подбирается дистанционно (firetouch), чуть дальше —
--- тебя мягко тянет к ней скоростью (без телепортов).
-local gunAuraOn, gunAuraSpeed = false, 70
+-- [v1.16] Никакого притяжения игрока: пушка подбирается дистанционно
+-- (realFireTouch, как монеты в коин-ауре) ТОЛЬКО в полосе радиусов
+-- 20..150 студов. Когда ты Murderer — ган-аура спит и ничего не делает.
+local gunAuraOn = false
+local gunAuraMin, gunAuraMax = 20, 150
 
 task.spawn(function()
     while task.wait(0.15) do
         if not getgenv().CWH_RUN then break end
         pcall(function()
             if not gunAuraOn then return end
+            if getRole(LocalPlayer) == "Murderer" then return end -- мардер → выкл
             local c = getChar(LocalPlayer)
             local hrp = getHRP(c)
-            local hum = getHum(c)
-            if not (hrp and hum and hum.Health > 0) then return end
+            if not hrp then return end
             local farmRef = getgenv().CWH_FarmRef
             if farmRef and farmRef.Enabled then return end
             local bp = LocalPlayer:FindFirstChild("Backpack")
@@ -7856,13 +7886,11 @@ task.spawn(function()
             local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
             local pos = part and part.Position
             if not pos then return end
+            if not realFireTouch then return end
             local d = (pos - hrp.Position).Magnitude
-            if d < 40 and realFireTouch then
+            if d >= gunAuraMin and d <= gunAuraMax then
                 realFireTouch(drop, hrp, 1)
                 realFireTouch(drop, hrp, 0)
-            elseif d < 150 then
-                local dir = (pos - hrp.Position) / d
-                pcall(function() hrp.AssemblyLinearVelocity = dir * gunAuraSpeed end)
             end
         end)
     end
@@ -7870,16 +7898,443 @@ end)
 
 Tabs.World:AddSection("🧲 Gun Aura")
 Tabs.World:AddToggle("CWHGunAura", {
-    Title = "Gun Aura (автоподбор пушки)",
-    Description = "Как только пистолет упал — подбор дистанционно (firetouch) или мягкое притяжение, как коин-аура",
+    Title = "Gun Aura v2 (автоподбор пушки)",
+    Description = "[v1.16] Подбор пистолета дистанционно в полосе 20–150 студов, как коин-аура. Тебя не тянет и не телепортирует. Когда ты мардер — не работает",
     Default = false
 }):OnChanged(function(v) gunAuraOn = v end)
-Tabs.World:AddSlider("CWHGunAuraSpeed", {
-    Title = "Скорость притяжения (st/s)", Default = 70, Min = 30, Max = 150, Rounding = 0,
-    Callback = function(v) gunAuraSpeed = v end
+Tabs.World:AddSlider("CWHGunAuraMin", {
+    Title = "Мин радиус (studs)", Default = 20, Min = 10, Max = 80, Rounding = 0,
+    Callback = function(v) gunAuraMin = v end
 })
-print("[CWH] INIT G13 OK (Gun Aura)")
+Tabs.World:AddSlider("CWHGunAuraMax", {
+    Title = "Макс радиус (studs)", Default = 150, Min = 30, Max = 200, Rounding = 0,
+    Callback = function(v) gunAuraMax = v end
+})
+print("[CWH] INIT G13 OK (Gun Aura v2)")
 end -- [CWH SCOPE] G13
+
+do -- ═══ [CWH SCOPE] G14: SKINCHANGER (база игры ReplicatedStorage.Database.Sync, механика Pulse) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.16] Порт WeaponSkins/SkinModel/SkinCatalog из нового Pulse: база скинов —
+-- родной модуль игры ReplicatedStorage.Database.Sync (тот же, что и у Pulse).
+-- Скин строится из сериализованных нодов (h/d), приваривается к Handle
+-- (grip из поля g), оригинал прячется и всегда восстанавливается.
+-- Всё клиентское — видно только тебе. Сброс — кнопка «Сбросить».
+local InsertService = game:GetService("InsertService")
+local SK = { On = false, Sel = { Knife = nil, Gun = nil }, db = nil, list = {},
+             tools = {}, meshCache = {}, meshLoading = {},
+             RarityOrder = { Godly = 1, Ancient = 2, Chroma = 3, Unique = 4, Classic = 5,
+                             Legendary = 6, Rare = 7, Uncommon = 8, Common = 9 },
+             FilterRarity = "Any", map = { Knife = {}, Gun = {} } }
+
+-- ── SkinModel.decode: сериализованные свойства ({V,C,F,NR,E,CS,NS}) ──
+local function skDecode(value)
+    if type(value) ~= "table" then return value end
+    local kind = value[1]
+    if kind == "V" then return Vector3.new(value[2], value[3], value[4]) end
+    if kind == "C" then return Color3.new(value[2], value[3], value[4]) end
+    if kind == "F" then return CFrame.new(table.unpack(value, 2, 13)) end
+    if kind == "NR" then return NumberRange.new(value[2], value[3]) end
+    if kind == "E" then
+        local ok, item = pcall(function() return Enum[value[2]][value[3]] end)
+        return ok and item or nil
+    end
+    if kind == "CS" then
+        local points = {}
+        for index = 2, #value do
+            local point = value[index]
+            points[#points + 1] = ColorSequenceKeypoint.new(point[1], Color3.new(point[2], point[3], point[4]))
+        end
+        local ok, seq = pcall(ColorSequence.new, points)
+        return ok and seq or nil
+    end
+    if kind == "NS" then
+        local points = {}
+        for index = 2, #value do
+            local point = value[index]
+            points[#points + 1] = NumberSequenceKeypoint.new(point[1], point[2], point[3] or 0)
+        end
+        local ok, seq = pcall(NumberSequence.new, points)
+        return ok and seq or nil
+    end
+    return nil
+end
+
+local function skFrame(values) return CFrame.new(table.unpack(values, 1, 12)) end
+
+-- ── MeshPart по content-строке, кэш как SkinModel.mesh ──
+local function skMesh(meshId)
+    if meshId == "" then return nil end
+    if SK.meshCache[meshId] then return SK.meshCache[meshId]:Clone() end
+    while SK.meshLoading[meshId] do task.wait() end
+    if SK.meshCache[meshId] then return SK.meshCache[meshId]:Clone() end
+    SK.meshLoading[meshId] = true
+    local ok, result = pcall(function()
+        return InsertService:CreateMeshPartAsync(meshId, Enum.CollisionFidelity.Box, Enum.RenderFidelity.Automatic)
+    end)
+    SK.meshLoading[meshId] = nil
+    if not ok or not result then return nil end
+    SK.meshCache[meshId] = result
+    return result:Clone()
+end
+
+-- ── SkinModel.node/build: дерево {c,n,p,k,i,r,a} с неразрешёнными ссылками {R,idx} ──
+local function skNode(data, root, references, unresolved)
+    if type(data) ~= "table" then return nil end
+    local object
+    if data.c == "MeshPart" then
+        object = skMesh(data.p and data.p.MeshId or "")
+        if not object then
+            object = Instance.new("Part")
+            object.Transparency = 1
+        end
+    end
+    if not object then
+        local ok, created = pcall(Instance.new, data.c)
+        if not ok or not created then return nil end
+        object = created
+    end
+    object.Name = data.n
+    for property, value in pairs(data.p or {}) do
+        if not (property == "MeshId" and data.c == "MeshPart") then
+            if type(value) == "table" and value[1] == "R" then
+                unresolved[#unresolved + 1] = { object, property, value[2] }
+            else
+                local decoded = skDecode(value)
+                if decoded ~= nil then pcall(function() object[property] = decoded end) end
+            end
+        end
+    end
+    if data.i then references[data.i] = object end
+    if object:IsA("BasePart") then
+        object.Anchored, object.CanCollide, object.CanQuery, object.CanTouch, object.Massless =
+            false, false, false, false, true
+        if root and data.r then
+            local weld = Instance.new("Weld")
+            weld.Name, weld.Part0, weld.Part1, weld.C0, weld.Parent =
+                "PW", root, object, skFrame(data.r), object
+        end
+    end
+    for key, value in pairs(data.a or {}) do
+        pcall(function() object:SetAttribute(key, skDecode(value)) end)
+    end
+    local parentRoot = root or object
+    for _, child in ipairs(data.k or {}) do
+        local built = skNode(child, parentRoot, references, unresolved)
+        if built then built.Parent = object end
+    end
+    return object
+end
+
+local function skBuild(data)
+    local references, unresolved = {}, {}
+    local root = skNode(data, nil, references, unresolved)
+    if not root then return nil end
+    for _, ref in ipairs(unresolved) do
+        local target = references[ref[3]]
+        if target then pcall(function() ref[1][ref[2]] = target end) end
+    end
+    return root
+end
+
+-- ── загрузка базы + каталог ──
+local function skLoadDB()
+    if SK.db then return true end
+    local ok, db = pcall(function()
+        local df = ReplicatedStorage:WaitForChild("Database", 15)
+        return require(df:WaitForChild("Sync", 15))
+    end)
+    if ok and type(db) == "table" then
+        SK.db = db
+        for key, entry in pairs(db) do
+            if type(entry) == "table" and (entry.t == "Knife" or entry.t == "Gun")
+                and (entry.h or entry.d) then
+                SK.list[#SK.list + 1] = {
+                    key = key, name = entry.nm or key, kind = entry.t,
+                    rarity = entry.r or "None", img = entry.img or "",
+                }
+            end
+        end
+        table.sort(SK.list, function(a, b)
+            local ra = (SK.RarityOrder[a.rarity] or 9) + (a.kind == "Knife" and 0.5 or 0)
+            local rb = (SK.RarityOrder[b.rarity] or 9) + (b.kind == "Knife" and 0.5 or 0)
+            if ra ~= rb then return ra < rb end
+            return a.name:lower() < b.name:lower()
+        end)
+        print("[CWH] SKINS: база загружена, скинов: " .. tostring(#SK.list))
+        return true
+    end
+    warn("[CWH] SKINS: ReplicatedStorage.Database.Sync не найден — скинчейджер недоступен")
+    return false
+end
+
+-- ── скрытие оригинала (порт WeaponSkins.hide) ──
+local function skHide(entry, object, keepHidden)
+    if object:IsA("BasePart") then
+        entry.restore[#entry.restore + 1] =
+            { object, "LocalTransparencyModifier", object.LocalTransparencyModifier }
+        object.LocalTransparencyModifier = 1
+        if keepHidden then
+            entry.connections[#entry.connections + 1] =
+                object:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(function()
+                    if object.LocalTransparencyModifier ~= 1 then object.LocalTransparencyModifier = 1 end
+                end)
+        end
+    elseif object:IsA("Decal") or object:IsA("Texture") then
+        entry.restore[#entry.restore + 1] = { object, "Transparency", object.Transparency }
+        object.Transparency = 1
+    elseif object:IsA("ParticleEmitter") or object:IsA("Fire") or object:IsA("Smoke")
+        or object:IsA("Sparkles") or object:IsA("Light") or object:IsA("Trail")
+        or object:IsA("Highlight") then
+        entry.restore[#entry.restore + 1] = { object, "Enabled", object.Enabled }
+        object.Enabled = false
+    end
+end
+
+-- ── сброс скина: всё возвращается как было ──
+local function skClear(tool)
+    local entry = SK.tools[tool]
+    if not entry then return end
+    SK.tools[tool] = nil
+    for _, conn in ipairs(entry.connections) do pcall(function() conn:Disconnect() end) end
+    if entry.visual then pcall(function() entry.visual:Destroy() end) end
+    for _, saved in ipairs(entry.restore) do
+        pcall(function() saved[1][saved[2]] = saved[3] end)
+    end
+    if entry.handle then pcall(function() entry.handle.LocalTransparencyModifier = 0 end) end
+    if entry.oldTexture and tool.Parent then
+        pcall(function() tool.TextureId = entry.oldTexture end)
+    end
+end
+
+-- ── применение скина (порт WeaponSkins.applyTool, упрощённый) ──
+local function skApply(tool, kind)
+    skClear(tool)
+    if not SK.On then return end
+    local key = SK.Sel[kind]
+    if not key or not SK.db then return end
+    local skin = SK.db[key]
+    if type(skin) ~= "table" then return end
+    local handle = tool:FindFirstChild("Handle") or tool:WaitForChild("Handle", 5)
+    if not handle or not tool.Parent then return end
+    local data = skin.h or skin.d
+    local visual = nil
+    if data then visual = skBuild(data) end
+    local entry = { tool = tool, handle = handle, visual = visual, restore = {}, connections = {} }
+    SK.tools[tool] = entry
+    if skin.img and skin.img ~= "" and tool.TextureId ~= skin.img then
+        entry.oldTexture = tool.TextureId
+        pcall(function() tool.TextureId = skin.img end)
+    end
+    if visual then
+        visual.Name = "CWHVisual"
+        local offset = tool.Grip
+        if skin.g then offset = tool.Grip * skFrame(skin.g):Inverse() end
+        local weld = Instance.new("Weld")
+        weld.Name, weld.Part0, weld.Part1, weld.C0, weld.Parent =
+            "CWHGrip", handle, visual, offset, visual
+        visual.CFrame = handle.CFrame * offset
+        visual.Parent = handle
+        -- оригинал под скином прячем
+        skHide(entry, handle, true)
+        for _, obj in ipairs(tool:GetDescendants()) do
+            if obj ~= visual and not obj:IsDescendantOf(visual) then
+                skHide(entry, obj, obj:IsA("BasePart"))
+            end
+        end
+        Notify("Skins", tostring(kind) .. " → " .. tostring(skin.nm or key), "скин применён (клиентский)", 4)
+    else
+        Notify("Skins", "не удалось построить скин", tostring(key), 4)
+        SK.tools[tool] = nil
+    end
+end
+
+-- ── наблюдатель: тул в руках → применяем; убран → сброс ──
+task.spawn(function()
+    while task.wait(0.3) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            local c = getChar(LocalPlayer)
+            if not c then return end
+            for tool, entry in pairs(SK.tools) do
+                if not tool.Parent or tool.Parent ~= c then skClear(tool) end
+            end
+            if not SK.On then return end
+            for _, kind in ipairs({ "Knife", "Gun" }) do
+                if SK.Sel[kind] then
+                    local tool = c:FindFirstChild(kind)
+                    if tool and tool:IsA("Tool") and not SK.tools[tool] then
+                        skApply(tool, kind)
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ── UI: таб Skins ──
+local SKUI = {}
+local function skOptions(kind)
+    local out = {}
+    SK.map[kind] = {}
+    for _, item in ipairs(SK.list) do
+        if item.kind == kind and (SK.FilterRarity == "Any" or item.rarity == SK.FilterRarity) then
+            local label = item.name .. " | " .. item.rarity
+            SK.map[kind][label] = item.key
+            out[#out + 1] = label
+        end
+    end
+    return out
+end
+local function skSet(kind, label)
+    SK.Sel[kind] = label and SK.map[kind] and SK.map[kind][label] or nil
+    local c = getChar(LocalPlayer)
+    local tool = c and c:FindFirstChild(kind)
+    if tool then skApply(tool, kind) end
+end
+
+Tabs.Skins:AddSection("🎨 Skinchanger (как в Pulse)")
+Tabs.Skins:AddToggle("SKOn", {
+    Title = "Включить скинчейджер",
+    Description = "[v1.16] База скинов — родная база игры (ReplicatedStorage.Database.Sync). Применяется к ножу/пистолету в руках, сбрасывается при убирании",
+    Default = false
+}):OnChanged(function(v)
+    SK.On = v
+    if not v then
+        local c = getChar(LocalPlayer)
+        local k = c and c:FindFirstChild("Knife")
+        local g = c and c:FindFirstChild("Gun")
+        if k then skClear(k) end
+        if g then skClear(g) end
+    else
+        skLoadDB()
+    end
+end)
+Tabs.Skins:AddDropdown("SKRarity", {
+    Title = "Фильтр по редкости",
+    Values = { "Any", "Godly", "Ancient", "Chroma", "Unique", "Classic", "Legendary", "Rare", "Uncommon", "Common" },
+    Default = "Any",
+    Callback = function(v)
+        SK.FilterRarity = v or "Any"
+        if SKUI.knifeDd then pcall(function() SKUI.knifeDd:SetValues(skOptions("Knife")) end) end
+        if SKUI.gunDd then pcall(function() SKUI.gunDd:SetValues(skOptions("Gun")) end) end
+    end
+})
+Tabs.Skins:AddSection("🔪 Нож")
+SKUI.knifeDd = Tabs.Skins:AddDropdown("SKKnife", {
+    Title = "Скин ножа",
+    Description = "Выбери скин — применится к ножу в руках",
+    Values = {}, Default = nil,
+    Callback = function(v) skSet("Knife", (v and v ~= "") and v or nil) end
+})
+Tabs.Skins:AddButton({
+    Title = "Сбросить нож",
+    Description = "Вернуть настоящий нож",
+    Callback = function()
+        SK.Sel.Knife = nil
+        local c = getChar(LocalPlayer)
+        local t = c and c:FindFirstChild("Knife")
+        if t then skClear(t) end
+    end
+})
+Tabs.Skins:AddSection("🔫 Пистолет")
+SKUI.gunDd = Tabs.Skins:AddDropdown("SKGun", {
+    Title = "Скин пистолета",
+    Description = "Выбери скин — применится к пистолету в руках",
+    Values = {}, Default = nil,
+    Callback = function(v) skSet("Gun", (v and v ~= "") and v or nil) end
+})
+Tabs.Skins:AddButton({
+    Title = "Сбросить пистолет",
+    Description = "Вернуть настоящий пистолет",
+    Callback = function()
+        SK.Sel.Gun = nil
+        local c = getChar(LocalPlayer)
+        local t = c and c:FindFirstChild("Gun")
+        if t then skClear(t) end
+    end
+})
+task.spawn(function()
+    if skLoadDB() then
+        if SKUI.knifeDd then pcall(function() SKUI.knifeDd:SetValues(skOptions("Knife")) end) end
+        if SKUI.gunDd then pcall(function() SKUI.gunDd:SetValues(skOptions("Gun")) end) end
+        Notify("Skins", "скинчейджер готов", "скинов в базе: " .. tostring(#SK.list), 6)
+    else
+        Notify("Skins", "база не найдена", "ReplicatedStorage.Database.Sync отсутствует", 6)
+    end
+end)
+print("[CWH] INIT G14 OK (Skinchanger)")
+end -- [CWH SCOPE] G14
+
+do -- ═══ [CWH SCOPE] G15: CAMERA NOCLIP (фри-кам сквозь стены) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.16] Камера отвязывается от персонажа (Scriptable) и летает сквозь стены:
+-- WASD — полёт, Space/Ctrl — вверх/вниз, ПКМ — поворот взгляда, колесо — скорость.
+-- Персонаж остаётся на месте. Выключил — камера вернулась к персонажу.
+local FC = { On = false, Speed = 40, pos = nil, yaw = 0, pitch = 0, conn = nil, dragConn = nil }
+
+local function fcStop()
+    if FC.conn then pcall(function() FC.conn:Disconnect() end) FC.conn = nil end
+    if FC.dragConn then pcall(function() FC.dragConn:Disconnect() end) FC.dragConn = nil end
+    local cam = workspace.CurrentCamera
+    if cam then
+        cam.CameraType = Enum.CameraType.Custom
+        local hum = getHum(getChar(LocalPlayer))
+        if hum then cam.CameraSubject = hum end
+    end
+    FC.On = false
+end
+
+local function fcStart()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local hrp = getHRP(getChar(LocalPlayer))
+    FC.pos = (hrp and hrp.Position + Vector3.new(0, 5, 0)) or cam.CFrame.Position
+    local lv = cam.CFrame.LookVector
+    FC.yaw = math.atan2(-lv.X, -lv.Z)
+    FC.pitch = math.clamp(math.asin(math.clamp(lv.Y, -1, 1)), -1.5, 1.5)
+    cam.CameraType = Enum.CameraType.Scriptable
+    FC.conn = RunService.RenderStepped:Connect(function(dt)
+        local cam2 = workspace.CurrentCamera
+        if not cam2 then return end
+        local fwd = Vector3.new(-math.sin(FC.yaw), 0, -math.cos(FC.yaw))
+        local right = Vector3.new(math.cos(FC.yaw), 0, -math.sin(FC.yaw))
+        local move = Vector3.new(0, 0, 0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + fwd end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - fwd end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+        if move.Magnitude > 0 then
+            FC.pos = FC.pos + move.Unit * (FC.Speed * dt)
+        end
+        cam2.CFrame = CFrame.new(FC.pos) * CFrame.fromEulerAnglesYXZ(FC.pitch, FC.yaw, 0)
+    end)
+    FC.dragConn = UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+            FC.yaw = FC.yaw - input.Delta.X * 0.004
+            FC.pitch = math.clamp(FC.pitch - input.Delta.Y * 0.004, -1.5, 1.5)
+        end
+    end)
+    FC.On = true
+end
+
+Tabs.Farm:AddSection("📹 Камера ноклип (Freecam)")
+Tabs.Farm:AddToggle("CWFFreecam", {
+    Title = "📹 Camera Noclip (фри-кам)",
+    Description = "[v1.16] Камера летает сквозь стены: WASD — полёт, Space/Ctrl — вверх/вниз, ПКМ — поворот. Персонаж остаётся на месте",
+    Default = false
+}):OnChanged(function(v)
+    if v then fcStart() else fcStop() end
+end)
+Tabs.Farm:AddSlider("CWFFreecamSpeed", {
+    Title = "Скорость камеры (st/s)", Default = 40, Min = 10, Max = 150, Rounding = 0,
+    Callback = function(v) FC.Speed = v end
+})
+print("[CWH] INIT G15 OK (Camera Noclip)")
+end -- [CWH SCOPE] G15
 
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
@@ -7962,5 +8417,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.12 | фарм-механика Lite | No Coin | ESP Overdrive | ауры VFX | трейсер Shitaro", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.16 | Magic Bullet | Gun Aura v2 | Skins | Freecam | фарм Lite | No Coin | ESP Overdrive | ауры VFX | трейсер", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
