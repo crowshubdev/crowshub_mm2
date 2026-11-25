@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.16: Magic Bullet + правка предикта, Gun Aura v2 (20–150, без телепорта, мардер-гейт), Skinchanger из базы игры, Camera Noclip/Freecam, Auto Farm Lite, No Coin, ESP Overdrive, ауры Pulse VFX, трейсер Shitaro)")
+print("[CWH] START — правильный скрипт выполняется (v1.17: снег с 5 скоростями и наклоном, Magic Bullet 360°-сфера + случайная часть тела, анти-джамперы/анти-миники + мульти-выстрел, Knife Aura из Overdrive, следящая камера-ноклип, скинчейджер-ремонт, Gun Aura v2, фарм, ESP, ауры VFX)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -404,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.3 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -1958,6 +1958,8 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
               Spoof = false, Smart = true, Magic = false,
+              MagicStyle = "Смесь", BodyMode = "Торс", Center = false, Multi = false,
+              Ballistic = true, BulletSpeed = 300,
               V4 = true, V4Lead = 0.05, ForceOffset = 8 }
 
 -- ═══ [v1.9] SA4-PRED: ядро предсказания из нового Pulse (V4-движок) ═══
@@ -2067,6 +2069,24 @@ local function sa3AimPos(targetPlayer)
     if not (part and my) then return nil end
     if (part.Position - my.Position).Magnitude > SA3.Range then return nil end
     local pos = part.Position
+    -- [v1.17] анти-миники: целься в центр хитбокса модели — мелкие скины пробиваются
+    if SA3.Center then
+        pcall(function()
+            local cf = c:GetBoundingBox()
+            if cf then pos = cf.Position end
+        end)
+    end
+    -- [v1.17] magic bullet сам выбирает часть тела: торс/голова/руки/ноги
+    if SA3.Magic and SA3.BodyMode == "Случайная часть" then
+        local names = { "UpperTorso", "Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+            "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg" }
+        local pool = {}
+        for _, nm in ipairs(names) do
+            local pp = c:FindFirstChild(nm)
+            if pp and pp:IsA("BasePart") then pool[#pool + 1] = pp end
+        end
+        if #pool > 0 then pos = pool[math.random(1, #pool)].Position end
+    end
     if SA3.Predict then
         local root = getHRP(c)
         if root then
@@ -2088,6 +2108,15 @@ local function sa3AimPos(targetPlayer)
                 pos = p4:Lerp(pos + vel * dt, 0.35)
             else
                 pos = pos + vel * dt
+            end
+            -- [v1.17] анти-джамперы: цель в воздухе → предикт с гравитацией,
+            -- бесконечные прыжки больше не уводят пулю мимо
+            if SA3.Ballistic and math.abs(vel.Y) > 4 then
+                local g = workspace.Gravity
+                local spd = math.max(50, SA3.BulletSpeed or 300)
+                local dt2 = (pos - my.Position).Magnitude / spd
+                local py = pos.Y + vel.Y * dt2 - 0.5 * g * dt2 * dt2
+                pos = Vector3.new(pos.X + vel.X * dt2, py, pos.Z + vel.Z * dt2)
             end
         end
     end
@@ -2125,17 +2154,24 @@ function sa3FireShot(targetPlayer, fromAbove)
         local toMeU = toMe.Magnitude > 0.1 and toMe.Unit or Vector3.new(0, 0, 1)
         local perp = Vector3.new(-toMeU.Z, 0, toMeU.X)
         local head = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head")
-        local roll = math.random(1, 4)
-        if roll == 1 then
-            origin = pos - toMeU * 12 + Vector3.new(0, 1.5, 0) -- из-за спины
-        elseif roll == 2 then
-            local face = head and head.CFrame.LookVector or -toMeU -- в лицо
-            origin = pos + face * 9 + Vector3.new(0, 0.5, 0)
-        elseif roll == 3 then
-            origin = pos - Vector3.new(0, 2.5, 0) -- из-под ног, снизу вверх
+        if SA3.MagicStyle == "360° сфера" then
+            -- [v1.17] «звезда» с рисунка: пуля подлетает с ЛЮБОГО угла сферы вокруг жертвы
+            local dir = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
+            if dir.Magnitude < 1 then dir = Vector3.new(0, 1, 0) end
+            origin = pos + dir.Unit * (math.random(100, 160) / 10)
         else
-            local side = perp * (math.random(-60, 60) / 10) -- косо сверху
-            origin = pos + Vector3.new(side.X, 6.5, side.Z)
+            local roll = math.random(1, 4)
+            if roll == 1 then
+                origin = pos - toMeU * 12 + Vector3.new(0, 1.5, 0) -- из-за спины
+            elseif roll == 2 then
+                local face = head and head.CFrame.LookVector or -toMeU -- в лицо
+                origin = pos + face * 9 + Vector3.new(0, 0.5, 0)
+            elseif roll == 3 then
+                origin = pos - Vector3.new(0, 2.5, 0) -- из-под ног, снизу вверх
+            else
+                local side = perp * (math.random(-60, 60) / 10) -- косо сверху
+                origin = pos + Vector3.new(side.X, 6.5, side.Z)
+            end
         end
     elseif fromAbove then
         -- [v1.10] классика Shoot Murderer: пуля появляется НАД ГОЛОВОЙ мардера
@@ -2174,6 +2210,25 @@ function sa3FireShot(targetPlayer, fromAbove)
     end)
     SA3Bypass = false
     if ok then cwhTracer(origin, pos) end -- [v1.10] след пули
+    -- [v1.17] мульти-выстрел: 2 дополнительные пули с разбросом — мелкие и
+    -- прыгучие цели пробиваются вероятностно (шериф/мардер — любая роль)
+    if ok and SA3.Multi then
+        local ray = pos - origin
+        local perp = Vector3.new(-ray.Z, 0, ray.X)
+        if perp.Magnitude > 0.1 then
+            perp = perp.Unit
+            local offs = { perp * 2.2 + Vector3.new(0, 1.4, 0), -perp * 2.2 - Vector3.new(0, 1.4, 0) }
+            for _, off in ipairs(offs) do
+                pcall(function()
+                    SA3Bypass = true
+                    shoot:FireServer(CFrame.new(origin, pos + off), CFrame.new(pos + off))
+                    SA3Bypass = false
+                end)
+            end
+            cwhTracer(origin, pos + offs[1])
+            cwhTracer(origin, pos + offs[2])
+        end
+    end
     return ok
 end
 
@@ -2335,6 +2390,37 @@ Tabs.Combat:AddToggle("SA3Magic", {
     Description = "[v1.16] Пуля прилетает непредсказуемо: из-за спины, в лицо, из-под ног или косо сверху — но всегда попадает по умному предикту",
     Default = false
 }):OnChanged(function(v) SA3.Magic = v end)
+Tabs.Combat:AddDropdown("SA3MagicStyle", {
+    Title = "Magic Bullet стиль",
+    Description = "Смесь — 4 классических подлёта; 360° сфера — пуля с любого угла вокруг жертвы (как на твоём рисунке)",
+    Values = { "Смесь", "360° сфера" }, Default = "Смесь",
+    Callback = function(v) SA3.MagicStyle = v end
+})
+Tabs.Combat:AddDropdown("SA3BodyMode", {
+    Title = "Magic Bullet: куда попадать",
+    Description = "Торс — как раньше; Случайная часть — скрипт сам выбирает торс/голову/руки/ноги",
+    Values = { "Торс", "Случайная часть" }, Default = "Торс",
+    Callback = function(v) SA3.BodyMode = v end
+})
+Tabs.Combat:AddToggle("SA3Center", {
+    Title = "🧬 Анти-миники (центр хитбокса)",
+    Description = "[v1.17] Целится в центр модели — маленькие скины пробиваются (за шерифа и за мардера)",
+    Default = false
+}):OnChanged(function(v) SA3.Center = v end)
+Tabs.Combat:AddToggle("SA3Multi", {
+    Title = "🔫 Мульти-выстрел ×3",
+    Description = "[v1.17] Две доп. пули с разбросом — против мелких скинов и спам-джамперов",
+    Default = false
+}):OnChanged(function(v) SA3.Multi = v end)
+Tabs.Combat:AddToggle("SA3Ballistic", {
+    Title = "🦘 Баллистика (анти-джамперы)",
+    Description = "[v1.17] Цель в воздухе — предикт считает гравитацию: спам-джамперы пробиваются",
+    Default = true
+}):OnChanged(function(v) SA3.Ballistic = v end)
+Tabs.Combat:AddSlider("SA3BulletSpeed", {
+    Title = "Скорость пули (для расчёта)", Default = 300, Min = 100, Max = 1000, Rounding = 0,
+    Callback = function(v) SA3.BulletSpeed = v end
+})
 -- [v1.10] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
 -- (используется веткой spoof/wallbang в sa3FireShot)
 Tabs.Combat:AddSlider("SA3ForceOffset", {
@@ -8038,33 +8124,118 @@ local function skBuild(data)
 end
 
 -- ── загрузка базы + каталог ──
-local function skLoadDB()
-    if SK.db then return true end
-    local ok, db = pcall(function()
-        local df = ReplicatedStorage:WaitForChild("Database", 15)
-        return require(df:WaitForChild("Sync", 15))
-    end)
-    if ok and type(db) == "table" then
-        SK.db = db
-        for key, entry in pairs(db) do
-            if type(entry) == "table" and (entry.t == "Knife" or entry.t == "Gun")
-                and (entry.h or entry.d) then
-                SK.list[#SK.list + 1] = {
-                    key = key, name = entry.nm or key, kind = entry.t,
-                    rarity = entry.r or "None", img = entry.img or "",
+local function skEntryLooksSkin(entry)
+    return type(entry) == "table" and (entry.h or entry.d) and true or false
+end
+local function skKindOf(entry, key)
+    local k = entry.t or entry.Type or entry.type
+    if k == "Knife" or k == "Gun" then return k end
+    local lk = tostring(key):lower()
+    if lk:find("gun") then return "Gun" end
+    if lk:find("knife") then return "Knife" end
+    return nil
+end
+local function skScanTable(db, depth)
+    local found = {}
+    if type(db) ~= "table" or depth > 3 then return found end
+    for key, entry in pairs(db) do
+        if skEntryLooksSkin(entry) then
+            local kind = skKindOf(entry, key)
+            if kind then
+                found[#found + 1] = {
+                    key = key, name = entry.nm or entry.Name or key, kind = kind,
+                    rarity = entry.r or entry.Rarity or "None", img = entry.img or "",
                 }
             end
+        elseif type(entry) == "table" and depth < 3 then
+            local sub = skScanTable(entry, depth + 1)
+            for _, item in ipairs(sub) do found[#found + 1] = item end
         end
+    end
+    local mt = getmetatable(db)
+    if #found == 0 and mt and type(mt.__index) == "table" then
+        local sub = skScanTable(mt.__index, depth + 1)
+        for _, item in ipairs(sub) do found[#found + 1] = item end
+    end
+    return found
+end
+local function skLoadDB()
+    if SK.db then return true end
+    -- [v1.17] ремонт: ищем базу скинов по нескольким путям (как минимум один
+    -- сработает), иначе собираем скины из моделей в ReplicatedStorage
+    local candidates = {}
+    local ok1, db1 = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("Database", 8):WaitForChild("Sync", 8))
+    end)
+    if ok1 then candidates[#candidates + 1] = { db = db1, src = "Database.Sync" } end
+    local ok2, db2 = pcall(function()
+        return require(ReplicatedStorage:WaitForChild("Sync", 3))
+    end)
+    if ok2 and db2 ~= db1 then candidates[#candidates + 1] = { db = db2, src = "ReplicatedStorage.Sync" } end
+    pcall(function()
+        for _, ms in ipairs(ReplicatedStorage:GetDescendants()) do
+            if ms:IsA("ModuleScript") and ms.Name == "Sync" then
+                local ok, r = pcall(require, ms)
+                if ok and r ~= db1 and r ~= db2 then
+                    candidates[#candidates + 1] = { db = r, src = ms:GetFullName() }
+                end
+            end
+        end
+    end)
+    local results, notes = {}, {}
+    for _, cand in ipairs(candidates) do
+        local list = skScanTable(cand.db, 0)
+        notes[#notes + 1] = cand.src .. " → " .. tostring(#list)
+        if #list > #results then
+            results = list
+            SK.db = cand.db
+        end
+    end
+    SK.list = results
+    print("[CWH] SKINS DB: " .. (#notes > 0 and table.concat(notes, "; ") or "кандидатов нет"))
+    if #SK.list == 0 then
+        -- фолбэк: папки моделей скинов прямо в ReplicatedStorage
+        SK._seenFolders = SK._seenFolders or {}
+        pcall(function()
+            for _, ch in ipairs(ReplicatedStorage:GetChildren()) do
+                if ch:IsA("Folder") and not SK._seenFolders[ch.Name] then
+                    local lname = ch.Name:lower()
+                    local kind = (lname:find("gun") and "Gun") or (lname:find("knife") and "Knife") or nil
+                    if kind then
+                        SK._seenFolders[ch.Name] = true
+                        local n = 0
+                        for _, m in ipairs(ch:GetChildren()) do
+                            if m:IsA("Model") or m:IsA("Tool") then
+                                SK.list[#SK.list + 1] = {
+                                    key = "mdl:" .. ch.Name .. ":" .. m.Name,
+                                    name = m.Name, kind = kind, rarity = "модель", img = "",
+                                    src = "mdl", mdlFolder = ch.Name, mdlName = m.Name,
+                                }
+                                n = n + 1
+                            end
+                        end
+                        print("[CWH] SKINS модели: " .. ch.Name .. " → " .. tostring(n))
+                    end
+                end
+            end
+        end)
+    end
+    if #SK.list > 0 then
         table.sort(SK.list, function(a, b)
             local ra = (SK.RarityOrder[a.rarity] or 9) + (a.kind == "Knife" and 0.5 or 0)
             local rb = (SK.RarityOrder[b.rarity] or 9) + (b.kind == "Knife" and 0.5 or 0)
             if ra ~= rb then return ra < rb end
             return a.name:lower() < b.name:lower()
         end)
-        print("[CWH] SKINS: база загружена, скинов: " .. tostring(#SK.list))
+        print("[CWH] SKINS: всего в каталоге: " .. tostring(#SK.list))
         return true
     end
-    warn("[CWH] SKINS: ReplicatedStorage.Database.Sync не найден — скинчейджер недоступен")
+    local names = {}
+    pcall(function()
+        for _, ch in ipairs(ReplicatedStorage:GetChildren()) do names[#names + 1] = ch.Name end
+    end)
+    print("[CWH] SKINS ничего не найдено; дети ReplicatedStorage: " .. table.concat(names, ", "))
+    warn("[CWH] SKINS: база скинов не найдена — пришли, что напечатано в F9")
     return false
 end
 
@@ -8112,14 +8283,41 @@ local function skApply(tool, kind)
     skClear(tool)
     if not SK.On then return end
     local key = SK.Sel[kind]
-    if not key or not SK.db then return end
-    local skin = SK.db[key]
-    if type(skin) ~= "table" then return end
+    if not key then return end
     local handle = tool:FindFirstChild("Handle") or tool:WaitForChild("Handle", 5)
     if not handle or not tool.Parent then return end
-    local data = skin.h or skin.d
     local visual = nil
-    if data then visual = skBuild(data) end
+    local skin = nil
+    if key:sub(1, 4) == "mdl:" then
+        -- [v1.17] скин из моделей ReplicatedStorage (фолбэк без Database.Sync)
+        pcall(function()
+            local fld, nm = key:match("^mdl:(.+):(.+)$")
+            local folder = fld and ReplicatedStorage:FindFirstChild(fld)
+            local model = folder and folder:FindFirstChild(nm)
+            if model then
+                skin = { nm = nm }
+                visual = model:Clone()
+                if visual:IsA("Tool") then
+                    local h2 = visual:FindFirstChild("Handle")
+                    if h2 then visual = h2 end
+                end
+                local function dephys(bp)
+                    bp.Anchored, bp.CanCollide, bp.CanQuery, bp.CanTouch, bp.Massless =
+                        false, false, false, false, true
+                end
+                for _, bp2 in ipairs(visual:GetDescendants()) do
+                    if bp2:IsA("BasePart") then dephys(bp2) end
+                end
+                if visual:IsA("BasePart") then dephys(visual) end
+            end
+        end)
+        if not visual then return end
+    else
+        skin = SK.db and SK.db[key]
+        if type(skin) ~= "table" then return end
+        local data = skin.h or skin.d
+        if data then visual = skBuild(data) end
+    end
     local entry = { tool = tool, handle = handle, visual = visual, restore = {}, connections = {} }
     SK.tools[tool] = entry
     if skin.img and skin.img ~= "" and tool.TextureId ~= skin.img then
@@ -8266,16 +8464,27 @@ end)
 print("[CWH] INIT G14 OK (Skinchanger)")
 end -- [CWH SCOPE] G14
 
-do -- ═══ [CWH SCOPE] G15: CAMERA NOCLIP (фри-кам сквозь стены) ═══
+do -- ═══ [CWH SCOPE] G15: CAMERA NOCLIP (следящая камера сквозь стены) ═══
 -- ═══════════════════════════════════════════════════════════════
--- [v1.16] Камера отвязывается от персонажа (Scriptable) и летает сквозь стены:
--- WASD — полёт, Space/Ctrl — вверх/вниз, ПКМ — поворот взгляда, колесо — скорость.
--- Персонаж остаётся на месте. Выключил — камера вернулась к персонажу.
-local FC = { On = false, Speed = 40, pos = nil, yaw = 0, pitch = 0, conn = nil, dragConn = nil }
+-- [v1.17] НЕ свободная камера: обычное слежение за своим персонажем, но у
+-- стены камера НЕ прижимается к персонажу — проходит насквозь, а стена между
+-- камерой и тобой становится прозрачной. ПКМ — поворот, колесо — зум,
+-- персонаж ходит как обычно (WASD относительно камеры).
+local FC = { On = false, yaw = 0, pitch = 0, zoom = 14, conn = nil,
+             wheelConn = nil, dragConn = nil, faded = {} }
+
+local function fcUnfade()
+    for obj, lm in pairs(FC.faded) do
+        pcall(function() obj.LocalTransparencyModifier = lm end)
+    end
+    FC.faded = {}
+end
 
 local function fcStop()
     if FC.conn then pcall(function() FC.conn:Disconnect() end) FC.conn = nil end
+    if FC.wheelConn then pcall(function() FC.wheelConn:Disconnect() end) FC.wheelConn = nil end
     if FC.dragConn then pcall(function() FC.dragConn:Disconnect() end) FC.dragConn = nil end
+    fcUnfade()
     local cam = workspace.CurrentCamera
     if cam then
         cam.CameraType = Enum.CameraType.Custom
@@ -8289,52 +8498,240 @@ local function fcStart()
     local cam = workspace.CurrentCamera
     if not cam then return end
     local hrp = getHRP(getChar(LocalPlayer))
-    FC.pos = (hrp and hrp.Position + Vector3.new(0, 5, 0)) or cam.CFrame.Position
     local lv = cam.CFrame.LookVector
     FC.yaw = math.atan2(-lv.X, -lv.Z)
-    FC.pitch = math.clamp(math.asin(math.clamp(lv.Y, -1, 1)), -1.5, 1.5)
+    FC.pitch = math.clamp(math.asin(math.clamp(lv.Y, -1, 1)), -1.2, 1.2)
+    if hrp then
+        FC.zoom = math.clamp((cam.CFrame.Position - hrp.Position).Magnitude, 6, 40)
+    end
     cam.CameraType = Enum.CameraType.Scriptable
-    FC.conn = RunService.RenderStepped:Connect(function(dt)
+    FC.conn = RunService.RenderStepped:Connect(function()
         local cam2 = workspace.CurrentCamera
         if not cam2 then return end
-        local fwd = Vector3.new(-math.sin(FC.yaw), 0, -math.cos(FC.yaw))
-        local right = Vector3.new(math.cos(FC.yaw), 0, -math.sin(FC.yaw))
-        local move = Vector3.new(0, 0, 0)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + fwd end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - fwd end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
-        if move.Magnitude > 0 then
-            FC.pos = FC.pos + move.Unit * (FC.Speed * dt)
+        local char = getChar(LocalPlayer)
+        local root = getHRP(char)
+        if not root then return end
+        local focus = root.Position + Vector3.new(0, 1.8, 0)
+        local cf = CFrame.new(focus) * CFrame.fromEulerAnglesYXZ(FC.pitch, FC.yaw, 0)
+        local camPos = focus - cf.LookVector * FC.zoom
+        cam2.CFrame = CFrame.new(camPos, focus)
+        -- стена между камерой и персонажем → прозрачная (видим себя сквозь стену)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { char }
+        local result = workspace:Raycast(focus, camPos - focus, params)
+        local hit = result and result.Instance
+        for obj, lm in pairs(FC.faded) do
+            if not (hit and (obj == hit or obj:IsDescendantOf(hit))) then
+                pcall(function() obj.LocalTransparencyModifier = lm end)
+                FC.faded[obj] = nil
+            end
         end
-        cam2.CFrame = CFrame.new(FC.pos) * CFrame.fromEulerAnglesYXZ(FC.pitch, FC.yaw, 0)
+        if hit and hit:IsA("BasePart") and not FC.faded[hit] then
+            FC.faded[hit] = hit.LocalTransparencyModifier
+            pcall(function() hit.LocalTransparencyModifier = 0.85 end)
+        end
     end)
     FC.dragConn = UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement
             and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-            FC.yaw = FC.yaw - input.Delta.X * 0.004
-            FC.pitch = math.clamp(FC.pitch - input.Delta.Y * 0.004, -1.5, 1.5)
+            FC.yaw = FC.yaw - input.Delta.X * 0.005
+            FC.pitch = math.clamp(FC.pitch - input.Delta.Y * 0.005, -1.2, 1.2)
+        end
+    end)
+    FC.wheelConn = UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseWheel then
+            FC.zoom = math.clamp(FC.zoom - input.Delta.Z, 5, 60)
         end
     end)
     FC.On = true
 end
 
-Tabs.Farm:AddSection("📹 Камера ноклип (Freecam)")
-Tabs.Farm:AddToggle("CWFFreecam", {
-    Title = "📹 Camera Noclip (фри-кам)",
-    Description = "[v1.16] Камера летает сквозь стены: WASD — полёт, Space/Ctrl — вверх/вниз, ПКМ — поворот. Персонаж остаётся на месте",
+Tabs.Farm:AddSection("📹 Камера ноклип (следящая)")
+Tabs.Farm:AddToggle("CWHCamNoclip", {
+    Title = "📹 Camera Noclip (сквозь стены)",
+    Description = "[v1.17] Обычное слежение за персонажем, но у стены камера не прижимается — смотрит насквозь, а стена становится прозрачной. ПКМ — поворот, колесо — зум",
     Default = false
 }):OnChanged(function(v)
     if v then fcStart() else fcStop() end
 end)
-Tabs.Farm:AddSlider("CWFFreecamSpeed", {
-    Title = "Скорость камеры (st/s)", Default = 40, Min = 10, Max = 150, Rounding = 0,
-    Callback = function(v) FC.Speed = v end
-})
-print("[CWH] INIT G15 OK (Camera Noclip)")
+print("[CWH] INIT G15 OK (Camera Noclip следящая)")
 end -- [CWH SCOPE] G15
+
+
+do -- ═══ [CWH SCOPE] G16: SNOW (снег в Visual 2) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.17] Снег: эмиттер летит над персонажем. Скорость — от «очень медленного»
+-- до «урагана». Падение — прямо сверху вниз или под наклоном (влево/вправо
+-- относительно того, куда смотришь).
+local SN = { On = false, Part = nil, Emit = nil, Conn = nil,
+             Speed = "Средний", Wind = "Прямо" }
+local SN_SPEED = {
+    ["Очень медленный"] = { rate = 50,  speed = 2.5, life = 12 },
+    ["Средний"]         = { rate = 130, speed = 6,   life = 8 },
+    ["Быстрый"]         = { rate = 260, speed = 12,  life = 6 },
+    ["Очень быстрый"]   = { rate = 450, speed = 22,  life = 4 },
+    ["Ураган"]          = { rate = 750, speed = 45,  life = 3 },
+}
+local SN_WIND = {
+    ["Прямо"]          = 0,
+    ["Наклон влево"]   = -7,
+    ["Наклон вправо"]  = 7,
+}
+local function snApply()
+    if not SN.Emit then return end
+    local sp = SN_SPEED[SN.Speed] or SN_SPEED["Средний"]
+    SN.Emit.Rate = sp.rate
+    SN.Emit.Speed = NumberRange.new(sp.speed * 0.7, sp.speed)
+    SN.Emit.Lifetime = NumberRange.new(sp.life * 0.6, sp.life)
+end
+local function snStop()
+    if SN.Conn then pcall(function() SN.Conn:Disconnect() end) SN.Conn = nil end
+    if SN.Part then pcall(function() SN.Part:Destroy() end) end
+    SN.Part, SN.Emit = nil, nil
+    SN.On = false
+end
+local function snStart()
+    snStop()
+    local part = Instance.new("Part")
+    part.Name = "CWH_SnowZone"
+    part.Size = Vector3.new(90, 2, 90)
+    part.Transparency = 1
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanQuery = false
+    part.CastShadow = false
+    local emit = Instance.new("ParticleEmitter")
+    emit.Name = "CWH_Snow"
+    emit.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    emit.Color = ColorSequence.new(Color3.new(1, 1, 1))
+    emit.Size = NumberSequence.new(0.45)
+    emit.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.35),
+        NumberSequenceKeypoint.new(0.8, 0.5),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    emit.EmissionDirection = Enum.NormalId.Bottom
+    emit.SpreadAngle = Vector2.new(6, 6)
+    emit.Rotation = NumberRange.new(0, 360)
+    emit.RotSpeed = NumberRange.new(-80, 80)
+    emit.LightEmission = 0.2
+    emit.Shape = Enum.ParticleEmitterShape.Box
+    emit.Parent = part
+    part.Parent = workspace
+    SN.Part, SN.Emit = part, emit
+    snApply()
+    SN.Conn = RunService.Heartbeat:Connect(function()
+        local root = getHRP(getChar(LocalPlayer))
+        if not (root and SN.Part and SN.Emit) then return end
+        SN.Part.CFrame = CFrame.new(root.Position + Vector3.new(0, 34, 0))
+        -- наклон падения относительно того, куда смотрим
+        local wind = SN_WIND[SN.Wind] or 0
+        local lv = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.LookVector
+            or Vector3.new(0, 0, -1)
+        local flat = Vector3.new(lv.X, 0, lv.Z)
+        local right = Vector3.new(1, 0, 0)
+        if flat.Magnitude > 0.1 then right = Vector3.new(-flat.Z, 0, flat.X).Unit end
+        SN.Emit.Acceleration = right * wind + Vector3.new(0, -9, 0)
+    end)
+    SN.On = true
+end
+
+Tabs.Visuals2:AddSection("❄️ Снег")
+Tabs.Visuals2:AddToggle("CWHSnow", {
+    Title = "❄️ Снег",
+    Description = "[v1.17] Снегопад вокруг тебя: медленный, средний, быстрый, очень быстрый и ураган; падает прямо или под наклоном",
+    Default = false
+}):OnChanged(function(v)
+    if v then snStart() else snStop() end
+end)
+Tabs.Visuals2:AddDropdown("CWHSnowSpeed", {
+    Title = "Скорость снега",
+    Values = { "Очень медленный", "Средний", "Быстрый", "Очень быстрый", "Ураган" },
+    Default = "Средний",
+    Callback = function(v) SN.Speed = v; snApply() end
+})
+Tabs.Visuals2:AddDropdown("CWHSnowWind", {
+    Title = "Падение снега",
+    Description = "Прямо — сверху вниз; наклон — снег летит под углом",
+    Values = { "Прямо", "Наклон влево", "Наклон вправо" },
+    Default = "Прямо",
+    Callback = function(v) SN.Wind = v end
+})
+print("[CWH] INIT G16 OK (Snow)")
+end -- [CWH SCOPE] G16
+
+do -- ═══ [CWH SCOPE] G17: KNIFE AURA (порт из Overdrive) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.17] Механика Overdrive (Reworked Knife Aura): нож в руках сам «касается»
+-- жертвы (firetouch Handle ↔ HRP) + прямой ремоут Stab:FireServer(позиция) —
+-- попадание засчитывается, даже если махнул мимо. Только когда у тебя нож.
+local KA = { On = false, Radius = 12, Target = "Все", Last = 0 }
+task.spawn(function()
+    while task.wait(0.05) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not KA.On then return end
+            if os.clock() - KA.Last < 0.15 then return end
+            local c = getChar(LocalPlayer)
+            if not c then return end
+            if getRole(LocalPlayer) ~= "Murderer" then return end
+            local knife = c:FindFirstChild("Knife")
+            if not knife then
+                local bp = LocalPlayer:FindFirstChild("Backpack")
+                local bk = bp and bp:FindFirstChild("Knife")
+                local hum = getHum(c)
+                if bk and hum then pcall(function() hum:EquipTool(bk) end) end
+                return
+            end
+            local handle = knife:FindFirstChild("Handle")
+            local stab = knife:FindFirstChild("Stab")
+            local myHRP = getHRP(c)
+            if not (handle and myHRP) then return end
+            local best, bd = nil, math.huge
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    local role = getRole(p)
+                    local want = (KA.Target ~= "Только шериф") or (role == "Sheriff")
+                    local h = getHum(getChar(p))
+                    local eHRP = getHRP(getChar(p))
+                    if want and h and h.Health > 0 and eHRP then
+                        local d = (eHRP.Position - myHRP.Position).Magnitude
+                        if d <= KA.Radius and d < bd then best = eHRP bd = d end
+                    end
+                end
+            end
+            if best then
+                KA.Last = os.clock()
+                if realFireTouch then
+                    realFireTouch(handle, best, 1)
+                    realFireTouch(handle, best, 0)
+                end
+                if stab and type(stab.FireServer) == "function" then
+                    pcall(function() stab:FireServer(best.Position) end)
+                end
+            end
+        end)
+    end
+end)
+Tabs.Combat:AddSection("🗡️ Knife Aura (Overdrive)")
+Tabs.Combat:AddToggle("KAOn", {
+    Title = "🗡️ Knife Aura",
+    Description = "[v1.17] Из Overdrive: жертвам в радиусе засчитывается удар ножом, даже если махнул мимо. Работает, только когда ты мардер и нож в руках/рюкзаке",
+    Default = false
+}):OnChanged(function(v) KA.On = v end)
+Tabs.Combat:AddSlider("KARadius", {
+    Title = "Радиус нож-ауры (studs)", Default = 12, Min = 5, Max = 100, Rounding = 0,
+    Callback = function(v) KA.Radius = v end
+})
+Tabs.Combat:AddDropdown("KATarget", {
+    Title = "Кого убивать",
+    Values = { "Все", "Только шериф" }, Default = "Все",
+    Callback = function(v) KA.Target = v end
+})
+print("[CWH] INIT G17 OK (Knife Aura)")
+end -- [CWH SCOPE] G17
+
 
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
@@ -8417,5 +8814,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.16 | Magic Bullet | Gun Aura v2 | Skins | Freecam | фарм Lite | No Coin | ESP Overdrive | ауры VFX | трейсер", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.17 | Снег | Magic Bullet 360° | анти-джамперы/анти-миники | Knife Aura | камера-ноклип | Skins | Gun Aura v2 | фарм | ESP | VFX", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
