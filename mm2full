@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.17: снег с 5 скоростями и наклоном, Magic Bullet 360°-сфера + случайная часть тела, анти-джамперы/анти-миники + мульти-выстрел, Knife Aura из Overdrive, следящая камера-ноклип, скинчейджер-ремонт, Gun Aura v2, фарм, ESP, ауры VFX)")
+print("[CWH] START — правильный скрипт выполняется (v1.18: фикс снега, Throw Knife Aura, Remove Kill Parts, Touch Fling, откуда летит пуля, 360° без пола, не задеть невиновных, серия ×3, стрельба из лобби, слайдер avoid, скинчейджер-ремонт-2, Magic Bullet, Gun Aura v2, фарм, ESP, ауры VFX)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -514,7 +514,7 @@ Tabs.Main:AddToggle("FOVOn", { Title = "Enable FOV Changer", Default = false })
         if not v then Camera.FieldOfView = DefaultFOV end
     end)
 Tabs.Main:AddSlider("FOVVal", {
-    Title = "FOV Value", Default = 120, Min = 30, Max = 200, Rounding = 0,
+    Title = "FOV Value", Default = 120, Min = 30, Max = 350, Rounding = 0,
     Callback = function(v) TargetFOV = v end
 })
 RunService.RenderStepped:Connect(function()
@@ -1958,7 +1958,9 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
               Spoof = false, Smart = true, Magic = false,
-              MagicStyle = "Смесь", BodyMode = "Торс", Center = false, Multi = false,
+              MagicStyle = "Смесь", BodyMode = "Торс", Center = false,
+              Multi = "Выкл", MultiDelay = 3.2,
+              OriginMode = "Возле жертвы (магия)", NoInnocent = false, NoGun = true,
               Ballistic = true, BulletSpeed = 300,
               V4 = true, V4Lead = 0.05, ForceOffset = 8 }
 
@@ -2142,7 +2144,15 @@ function sa3FireShot(targetPlayer, fromAbove)
         end
     end
     local shoot = gun and (gun:FindFirstChild("Shoot") or gun:FindFirstChild("Shoot", true))
-    if not (myHRP and gun and shoot) then return false end
+    -- [v1.18] стрельба без гана (например, из лобби): ищем Shoot-ремоут глобально
+    if not (myHRP and shoot) and myHRP and SA3.NoGun then
+        pcall(function()
+            local rem = ReplicatedStorage:FindFirstChild("Remotes")
+            local cand = rem and (rem:FindFirstChild("Shoot") or rem:FindFirstChild("Shoot", true))
+            if cand and cand:IsA("RemoteEvent") then shoot = cand end
+        end)
+    end
+    if not (myHRP and shoot) then return false end
     local pos = sa3AimPos(targetPlayer)
     if not pos then return false end
     local origin
@@ -2154,10 +2164,14 @@ function sa3FireShot(targetPlayer, fromAbove)
         local toMeU = toMe.Magnitude > 0.1 and toMe.Unit or Vector3.new(0, 0, 1)
         local perp = Vector3.new(-toMeU.Z, 0, toMeU.X)
         local head = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head")
-        if SA3.MagicStyle == "360° сфера" then
+        if SA3.MagicStyle == "360° сфера" or SA3.MagicStyle == "360° без пола" then
             -- [v1.17] «звезда» с рисунка: пуля подлетает с ЛЮБОГО угла сферы вокруг жертвы
             local dir = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
             if dir.Magnitude < 1 then dir = Vector3.new(0, 1, 0) end
+            -- [v1.18] «без пола»: пуля всегда прилетает сверху или сбоку, никогда с пола
+            if SA3.MagicStyle == "360° без пола" then
+                dir = Vector3.new(dir.X, math.abs(dir.Y) + 8, dir.Z)
+            end
             origin = pos + dir.Unit * (math.random(100, 160) / 10)
         else
             local roll = math.random(1, 4)
@@ -2203,6 +2217,41 @@ function sa3FireShot(targetPlayer, fromAbove)
     else
         origin = myHRP.Position
     end
+    -- [v1.18] «Откуда летит пуля»: возле жертвы (магия, по умолчанию), от меня
+    -- (выглядит как обычный выстрел; через стены может не пробиться) или смесь
+    if SA3.OriginMode == "От меня (обычный вид)"
+        or (SA3.OriginMode == "Смесь" and math.random(1, 2) == 2) then
+        local cam = workspace.CurrentCamera
+        origin = cam and cam.CFrame.Position or myHRP.Position + Vector3.new(0, 1.5, 0)
+    end
+    -- [v1.18] не задеть невиновных: игрок вплотную к жертве или на пути пули → отмена
+    if SA3.NoInnocent then
+        local blocked = false
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p ~= targetPlayer then
+                local eHRP = getHRP(getChar(p))
+                local h = getHum(getChar(p))
+                if eHRP and h and h.Health > 0 then
+                    if (eHRP.Position - pos).Magnitude < 4.5 then
+                        blocked = true
+                    else
+                        local seg = pos - origin
+                        local m2 = seg:Dot(seg)
+                        if m2 > 0.01 then
+                            local t = math.clamp((eHRP.Position - origin):Dot(seg) / m2, 0, 1)
+                            if (origin + seg * t - eHRP.Position).Magnitude < 3.5 then
+                                blocked = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if blocked then
+            Notify("Silent Aim", "Выстрел отменён — рядом игрок (не задеть невиновных)", nil, 2)
+            return false
+        end
+    end
     SA3Bypass = true
     local ok = pcall(function()
         local cf = (pos - origin).Magnitude < 0.1 and CFrame.new(origin) or CFrame.new(origin, pos)
@@ -2210,23 +2259,55 @@ function sa3FireShot(targetPlayer, fromAbove)
     end)
     SA3Bypass = false
     if ok then cwhTracer(origin, pos) end -- [v1.10] след пули
-    -- [v1.17] мульти-выстрел: 2 дополнительные пули с разбросом — мелкие и
-    -- прыгучие цели пробиваются вероятностно (шериф/мардер — любая роль)
-    if ok and SA3.Multi then
-        local ray = pos - origin
-        local perp = Vector3.new(-ray.Z, 0, ray.X)
-        if perp.Magnitude > 0.1 then
-            perp = perp.Unit
-            local offs = { perp * 2.2 + Vector3.new(0, 1.4, 0), -perp * 2.2 - Vector3.new(0, 1.4, 0) }
-            for _, off in ipairs(offs) do
-                pcall(function()
-                    SA3Bypass = true
-                    shoot:FireServer(CFrame.new(origin, pos + off), CFrame.new(pos + off))
-                    SA3Bypass = false
+    -- [v1.18] мульти-выстрел: «Мгновенно ×3» — 3 пули сразу с разбросом;
+    -- «Серия ×3» — после каждого выстрела ждём перезарядку (~3с) и заново
+    -- целимся в живую цель (MM2 даёт КД после выстрела, мгновенные №2-№3 отбрасывались)
+    if ok and SA3.Multi and SA3.Multi ~= "Выкл" then
+        if SA3.Multi == "Мгновенно ×3" then
+            local ray = pos - origin
+            local perp = Vector3.new(-ray.Z, 0, ray.X)
+            if perp.Magnitude > 0.1 then
+                perp = perp.Unit
+                local offs = { perp * 2.2 + Vector3.new(0, 1.4, 0), -perp * 2.2 - Vector3.new(0, 1.4, 0) }
+                for _, off in ipairs(offs) do
+                    pcall(function()
+                        SA3Bypass = true
+                        shoot:FireServer(CFrame.new(origin, pos + off), CFrame.new(pos + off))
+                        SA3Bypass = false
+                    end)
+                end
+                cwhTracer(origin, pos + offs[1])
+                cwhTracer(origin, pos + offs[2])
+            end
+        else
+            local delay = math.max(0.05, SA3.MultiDelay or 3.2)
+            for i = 1, 2 do
+                task.delay(delay * i, function()
+                    pcall(function()
+                        if not getgenv().CWH_RUN then return end
+                        local tgt = targetPlayer or pickSA()
+                        local c2 = tgt and getChar(tgt)
+                        local h2 = c2 and getHum(c2)
+                        if not (c2 and h2 and h2.Health > 0) then return end
+                        if not shoot then return end
+                        local p2 = sa3AimPos(tgt)
+                        if not p2 then return end
+                        local o2 = origin
+                        if SA3.Magic then
+                            local dir = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
+                            if dir.Magnitude < 1 then dir = Vector3.new(0, 1, 0) end
+                            if SA3.MagicStyle == "360° без пола" then
+                                dir = Vector3.new(dir.X, math.abs(dir.Y) + 8, dir.Z)
+                            end
+                            o2 = p2 + dir.Unit * (math.random(100, 160) / 10)
+                        end
+                        SA3Bypass = true
+                        shoot:FireServer(CFrame.new(o2, p2), CFrame.new(p2))
+                        SA3Bypass = false
+                        cwhTracer(o2, p2)
+                    end)
                 end)
             end
-            cwhTracer(origin, pos + offs[1])
-            cwhTracer(origin, pos + offs[2])
         end
     end
     return ok
@@ -2392,8 +2473,8 @@ Tabs.Combat:AddToggle("SA3Magic", {
 }):OnChanged(function(v) SA3.Magic = v end)
 Tabs.Combat:AddDropdown("SA3MagicStyle", {
     Title = "Magic Bullet стиль",
-    Description = "Смесь — 4 классических подлёта; 360° сфера — пуля с любого угла вокруг жертвы (как на твоём рисунке)",
-    Values = { "Смесь", "360° сфера" }, Default = "Смесь",
+    Description = "Смесь — 4 подлёта; 360° сфера — с любого угла (1-й скрин); 360° без пола — всегда сверху/сбоку, никогда с пола (2-й скрин)",
+    Values = { "Смесь", "360° сфера", "360° без пола" }, Default = "Смесь",
     Callback = function(v) SA3.MagicStyle = v end
 })
 Tabs.Combat:AddDropdown("SA3BodyMode", {
@@ -2407,16 +2488,38 @@ Tabs.Combat:AddToggle("SA3Center", {
     Description = "[v1.17] Целится в центр модели — маленькие скины пробиваются (за шерифа и за мардера)",
     Default = false
 }):OnChanged(function(v) SA3.Center = v end)
-Tabs.Combat:AddToggle("SA3Multi", {
-    Title = "🔫 Мульти-выстрел ×3",
-    Description = "[v1.17] Две доп. пули с разбросом — против мелких скинов и спам-джамперов",
-    Default = false
-}):OnChanged(function(v) SA3.Multi = v end)
+Tabs.Combat:AddDropdown("SA3Multi", {
+    Title = "🔫 Мульти-выстрел",
+    Description = "[v1.18] Мгновенно ×3 — 3 пули сразу; Серия ×3 — после выстрела ждём перезарядку (~3с) и заново целимся",
+    Values = { "Выкл", "Мгновенно ×3", "Серия ×3" }, Default = "Выкл",
+    Callback = function(v) SA3.Multi = v end
+})
+Tabs.Combat:AddSlider("SA3MultiDelay", {
+    Title = "Пауза серии (сек)", Default = 3.2, Min = 0.5, Max = 5, Rounding = 1,
+    Callback = function(v) SA3.MultiDelay = v end
+})
 Tabs.Combat:AddToggle("SA3Ballistic", {
     Title = "🦘 Баллистика (анти-джамперы)",
     Description = "[v1.17] Цель в воздухе — предикт считает гравитацию: спам-джамперы пробиваются",
     Default = true
 }):OnChanged(function(v) SA3.Ballistic = v end)
+Tabs.Combat:AddDropdown("SA3Origin", {
+    Title = "Откуда летит пуля",
+    Description = "[v1.18] Возле жертвы (магия) — начало полёта у мардера, как через кейбинд; От меня — выглядит как обычный выстрел (через стены может не пробиться); Смесь — случайно",
+    Values = { "Возле жертвы (магия)", "От меня (обычный вид)", "Смесь" },
+    Default = "Возле жертвы (магия)",
+    Callback = function(v) SA3.OriginMode = v end
+})
+Tabs.Combat:AddToggle("SA3NoInnocent", {
+    Title = "🛡️ Не задеть невиновных",
+    Description = "[v1.18] Проверка перед выстрелом: игрок стоит у жертвы или на пути пули — выстрел отменяется (за шерифа не умрёшь от своего выстрела)",
+    Default = false
+}):OnChanged(function(v) SA3.NoInnocent = v end)
+Tabs.Combat:AddToggle("SA3NoGun", {
+    Title = "🔫 Стрелять без гана (лобби)",
+    Description = "[v1.18] Гана в руках нет — скрипт ищет Shoot-ремоут и стреляет всё равно (например, из лобби по катку; если сервер не примет — просто ничего не произойдёт)",
+    Default = true
+}):OnChanged(function(v) SA3.NoGun = v end)
 Tabs.Combat:AddSlider("SA3BulletSpeed", {
     Title = "Скорость пули (для расчёта)", Default = 300, Min = 100, Max = 1000, Rounding = 0,
     Callback = function(v) SA3.BulletSpeed = v end
@@ -3329,7 +3432,7 @@ local CL_LOBBY_CF = CFrame.new(16, 520, 15)
 
 local FARM_SPEED = 23
 local DOWN_RISE_XZ = 4
-local AVOID_DIST = 40
+local AVOID_DIST = 40 -- [v1.18] меняется слайдером AvoidMurderDist (10..150)
 local RISE_SAFE_DIST = 20
 local touchedCoins = {} -- [coin] = время touch
 local blockedCoins = {} -- [coin] = время блока (застряла 3 раза)
@@ -4027,6 +4130,11 @@ Tabs.Farm:AddToggle("AvoidMurder", { Title = "Avoid Murderer", Default = false }
         AutoFarmSystem.AvoidMurder = Value
         AutoFarmSystem.Target = nil
     end)
+Tabs.Farm:AddSlider("AvoidMurderDist", {
+    Title = "Дистанция избегания мардера (studs)", Default = 40, Min = 10, Max = 150, Rounding = 0,
+    Description = "[v1.18] Раньше всегда 40 — теперь от 10 до 150, как хочешь",
+    Callback = function(Value) AVOID_DIST = Value end
+})
 Tabs.Farm:AddSlider("FarmCoinTarget", {
     Title = "Coin Target (0 = без лимита)", Default = 0, Min = 0, Max = 100, Rounding = 0,
     Callback = function(Value) AutoFarmSystem.CoinTarget = Value end
@@ -5797,7 +5905,7 @@ local KB_MAP = {}  -- KeyCode -> функция
 local DIGIT_NAMES = { ["0"] = "Zero", ["1"] = "One", ["2"] = "Two", ["3"] = "Three",
     ["4"] = "Four", ["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine" }
 getgenv().CWH_Keybinds = { SG = "нет", Dual = "нет", Invis = "нет", Shoot = "нет",
-                           Fly = "нет", Spec = "нет", Coin = "нет" } -- [v1.12] +No Coin
+                           Fly = "нет", Spec = "нет", Coin = "нет", Fl = "нет" } -- [v1.12] +No Coin, [v1.18] +Touch Fling
 
 local function kbResolve(txt)
     local s = tostring(txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -5828,6 +5936,7 @@ local KB_ITEMS = {
     { key = "Fly",  title = "✈ Fly", fn = function() pcall(getgenv().CWH_ToggleFly) end },
     -- [v1.12] No Coin: монеты исчезают и не собираются (механика как Invis — тоггл по кейбинду)
     { key = "Coin", title = "🪙 No Coin", fn = function() pcall(getgenv().CWH_NoCoinToggle) end },
+    { key = "Fl", title = "💥 Touch Fling", fn = function() pcall(getgenv().CWH_ToggleFl) end },
     { key = "Spec", title = "🎬 Spectate Murderer", fn = function()
         pcall(function()
             if getgenv().CWH_SpecOn and getgenv().CWH_SpecOn() then
@@ -8161,24 +8270,34 @@ local function skScanTable(db, depth)
 end
 local function skLoadDB()
     if SK.db then return true end
-    -- [v1.17] ремонт: ищем базу скинов по нескольким путям (как минимум один
-    -- сработает), иначе собираем скины из моделей в ReplicatedStorage
+    -- [v1.18] ремонт-2: перебираем ВСЕ ModuleScript внутри ReplicatedStorage.Database
+    -- (по F9-диагностике Database есть, а какой из его детей — база скинов, не знаем),
+    -- плюс Sync-пути и папки моделей по всему ReplicatedStorage
     local candidates = {}
-    local ok1, db1 = pcall(function()
-        return require(ReplicatedStorage:WaitForChild("Database", 8):WaitForChild("Sync", 8))
+    local function tryReq(ms, srcName)
+        local ok, r = pcall(require, ms)
+        if ok then candidates[#candidates + 1] = { db = r, src = srcName } end
+    end
+    pcall(function()
+        local dbObj = ReplicatedStorage:WaitForChild("Database", 8)
+        if dbObj then
+            if dbObj:IsA("ModuleScript") then tryReq(dbObj, "Database (сам модуль)") end
+            local kids = {}
+            for _, ch in ipairs(dbObj:GetChildren()) do kids[#kids + 1] = ch.Name end
+            print("[CWH] SKINS дети Database: " .. table.concat(kids, ", "))
+            for _, ms in ipairs(dbObj:GetDescendants()) do
+                if ms:IsA("ModuleScript") then tryReq(ms, "Database/" .. ms.Name) end
+            end
+        end
     end)
-    if ok1 then candidates[#candidates + 1] = { db = db1, src = "Database.Sync" } end
-    local ok2, db2 = pcall(function()
-        return require(ReplicatedStorage:WaitForChild("Sync", 3))
+    pcall(function()
+        local ms = ReplicatedStorage:WaitForChild("Sync", 3)
+        if ms then tryReq(ms, "ReplicatedStorage.Sync") end
     end)
-    if ok2 and db2 ~= db1 then candidates[#candidates + 1] = { db = db2, src = "ReplicatedStorage.Sync" } end
     pcall(function()
         for _, ms in ipairs(ReplicatedStorage:GetDescendants()) do
             if ms:IsA("ModuleScript") and ms.Name == "Sync" then
-                local ok, r = pcall(require, ms)
-                if ok and r ~= db1 and r ~= db2 then
-                    candidates[#candidates + 1] = { db = r, src = ms:GetFullName() }
-                end
+                tryReq(ms, "RS-рекурсия/" .. ms:GetFullName())
             end
         end
     end)
@@ -8194,10 +8313,10 @@ local function skLoadDB()
     SK.list = results
     print("[CWH] SKINS DB: " .. (#notes > 0 and table.concat(notes, "; ") or "кандидатов нет"))
     if #SK.list == 0 then
-        -- фолбэк: папки моделей скинов прямо в ReplicatedStorage
+        -- фолбэк: папки моделей скинов по ВСЕМУ ReplicatedStorage
         SK._seenFolders = SK._seenFolders or {}
         pcall(function()
-            for _, ch in ipairs(ReplicatedStorage:GetChildren()) do
+            for _, ch in ipairs(ReplicatedStorage:GetDescendants()) do
                 if ch:IsA("Folder") and not SK._seenFolders[ch.Name] then
                     local lname = ch.Name:lower()
                     local kind = (lname:find("gun") and "Gun") or (lname:find("knife") and "Knife") or nil
@@ -8214,7 +8333,7 @@ local function skLoadDB()
                                 n = n + 1
                             end
                         end
-                        print("[CWH] SKINS модели: " .. ch.Name .. " → " .. tostring(n))
+                        if n > 0 then print("[CWH] SKINS модели: " .. ch.Name .. " → " .. tostring(n)) end
                     end
                 end
             end
@@ -8230,12 +8349,7 @@ local function skLoadDB()
         print("[CWH] SKINS: всего в каталоге: " .. tostring(#SK.list))
         return true
     end
-    local names = {}
-    pcall(function()
-        for _, ch in ipairs(ReplicatedStorage:GetChildren()) do names[#names + 1] = ch.Name end
-    end)
-    print("[CWH] SKINS ничего не найдено; дети ReplicatedStorage: " .. table.concat(names, ", "))
-    warn("[CWH] SKINS: база скинов не найдена — пришли, что напечатано в F9")
+    warn("[CWH] SKINS: база не нашлась — пришли строку «SKINS дети Database» из F9")
     return false
 end
 
@@ -8595,7 +8709,7 @@ local function snStart()
     snStop()
     local part = Instance.new("Part")
     part.Name = "CWH_SnowZone"
-    part.Size = Vector3.new(90, 2, 90)
+    part.Size = Vector3.new(50, 2, 50)
     part.Transparency = 1
     part.Anchored = true
     part.CanCollide = false
@@ -8605,7 +8719,7 @@ local function snStart()
     emit.Name = "CWH_Snow"
     emit.Texture = "rbxasset://textures/particles/smoke_main.dds"
     emit.Color = ColorSequence.new(Color3.new(1, 1, 1))
-    emit.Size = NumberSequence.new(0.45)
+    emit.Size = NumberSequence.new(0.6)
     emit.Transparency = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 0.35),
         NumberSequenceKeypoint.new(0.8, 0.5),
@@ -8615,7 +8729,8 @@ local function snStart()
     emit.SpreadAngle = Vector2.new(6, 6)
     emit.Rotation = NumberRange.new(0, 360)
     emit.RotSpeed = NumberRange.new(-80, 80)
-    emit.LightEmission = 0.2
+    emit.LightEmission = 0.75
+    emit.LightInfluence = 0
     emit.Shape = Enum.ParticleEmitterShape.Box
     emit.Parent = part
     part.Parent = workspace
@@ -8624,7 +8739,7 @@ local function snStart()
     SN.Conn = RunService.Heartbeat:Connect(function()
         local root = getHRP(getChar(LocalPlayer))
         if not (root and SN.Part and SN.Emit) then return end
-        SN.Part.CFrame = CFrame.new(root.Position + Vector3.new(0, 34, 0))
+        SN.Part.CFrame = CFrame.new(root.Position + Vector3.new(0, 22, 0))
         -- наклон падения относительно того, куда смотрим
         local wind = SN_WIND[SN.Wind] or 0
         local lv = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.LookVector
@@ -8733,6 +8848,259 @@ print("[CWH] INIT G17 OK (Knife Aura)")
 end -- [CWH SCOPE] G17
 
 
+do -- ═══ [CWH SCOPE] G18: TOUCH FLING (кто коснулся — отлетает) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.18] Кто коснулся тебя — отлетает: в момент касания твой персонаж
+-- врубает огромную скорость ВСТРЕЧНО (рам-физика) — серверная физика
+-- столкновения швыряет обидчика. Кейбинд — в Other (Fl), тоггл — в Other.
+local FL = { On = false, Conn = nil, Last = 0 }
+local function flStop()
+    if FL.Conn then pcall(function() FL.Conn:Disconnect() end) FL.Conn = nil end
+end
+local function flStart()
+    flStop()
+    local char = getChar(LocalPlayer)
+    local hrp = getHRP(char)
+    if not hrp then return false end
+    FL.Conn = hrp.Touched:Connect(function(hit)
+        if not FL.On then return end
+        if os.clock() - FL.Last < 0.35 then return end
+        local other = hit and hit:FindFirstAncestorOfClass("Model")
+        if not other or other == char then return end
+        local pl = Players:GetPlayerFromCharacter(other)
+        if not pl then return end
+        local eHRP = getHRP(other)
+        local h = getHum(other)
+        if not (eHRP and h and h.Health > 0) then return end
+        FL.Last = os.clock()
+        pcall(function()
+            local dir = eHRP.Position - hrp.Position
+            local flat = Vector3.new(dir.X, 0, dir.Z)
+            if flat.Magnitude < 0.05 then flat = hrp.CFrame.LookVector end
+            flat = Vector3.new(flat.X, 0, flat.Z)
+            if flat.Magnitude > 0.05 then flat = flat.Unit end
+            hrp.AssemblyLinearVelocity = flat * 240 + Vector3.new(0, 150, 0)
+            hrp.AssemblyAngularVelocity = Vector3.new(0, 120, 0)
+        end)
+    end)
+    return true
+end
+getgenv().CWH_ToggleFl = function()
+    FL.On = not FL.On
+    if FL.On then
+        local okk = flStart()
+        Notify("Touch Fling", okk and "ВКЛ — кто коснётся, отлетит" or "Персонажа нет — включится при спавне", nil, 3)
+    else
+        flStop()
+        Notify("Touch Fling", "ВЫКЛ", nil, 2)
+    end
+end
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if FL.On then flStart() end
+end)
+Tabs.Other:AddSection("💥 Touch Fling")
+Tabs.Other:AddToggle("CWHFling", {
+    Title = "💥 Touch Fling",
+    Description = "[v1.18] Кто коснётся тебя — отлетает (рам-физика: ты врубаешься в обидчика на огромной скорости). Кейбинд — в Other (Fl)",
+    Default = false
+}):OnChanged(function(v)
+    if v ~= FL.On then pcall(getgenv().CWH_ToggleFl) end
+end)
+print("[CWH] INIT G18 OK (Touch Fling)")
+end -- [CWH SCOPE] G18
+
+do -- ═══ [CWH SCOPE] G19: THROW KNIFE AURA (аура летящего ножа) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.18] Как в Overdrive: у ЛЕТЯЩЕГО ножа огромная зона касания (синяя
+-- аура с твоего скрина) — пока нож летит, все игроки в радиусе от него
+-- «касаются» ножа, и убой засчитывается, даже если бросил мимо.
+local TA = { On = false, Radius = 16, Glow = true, Last = 0 }
+task.spawn(function()
+    while task.wait(0.05) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if not TA.On then return end
+            if getRole(LocalPlayer) ~= "Murderer" then return end
+            local myChar = getChar(LocalPlayer)
+            if not myChar then return end
+            -- летящий нож ищем в workspace и в Debris
+            local lists = { workspace:GetChildren() }
+            local deb = workspace:FindFirstChild("Debris")
+            if deb then lists[#lists + 1] = deb:GetChildren() end
+            for _, list in ipairs(lists) do
+                for _, obj in ipairs(list) do
+                    local lname = obj.Name:lower()
+                    if lname:find("knife") or lname:find("throw") then
+                        local handle = obj:IsA("Tool") and obj:FindFirstChild("Handle")
+                            or (obj:IsA("BasePart") and obj) or obj:FindFirstChild("Handle")
+                        if handle and handle:IsA("BasePart") and not obj:IsDescendantOf(myChar) then
+                            local vel = handle.AssemblyLinearVelocity
+                            if vel.Magnitude > 4 then
+                                -- синее свечение ауры (как на скрине)
+                                if TA.Glow and not obj:FindFirstChild("CWH_TAura") then
+                                    pcall(function()
+                                        local hl = Instance.new("Highlight")
+                                        hl.Name = "CWH_TAura"
+                                        hl.FillColor = Color3.fromRGB(60, 120, 255)
+                                        hl.OutlineColor = Color3.fromRGB(150, 200, 255)
+                                        hl.FillTransparency = 0.5
+                                        hl.Parent = obj
+                                    end)
+                                end
+                                -- касания: все игроки в радиусе от летящего ножа
+                                if os.clock() - TA.Last >= 0.12 then
+                                    for _, p in ipairs(Players:GetPlayers()) do
+                                        if p ~= LocalPlayer then
+                                            local c2 = getChar(p)
+                                            local eHRP = c2 and getHRP(c2)
+                                            local h2 = c2 and getHum(c2)
+                                            if eHRP and h2 and h2.Health > 0
+                                                and (eHRP.Position - handle.Position).Magnitude <= TA.Radius then
+                                                if realFireTouch then
+                                                    realFireTouch(handle, eHRP, 1)
+                                                    realFireTouch(handle, eHRP, 0)
+                                                end
+                                            end
+                                        end
+                                    end
+                                    TA.Last = os.clock()
+                                end
+                            else
+                                local hl = obj:FindFirstChild("CWH_TAura")
+                                if hl then pcall(function() hl:Destroy() end) end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+Tabs.Combat:AddSection("🪄 Throw Knife Aura (летящий нож)")
+Tabs.Combat:AddToggle("TAOn", {
+    Title = "🪄 Throw Knife Aura",
+    Description = "[v1.18] У летящего ножа большая зона касания: даже мимо брошенный нож «попадает» — все в радиусе умирают. Только когда ты мардер",
+    Default = false
+}):OnChanged(function(v) TA.On = v end)
+Tabs.Combat:AddSlider("TARadius", {
+    Title = "Радиус ауры ножа (studs)", Default = 16, Min = 5, Max = 40, Rounding = 0,
+    Callback = function(v) TA.Radius = v end
+})
+Tabs.Combat:AddToggle("TAGlow", {
+    Title = "Синее свечение ауры",
+    Description = "[v1.18] Подсветка летящего ножа — видно, где зона ауры",
+    Default = true
+}):OnChanged(function(v) TA.Glow = v end)
+print("[CWH] INIT G19 OK (Throw Knife Aura)")
+end -- [CWH SCOPE] G19
+
+do -- ═══ [CWH SCOPE] G20: REMOVE KILL PARTS (убираем киллпарты) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.18] Идея из Overdrive (RemoveTraps): киллпарты карты (невидимка на
+-- mansion 2 за стеной и т.п.) уезжают далеко вверх — ТОЛЬКО У ТЕБЯ, на
+-- клиенте. Другие игроки видят их как раньше: софтеры умрут, ты — нет.
+-- Плюс авто-детектор: умер от касания — этот парт сам уезжает.
+local RP = { On = false, AutoDeath = true, Moved = {}, LastTouch = nil, LastTouchT = 0 }
+local RP_PATTERNS = { "kill", "die", "death", "trap", "lava", "spike", "poison", "murder" }
+local function rpPark(obj, silent)
+    if RP.Moved[obj] then return false end
+    local ok = pcall(function()
+        RP.Moved[obj] = obj.CFrame
+        obj.CFrame = obj.CFrame + Vector3.new(0, 5000, 0)
+    end)
+    if ok and not silent then
+        Notify("Remove Kill Parts", "Киллпарт сдвинут: " .. obj.Name, nil, 2)
+    end
+    return ok
+end
+local function rpScan()
+    local myChar = getChar(LocalPlayer)
+    local n = 0
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Parent then
+                local topModel = obj:FindFirstAncestorOfClass("Model")
+                if not (topModel and Players:GetPlayerFromCharacter(topModel))
+                    and not (myChar and obj:IsDescendantOf(myChar)) then
+                    local lname = obj.Name:lower()
+                    local isKill = false
+                    for _, pat in ipairs(RP_PATTERNS) do
+                        if lname:find(pat) then isKill = true break end
+                    end
+                    if isKill and rpPark(obj, true) then n = n + 1 end
+                end
+            end
+        end
+    end)
+    return n
+end
+local function rpRestore()
+    for obj, cf in pairs(RP.Moved) do
+        if obj and obj.Parent then pcall(function() obj.CFrame = cf end) end
+    end
+    RP.Moved = {}
+end
+Tabs.Other:AddSection("☠️ Remove Kill Parts")
+Tabs.Other:AddToggle("CWHRP", {
+    Title = "☠️ Remove Kill Parts",
+    Description = "[v1.18] Киллпарты (kill/trap/lava/…) уезжают вверх только у тебя: ты не умираешь, а другие софтеры по-прежнему могут. Проверка каждые 3 секунды и после респавна",
+    Default = false
+}):OnChanged(function(v)
+    RP.On = v
+    if v then
+        local n = rpScan()
+        Notify("Remove Kill Parts", "ВКЛ — сдвинуто деталей: " .. tostring(n), nil, 3)
+    else
+        rpRestore()
+        Notify("Remove Kill Parts", "ВЫКЛ — детали вернулись", nil, 2)
+    end
+end)
+Tabs.Other:AddToggle("CWHRPAuto", {
+    Title = "🧟 Авто-сдвиг убийцы (по смерти)",
+    Description = "[v1.18] Умер от касания киллпарта (например, невидимка на mansion 2) — этот парт сам уедет вверх",
+    Default = true
+}):OnChanged(function(v) RP.AutoDeath = v end)
+task.spawn(function()
+    while task.wait(3) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            if RP.On then
+                local n = rpScan()
+                if n > 0 then
+                    Notify("Remove Kill Parts", "Новый раунд: сдвинуто киллпартов: " .. tostring(n), nil, 2)
+                end
+            end
+        end)
+    end
+end)
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    RP.LastTouch, RP.LastTouchT = nil, 0
+    local hrp = getHRP(char)
+    local hum = getHum(char)
+    if hrp then
+        hrp.Touched:Connect(function(hit)
+            RP.LastTouch = hit
+            RP.LastTouchT = os.clock()
+        end)
+    end
+    if hum then
+        hum.Died:Connect(function()
+            if RP.AutoDeath and RP.LastTouch and os.clock() - RP.LastTouchT < 1.5 then
+                local topModel = RP.LastTouch:FindFirstAncestorOfClass("Model")
+                if not (topModel and Players:GetPlayerFromCharacter(topModel)) then
+                    pcall(function() rpPark(RP.LastTouch, false) end)
+                end
+            end
+        end)
+    end
+    if RP.On then task.wait(1) pcall(rpScan) end
+end)
+print("[CWH] INIT G20 OK (Remove Kill Parts)")
+end -- [CWH SCOPE] G20
+
+
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
 -- КНОПКА ОТКРЫТИЯ МЕНЮ (drag + tap, без конфликтов)
@@ -8814,5 +9182,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.17 | Снег | Magic Bullet 360° | анти-джамперы/анти-миники | Knife Aura | камера-ноклип | Skins | Gun Aura v2 | фарм | ESP | VFX", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.18 | Throw Knife Aura | Remove Kill Parts | Touch Fling | снег (фикс) | 360° без пола | не задеть невиновных | Skins | Gun Aura v2 | фарм | ESP | VFX", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
