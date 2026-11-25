@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.18: фикс снега, Throw Knife Aura, Remove Kill Parts, Touch Fling, откуда летит пуля, 360° без пола, не задеть невиновных, серия ×3, стрельба из лобби, слайдер avoid, скинчейджер-ремонт-2, Magic Bullet, Gun Aura v2, фарм, ESP, ауры VFX)")
+print("[CWH] START — правильный скрипт выполняется (v1.19: Touch Fling v2 как в пульсе, скинчейджер-3 по формату MM2 Database.Sync, свечение оружия, Throw Knife Aura, Remove Kill Parts, снег, 360° без пола, не задеть невиновных, серия ×3, стрельба из лобби, слайдер avoid)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -404,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.3 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.3a by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -8234,36 +8234,50 @@ end
 
 -- ── загрузка базы + каталог ──
 local function skEntryLooksSkin(entry)
-    return type(entry) == "table" and (entry.h or entry.d) and true or false
+    if type(entry) ~= "table" then return false end
+    -- форма v1.17 (деревья h/d) ИЛИ форма MM2 Database.Sync (ItemID + ItemName)
+    return (entry.h or entry.d or (entry.ItemID and (entry.ItemName or entry.Name))) and true or false
 end
-local function skKindOf(entry, key)
-    local k = entry.t or entry.Type or entry.type
+local function skImgParse(v)
+    if type(v) ~= "string" or v == "" then return "" end
+    if v:find("^rbxassetid://") or v:find("^rbxasset://") or v:find("^http") then return v end
+    local id = v:match("assetId=(%d+)") or v:match("id=(%d+)") or v:match("rbxassetid://(%d+)")
+    return id and ("rbxassetid://" .. id) or ""
+end
+local function skKindOf(entry, key, pkey)
+    local k = entry.t or entry.Type or entry.type or entry.ItemType
     if k == "Knife" or k == "Gun" then return k end
-    local lk = tostring(key):lower()
+    if k == "Pet" then return nil end
+    local lk = (tostring(key) .. " " .. tostring(pkey or "")):lower()
     if lk:find("gun") then return "Gun" end
     if lk:find("knife") then return "Knife" end
+    local nm = tostring(entry.ItemName or entry.nm or entry.Name or ""):lower()
+    if nm:find("gun") or nm:find("pistol") or nm:find("revolver") then return "Gun" end
+    if nm:find("knife") or nm:find("blade") or nm:find("sword") then return "Knife" end
     return nil
 end
-local function skScanTable(db, depth)
+local function skScanTable(db, depth, pkey)
     local found = {}
     if type(db) ~= "table" or depth > 3 then return found end
     for key, entry in pairs(db) do
         if skEntryLooksSkin(entry) then
-            local kind = skKindOf(entry, key)
+            local kind = skKindOf(entry, key, pkey)
             if kind then
                 found[#found + 1] = {
-                    key = key, name = entry.nm or entry.Name or key, kind = kind,
-                    rarity = entry.r or entry.Rarity or "None", img = entry.img or "",
+                    key = key, data = entry, kind = kind,
+                    name = entry.ItemName or entry.nm or entry.Name or tostring(key),
+                    rarity = entry.r or entry.Rarity or "None",
+                    img = skImgParse(entry.Image or entry.img or entry.Thumbnail),
                 }
             end
         elseif type(entry) == "table" and depth < 3 then
-            local sub = skScanTable(entry, depth + 1)
+            local sub = skScanTable(entry, depth + 1, tostring(key))
             for _, item in ipairs(sub) do found[#found + 1] = item end
         end
     end
     local mt = getmetatable(db)
     if #found == 0 and mt and type(mt.__index) == "table" then
-        local sub = skScanTable(mt.__index, depth + 1)
+        local sub = skScanTable(mt.__index, depth + 1, pkey)
         for _, item in ipairs(sub) do found[#found + 1] = item end
     end
     return found
@@ -8311,6 +8325,10 @@ local function skLoadDB()
         end
     end
     SK.list = results
+    SK.byKey = {}
+    for _, item in ipairs(SK.list) do
+        if item.data then SK.byKey[item.key] = item end
+    end
     print("[CWH] SKINS DB: " .. (#notes > 0 and table.concat(notes, "; ") or "кандидатов нет"))
     if #SK.list == 0 then
         -- фолбэк: папки моделей скинов по ВСЕМУ ReplicatedStorage
@@ -8427,16 +8445,20 @@ local function skApply(tool, kind)
         end)
         if not visual then return end
     else
-        skin = SK.db and SK.db[key]
+        -- [v1.19] база MM2 (Database.Sync): записи лежат в Weapons[id] —
+        -- берём сохранённую ссылку из каталога, а не по верхнему ключу
+        local cat = SK.byKey and SK.byKey[key]
+        skin = cat and cat.data or (SK.db and SK.db[key])
         if type(skin) ~= "table" then return end
         local data = skin.h or skin.d
         if data then visual = skBuild(data) end
     end
     local entry = { tool = tool, handle = handle, visual = visual, restore = {}, connections = {} }
     SK.tools[tool] = entry
-    if skin.img and skin.img ~= "" and tool.TextureId ~= skin.img then
+    local img = (SK.byKey and SK.byKey[key] and SK.byKey[key].img) or skin.img
+    if img and img ~= "" and tool.TextureId ~= img then
         entry.oldTexture = tool.TextureId
-        pcall(function() tool.TextureId = skin.img end)
+        pcall(function() tool.TextureId = img end)
     end
     if visual then
         visual.Name = "CWHVisual"
@@ -8454,7 +8476,7 @@ local function skApply(tool, kind)
                 skHide(entry, obj, obj:IsA("BasePart"))
             end
         end
-        Notify("Skins", tostring(kind) .. " → " .. tostring(skin.nm or key), "скин применён (клиентский)", 4)
+        Notify("Skins", tostring(kind) .. " → " .. tostring(skin.nm or skin.ItemName or skin.Name or key), "скин применён (клиентский)", 4)
     else
         Notify("Skins", "не удалось построить скин", tostring(key), 4)
         SK.tools[tool] = nil
@@ -8848,12 +8870,102 @@ print("[CWH] INIT G17 OK (Knife Aura)")
 end -- [CWH SCOPE] G17
 
 
-do -- ═══ [CWH SCOPE] G18: TOUCH FLING (кто коснулся — отлетает) ═══
+do -- ═══ [CWH SCOPE] G18: TOUCH FLING v2 (классика из пульса) ═══
 -- ═══════════════════════════════════════════════════════════════
--- [v1.18] Кто коснулся тебя — отлетает: в момент касания твой персонаж
--- врубает огромную скорость ВСТРЕЧНО (рам-физика) — серверная физика
--- столкновения швыряет обидчика. Кейбинд — в Other (Fl), тоггл — в Other.
-local FL = { On = false, Conn = nil, Last = 0 }
+-- [v1.19] Тот же флинг, что в маленьком Pulse (MM2 AutoFarm): BodyVelocity
+-- на моём корне + телепорты вращением ВОКРУГ жертвы со скоростью 9e8 —
+-- серверная контактная физика швыряет ЖЕРТВУ (улетает в небо), а меня
+-- возвращает на старую позицию. Триггер — касание, кейбинд Fl, тоггл в Other.
+local FL = { On = false, Conn = nil, Last = 0, Busy = false, OldPos = nil }
+local function flOne(victimPlayer)
+    if FL.Busy then return end
+    local char = getChar(LocalPlayer)
+    local hum = getHum(char)
+    local hrp = getHRP(char)
+    if not (char and hum and hrp and hum.Health > 0) then return end
+    local c2 = getChar(victimPlayer)
+    local hum2 = c2 and getHum(c2)
+    local hrp2 = c2 and getHRP(c2)
+    if not (c2 and hum2 and hrp2) then return end
+    if hum2.Sit then return end
+    if not c2:FindFirstChildWhichIsA("BasePart") then return end
+    FL.Busy = true
+    task.spawn(function()
+        pcall(function()
+            if hrp.Velocity.Magnitude < 50 then FL.OldPos = hrp.CFrame end
+            local cam = workspace.CurrentCamera
+            local oldSubject = cam.CameraSubject
+            pcall(function()
+                local head2 = c2:FindFirstChild("Head")
+                cam.CameraSubject = head2 or hum2
+            end)
+            pcall(function() workspace.FallenPartsDestroyHeight = 0 / 0 end)
+            local bv = Instance.new("BodyVelocity")
+            bv.Name = "CWH_FlingVel"
+            bv.Velocity = Vector3.new(900000000, 900000000, 900000000)
+            bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bv.Parent = hrp
+            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
+            local t0 = tick()
+            local n5 = 0
+            local function tp(off, ang)
+                hrp.CFrame = CFrame.new(hrp2.Position) * off * ang
+                pcall(function() char:SetPrimaryPartCFrame(CFrame.new(hrp2.Position) * off * ang) end)
+                hrp.Velocity = Vector3.new(90000000, 900000000, 90000000)
+                hrp.RotVelocity = Vector3.new(900000000, 900000000, 900000000)
+            end
+            while hrp and hrp.Parent and hrp2 and hrp2.Parent and hum and hum.Health > 0 do
+                if hrp2.Velocity.Magnitude < 50 then
+                    n5 += 100
+                    tp(CFrame.new(0, 1.5, 0) + hum2.MoveDirection * hrp2.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0) + hum2.MoveDirection * hrp2.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(2.25, 1.5, -2.25) + hum2.MoveDirection * hrp2.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(-2.25, -1.5, 2.25) + hum2.MoveDirection * hrp2.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, 1.5, 0) + hum2.MoveDirection, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0) + hum2.MoveDirection, CFrame.Angles(math.rad(n5), 0, 0))
+                    task.wait()
+                else
+                    tp(CFrame.new(0, 1.5, hum2.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, -hum2.WalkSpeed), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, 1.5, hum2.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, 1.5, hrp2.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, -hrp2.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, 1.5, hrp2.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+                    task.wait()
+                    tp(CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                end
+                if hrp2.Velocity.Magnitude > 500 or hrp2.Parent ~= c2 or c2.Parent ~= Players
+                    or hum2.Sit or hum.Health <= 0 or t0 + 2 < tick() then
+                    break
+                end
+            end
+            if bv and bv.Parent then pcall(function() bv:Destroy() end) end
+            pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end)
+            if FL.OldPos and hum.Health > 0 then
+                pcall(function() hrp.CFrame = FL.OldPos end)
+            end
+            pcall(function() cam.CameraSubject = oldSubject or hum end)
+        end)
+        FL.Busy = false
+    end)
+end
 local function flStop()
     if FL.Conn then pcall(function() FL.Conn:Disconnect() end) FL.Conn = nil end
 end
@@ -8863,25 +8975,15 @@ local function flStart()
     local hrp = getHRP(char)
     if not hrp then return false end
     FL.Conn = hrp.Touched:Connect(function(hit)
-        if not FL.On then return end
-        if os.clock() - FL.Last < 0.35 then return end
+        if not FL.On or FL.Busy then return end
+        if os.clock() - FL.Last < 1.5 then return end
         local other = hit and hit:FindFirstAncestorOfClass("Model")
         if not other or other == char then return end
         local pl = Players:GetPlayerFromCharacter(other)
         if not pl then return end
-        local eHRP = getHRP(other)
-        local h = getHum(other)
-        if not (eHRP and h and h.Health > 0) then return end
         FL.Last = os.clock()
-        pcall(function()
-            local dir = eHRP.Position - hrp.Position
-            local flat = Vector3.new(dir.X, 0, dir.Z)
-            if flat.Magnitude < 0.05 then flat = hrp.CFrame.LookVector end
-            flat = Vector3.new(flat.X, 0, flat.Z)
-            if flat.Magnitude > 0.05 then flat = flat.Unit end
-            hrp.AssemblyLinearVelocity = flat * 240 + Vector3.new(0, 150, 0)
-            hrp.AssemblyAngularVelocity = Vector3.new(0, 120, 0)
-        end)
+        Notify("Touch Fling", "Флинг: " .. pl.Name, nil, 2)
+        flOne(pl)
     end)
     return true
 end
@@ -8889,7 +8991,7 @@ getgenv().CWH_ToggleFl = function()
     FL.On = not FL.On
     if FL.On then
         local okk = flStart()
-        Notify("Touch Fling", okk and "ВКЛ — кто коснётся, отлетит" or "Персонажа нет — включится при спавне", nil, 3)
+        Notify("Touch Fling", okk and "ВКЛ (v2, как в пульсе) — кто коснётся, улетит в небо" or "Персонажа нет — включится при спавне", nil, 3)
     else
         flStop()
         Notify("Touch Fling", "ВЫКЛ", nil, 2)
@@ -8901,13 +9003,13 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 Tabs.Other:AddSection("💥 Touch Fling")
 Tabs.Other:AddToggle("CWHFling", {
-    Title = "💥 Touch Fling",
-    Description = "[v1.18] Кто коснётся тебя — отлетает (рам-физика: ты врубаешься в обидчика на огромной скорости). Кейбинд — в Other (Fl)",
+    Title = "💥 Touch Fling (v2 — как в пульсе)",
+    Description = "[v1.19] Классический флинг из Pulse: 2 секунды врубаешься в обидчика на скорости 9e8 с вращением — он улетает в небо, тебя возвращает на место. Кейбинд — Fl",
     Default = false
 }):OnChanged(function(v)
     if v ~= FL.On then pcall(getgenv().CWH_ToggleFl) end
 end)
-print("[CWH] INIT G18 OK (Touch Fling)")
+print("[CWH] INIT G18 OK (Touch Fling v2)")
 end -- [CWH SCOPE] G18
 
 do -- ═══ [CWH SCOPE] G19: THROW KNIFE AURA (аура летящего ножа) ═══
@@ -9100,6 +9202,97 @@ end)
 print("[CWH] INIT G20 OK (Remove Kill Parts)")
 end -- [CWH SCOPE] G20
 
+do -- ═══ [CWH SCOPE] G21: WEAPON GLOW (свечение оружия в руке) ═══
+-- ═══════════════════════════════════════════════════════════════
+-- [v1.19] Нож и пистолет в руках светятся: Highlight + точечный свет.
+-- Цвет на выбор или радуга. Только у тебя на клиенте.
+local WG = { On = false, Color = "Синее", Rainbow = false, Light = true, Marks = {} }
+local WG_COLORS = {
+    ["Синее"] = Color3.fromRGB(60, 120, 255),
+    ["Красное"] = Color3.fromRGB(255, 60, 60),
+    ["Зелёное"] = Color3.fromRGB(60, 255, 110),
+    ["Фиолетовое"] = Color3.fromRGB(170, 60, 255),
+    ["Золотое"] = Color3.fromRGB(255, 200, 40),
+    ["Розовое"] = Color3.fromRGB(255, 80, 180),
+    ["Белое"] = Color3.fromRGB(255, 255, 255),
+}
+local function wgClear(tool)
+    local m = WG.Marks[tool]
+    if m then
+        if m.hl then pcall(function() m.hl:Destroy() end) end
+        if m.pl then pcall(function() m.pl:Destroy() end) end
+        WG.Marks[tool] = nil
+    end
+end
+Tabs.Visuals2:AddSection("✨ Свечение оружия в руке")
+Tabs.Visuals2:AddToggle("CWGWGlow", {
+    Title = "✨ Свечение оружия",
+    Description = "[v1.19] Твой нож и пистолет в руках светятся (неоновая подсветка + луч света) — видно в темноте. Только для тебя",
+    Default = false
+}):OnChanged(function(v) WG.On = v end)
+Tabs.Visuals2:AddDropdown("CWGWColor", {
+    Title = "Цвет свечения",
+    Values = { "Синее", "Красное", "Зелёное", "Фиолетовое", "Золотое", "Розовое", "Белое" },
+    Default = "Синее",
+    Callback = function(v) WG.Color = v end
+})
+Tabs.Visuals2:AddToggle("CWGWLight", {
+    Title = "Луч света от оружия",
+    Description = "[v1.19] Оружие освещает всё вокруг",
+    Default = true
+}):OnChanged(function(v) WG.Light = v end)
+Tabs.Visuals2:AddToggle("CWGWRainbow", {
+    Title = "🌈 Радуга",
+    Description = "[v1.19] Цвет плавно переливается по кругу (поверх выбранного)",
+    Default = false
+}):OnChanged(function(v) WG.Rainbow = v end)
+task.spawn(function()
+    while task.wait(0.25) do
+        if not getgenv().CWH_RUN then break end
+        pcall(function()
+            local c = getChar(LocalPlayer)
+            -- чистим то, чего больше нет в руках (и всё, если выкл)
+            for tool, m in pairs(WG.Marks) do
+                if not WG.On or not c or not tool.Parent or tool.Parent ~= c then wgClear(tool) end
+            end
+            if not WG.On or not c then return end
+            local rainbow = WG.Rainbow and Color3.fromHSV((tick() % 6) / 6, 1, 1) or nil
+            for _, tool in ipairs(c:GetChildren()) do
+                if tool:IsA("Tool") then
+                    local m = WG.Marks[tool]
+                    if not m then
+                        local handle = tool:FindFirstChild("Handle")
+                        if handle then
+                            local hl = Instance.new("Highlight")
+                            hl.Name = "CWH_WGlow"
+                            hl.FillTransparency = 0.55
+                            hl.OutlineTransparency = 0
+                            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                            hl.Parent = tool
+                            local pl = Instance.new("PointLight")
+                            pl.Name = "CWH_WGlowLight"
+                            pl.Range = 14
+                            pl.Brightness = 2
+                            pl.Parent = handle
+                            m = { hl = hl, pl = pl }
+                            WG.Marks[tool] = m
+                        end
+                    end
+                    if m then
+                        local color = rainbow or WG_COLORS[WG.Color] or WG_COLORS["Синее"]
+                        m.hl.FillColor = color
+                        m.hl.OutlineColor = color
+                        m.pl.Color = color
+                        m.pl.Enabled = WG.Light
+                    end
+                end
+            end
+        end)
+    end
+end)
+print("[CWH] INIT G21 OK (Weapon Glow)")
+end -- [CWH SCOPE] G21
+
 
 print("[CWH] INIT 3/3: вешаю кнопку открытия меню...")
 -- ═══════════════════════════════════════════════════════════════
@@ -9182,5 +9375,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.18 | Throw Knife Aura | Remove Kill Parts | Touch Fling | снег (фикс) | 360° без пола | не задеть невиновных | Skins | Gun Aura v2 | фарм | ESP | VFX", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.19 | Touch Fling v2 | свечение оружия | скинчейджер-3 | Throw Knife Aura | Remove Kill Parts | снег | 360° без пола | не задеть невиновных | фарм | ESP | VFX", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
