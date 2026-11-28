@@ -404,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.3.1 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -514,7 +514,7 @@ Tabs.Main:AddToggle("FOVOn", { Title = "Enable FOV Changer", Default = false })
         if not v then Camera.FieldOfView = DefaultFOV end
     end)
 Tabs.Main:AddSlider("FOVVal", {
-    Title = "FOV Value", Default = 120, Min = 30, Max = 200, Rounding = 0,
+    Title = "FOV Value", Default = 120, Min = 30, Max = 350, Rounding = 0,
     Callback = function(v) TargetFOV = v end
 })
 RunService.RenderStepped:Connect(function()
