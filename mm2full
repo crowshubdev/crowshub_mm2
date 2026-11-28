@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.22: Silent Aim v4 — перехват-цикл и перебор кандидатов из shitaro-new, центр массы из нового Pulse, взвешенный рандом КРУПНЫХ зон вместо равного пула с руками/ногами, BodyMode работает всегда)")
+print("[CWH] START — правильный скрипт выполняется (v1.23: Silent Aim v4 доводка — стрельба из лобби без Gun, origin у жертвы для авто-режима, Magic только над головой/сзади/в лицо в торс)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -404,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.3.3 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.4 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -2164,6 +2164,31 @@ local function sa3AimPos(targetPlayer)
     return pos
 end
 
+-- [v1.23] Magic-подлёт v4: ТОЛЬКО над головой / со спины / в лицо (по запросу:
+-- «оставить только над головой и со спины или в лицо, типо в торс»).
+-- Прицел всегда в выбранную часть (по умолчанию торс) — миссов нет
+local function sa3MagicOrigin(pos, tgt, myHRP)
+    local roll
+    if SA3.MagicStyle == "Над головой" then
+        roll = 1
+    elseif SA3.MagicStyle == "Со спины или в лицо" then
+        roll = math.random(2, 3)
+    else
+        roll = math.random(1, 3) -- Смесь: любое из трёх
+    end
+    if roll == 1 then
+        return Vector3.new(pos.X, pos.Y + 6, pos.Z) -- над головой, сверху вниз
+    end
+    local toMe = myHRP and (myHRP.Position - pos) or Vector3.new(0, 0, 1)
+    local toMeU = toMe.Magnitude > 0.1 and toMe.Unit or Vector3.new(0, 0, 1)
+    if roll == 2 then
+        return pos - toMeU * 12 + Vector3.new(0, 1.5, 0) -- со спины
+    end
+    local head = tgt and tgt.Character and tgt.Character:FindFirstChild("Head")
+    local face = head and head.CFrame.LookVector
+    return pos + (face and face * 9 or -toMeU * 9) + Vector3.new(0, 0.5, 0) -- в лицо
+end
+
 -- ручной выстрел ремоутом Shoot (метод Pulse Hub) — работает ЧЕРЕЗ СТЕНЫ
 function sa3FireShot(targetPlayer, fromAbove)
     local myChar = getChar(LocalPlayer)
@@ -2192,49 +2217,24 @@ function sa3FireShot(targetPlayer, fromAbove)
         end)
     end
     if not (myHRP and shoot) then return false end
-    local pos = sa3AimPos(targetPlayer)
+    -- [v1.23] цель резолвим сразу: авто-режим (без аргумента) тоже должен знать
+    -- жертву — иначе origin улетает к нам (в лобби) и пуля не долетает до цели
+    local tgt = targetPlayer or pickSA()
+    local pos = sa3AimPos(tgt)
     if not pos then return false end
     local origin
     if SA3.Magic then
-        -- [v1.16] MAGIC BULLET: пуля прилетает непредсказуемо — из-за спины,
-        -- в лицо, из-под ног или косо сверху; попадание гарантирует предикт
-        -- (для нас траектория точная, для жертвы — сюрприз)
-        local toMe = myHRP.Position - pos
-        local toMeU = toMe.Magnitude > 0.1 and toMe.Unit or Vector3.new(0, 0, 1)
-        local perp = Vector3.new(-toMeU.Z, 0, toMeU.X)
-        local head = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head")
-        if SA3.MagicStyle == "360° сфера" or SA3.MagicStyle == "360° без пола" then
-            -- [v1.17] «звезда» с рисунка: пуля подлетает с ЛЮБОГО угла сферы вокруг жертвы
-            local dir = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
-            if dir.Magnitude < 1 then dir = Vector3.new(0, 1, 0) end
-            -- [v1.18] «без пола»: пуля всегда прилетает сверху или сбоку, никогда с пола
-            if SA3.MagicStyle == "360° без пола" then
-                dir = Vector3.new(dir.X, math.abs(dir.Y) + 8, dir.Z)
-            end
-            origin = pos + dir.Unit * (math.random(100, 160) / 10)
-        else
-            local roll = math.random(1, 4)
-            if roll == 1 then
-                origin = pos - toMeU * 12 + Vector3.new(0, 1.5, 0) -- из-за спины
-            elseif roll == 2 then
-                local face = head and head.CFrame.LookVector or -toMeU -- в лицо
-                origin = pos + face * 9 + Vector3.new(0, 0.5, 0)
-            elseif roll == 3 then
-                origin = pos - Vector3.new(0, 2.5, 0) -- из-под ног, снизу вверх
-            else
-                local side = perp * (math.random(-60, 60) / 10) -- косо сверху
-                origin = pos + Vector3.new(side.X, 6.5, side.Z)
-            end
-        end
+        -- [v1.23] Magic: только Над головой / Со спины / в лицо / Смесь;
+        -- из-под ног, косо и 360° сфера убраны (просил оставить два стиля)
+        origin = sa3MagicOrigin(pos, tgt, myHRP)
     elseif fromAbove then
-        -- [v1.10] классика Shoot Murderer: пуля появляется НАД ГОЛОВОЙ мардера
-        -- и летит вниз в него (как было раньше — «пуля над головой летит в него»)
+        -- классика Shoot Murderer: пуля НАД ГОЛОВОЙ цели, летит сверху вниз
         origin = Vector3.new(pos.X, pos.Y + 6, pos.Z)
-    elseif SA3.Spoof and targetPlayer then
+    elseif SA3.Spoof and tgt then
         -- [v1.8] SPOOF из нового Pulse (AimEngine.spoofPlan): origin по ВЕКТОРУ
         -- СКОРОСТИ жертвы — пуля летит вдоль траектории жертвы и проходит сквозь
         -- неё. Дистанция = скорость * 0.1с (клампим 80..300, как в Pulse).
-        local vc = getChar(targetPlayer)
+        local vc = getChar(tgt)
         local vhrp = getHRP(vc)
         local vel = vhrp and vhrp.AssemblyLinearVelocity or Vector3.zero
         local hv = Vector3.new(vel.X, 0, vel.Z)
@@ -2247,17 +2247,17 @@ function sa3FireShot(targetPlayer, fromAbove)
             local away = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
             origin = pos + away * (SA3.ForceOffset or 15)
         end
-    elseif SA3.Wallbang or targetPlayer then
-        -- точка в offset студах от жертвы В НАШУ СТОРОНУ (stand_off из shitaro-new:
-        -- origin 3..40, дефолт 15 — серверу виднее, что пуля летит изнутри)
+    elseif SA3.Wallbang or tgt or SA3.OriginMode == "Возле жертвы (магия)" then
+        -- [v1.23] origin возле жертвы В НАШУ СТОРОНУ — теперь и для авто-режима:
+        -- стреляет сквозь стены и ДАЖЕ ИЗ ЛОББИ (пуля стартует у жертвы, не у нас)
         local d = myHRP.Position - pos
         local away = d.Magnitude > 0.1 and d.Unit or Vector3.new(0, 0, 1)
         origin = pos + away * (SA3.ForceOffset or 15)
     else
         origin = myHRP.Position
     end
-    -- [v1.18] «Откуда летит пуля»: возле жертвы (магия, по умолчанию), от меня
-    -- (выглядит как обычный выстрел; через стены может не пробиться) или смесь
+    -- [v1.23] «Откуда летит пуля»: возле жертвы (по умолчанию — работает из
+    -- лобби), от меня (обычный вид; через стены может не пробиться) или смесь
     if SA3.OriginMode == "От меня (обычный вид)"
         or (SA3.OriginMode == "Смесь" and math.random(1, 2) == 2) then
         local cam = workspace.CurrentCamera
@@ -2333,12 +2333,7 @@ function sa3FireShot(targetPlayer, fromAbove)
                         if not p2 then return end
                         local o2 = origin
                         if SA3.Magic then
-                            local dir = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
-                            if dir.Magnitude < 1 then dir = Vector3.new(0, 1, 0) end
-                            if SA3.MagicStyle == "360° без пола" then
-                                dir = Vector3.new(dir.X, math.abs(dir.Y) + 8, dir.Z)
-                            end
-                            o2 = p2 + dir.Unit * (math.random(100, 160) / 10)
+                            o2 = sa3MagicOrigin(p2, tgt, myHRP)
                         end
                         SA3Bypass = true
                         shoot:FireServer(CFrame.new(o2, p2), CFrame.new(p2))
@@ -2409,6 +2404,11 @@ task.spawn(function()
             local now = os.clock()
             if now - SA3.Last >= SA3.Interval then
                 local canShoot = SA3.Wallbang
+                -- [v1.23] origin возле жертвы — LOS от нас не нужен: пуля
+                -- стартует у жертвы и долетает даже из лобби / через стены
+                if not canShoot and SA3.OriginMode == "Возле жертвы (магия)" then
+                    canShoot = true
+                end
                 if not canShoot then
                     local t = pickSA()
                     local tc = t and t.Character
@@ -2507,13 +2507,13 @@ Tabs.Combat:AddToggle("SA3Smart", {
 -- [v1.16] Magic Bullet: непредсказуемый origin, точное попадание
 Tabs.Combat:AddToggle("SA3Magic", {
     Title = "🌀 Magic Bullet",
-    Description = "[v1.16] Пуля прилетает непредсказуемо: из-за спины, в лицо, из-под ног или косо сверху — но всегда попадает по умному предикту",
+    Description = "[v1.23] Пуля прилетает непредсказуемо: над головой (сверху вниз), со спины или в лицо — прицел всегда в торс/крупную часть, миссов нет",
     Default = false
 }):OnChanged(function(v) SA3.Magic = v end)
 Tabs.Combat:AddDropdown("SA3MagicStyle", {
-    Title = "Magic Bullet стиль",
-    Description = "Смесь — 4 подлёта; 360° сфера — с любого угла (1-й скрин); 360° без пола — всегда сверху/сбоку, никогда с пола (2-й скрин)",
-    Values = { "Смесь", "360° сфера", "360° без пола" }, Default = "Смесь",
+    Title = "Magic Bullet: стиль подлёта (v4)",
+    Description = "[v1.23] Над головой — пуля сверху вниз в торс; Со спины или в лицо — случайно одно из двух; Смесь — любое из трёх. Миссов нет: прицел всегда в крупную часть",
+    Values = { "Смесь", "Над головой", "Со спины или в лицо" }, Default = "Смесь",
     Callback = function(v) SA3.MagicStyle = v end
 })
 Tabs.Combat:AddDropdown("SA3BodyMode", {
@@ -2544,7 +2544,7 @@ Tabs.Combat:AddToggle("SA3Ballistic", {
 }):OnChanged(function(v) SA3.Ballistic = v end)
 Tabs.Combat:AddDropdown("SA3Origin", {
     Title = "Откуда летит пуля",
-    Description = "[v1.18] Возле жертвы (магия) — начало полёта у мардера, как через кейбинд; От меня — выглядит как обычный выстрел (через стены может не пробиться); Смесь — случайно",
+    Description = "[v1.23] Возле жертвы (магия) — пуля стартует У ЖЕРТВЫ: стреляет сквозь стены и ДАЖЕ ИЗ ЛОББИ; От меня — обычный вид (через стены может не пробиться); Смесь — случайно",
     Values = { "Возле жертвы (магия)", "От меня (обычный вид)", "Смесь" },
     Default = "Возле жертвы (магия)",
     Callback = function(v) SA3.OriginMode = v end
@@ -2566,7 +2566,7 @@ Tabs.Combat:AddSlider("SA3BulletSpeed", {
 -- [v1.10] stand_off из shitaro-new: origin в N студах от жертвы в нашу сторону
 -- (используется веткой spoof/wallbang в sa3FireShot)
 Tabs.Combat:AddSlider("SA3ForceOffset", {
-    Title = "Wallbang origin (studs)", Default = 8, Min = 3, Max = 40, Rounding = 0,
+    Title = "Origin возле жертвы (studs)", Default = 8, Min = 3, Max = 40, Rounding = 0,
     Callback = function(v) SA3.ForceOffset = v end
 })
 
@@ -5236,8 +5236,9 @@ local function doShoot()
             end
         end
     end
-    if not gun then Notify("Shoot", "Нет Gun!", nil, 3) return end
-
+    -- [v1.23] сначала цель, потом оружие: из ЛОББИ гана нет — НЕ отдаёмся с
+    -- «Нет Gun!», а стреляем: sa3FireShot сам найдёт Shoot-ремоут (SA3.NoGun,
+    -- включён по умолчанию) и отправит выстрел с origin у мардера
     local mur = getMurderer()
     if not mur then Notify("Shoot", "Murderer не найден", nil, 3) return end
 
@@ -5260,7 +5261,7 @@ local function doShoot()
         end)
         Notify("Shoot", "🔫 → " .. mur.Name, nil, 2)
     else
-        Notify("Shoot", "Не получилось — нужен Gun в руках/рюкзаке", nil, 3)
+        Notify("Shoot", "Не получилось — нет Gun/Shoot-ремоута или цель недоступна", nil, 3)
     end
 end
 
@@ -9927,5 +9928,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.22 | Silent Aim v4 (Шитаро+Пульс) | SkidFling из Overdrive | обход мардера | Телепорт: поза/глубина | Фаст: полёт 35 | Clutch | скин на все тулы | снег v2 | ESP | VFX", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.23 | Silent Aim v4: стрельба из лобби, origin у жертвы, Magic: над головой/сзади/в лицо | SkidFling | обход мардера | Телепорт | Фаст: полёт 35 | Clutch | скин на тулы | снег v2 | ESP | VFX", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
