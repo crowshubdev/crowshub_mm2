@@ -1,4 +1,4 @@
-print("[CWH] START — правильный скрипт выполняется (v1.21: Touch Fling v3 — SkidFling из Overdrive, обход мардера murderPenalty из нового Pulse, твин-замедление у монеты, Телепорт-стиль: поза стоя/лёжа и уход в пол, Фаст — полёт на полной скорости, стиль фарма в секции Auto Farm, камера крутится ЛКМ/ПКМ и пальцем, Clutch: бомба — ТП в момент броска / банка — при отлетевшей крышке, скин на все тулы)")
+print("[CWH] START — правильный скрипт выполняется (v1.22: Silent Aim v4 — перехват-цикл и перебор кандидатов из shitaro-new, центр массы из нового Pulse, взвешенный рандом КРУПНЫХ зон вместо равного пула с руками/ногами, BodyMode работает всегда)")
 -- ═══ ГЛУШИМ СТАРЫЙ ИНСТАНС ═══
 -- Без этого повторный запуск создавал ВТОРОЕ окно и ВТОРУЮ кнопку CWH поверх:
 -- один клик жал обе кнопки → меню открывалось/закрывалось, клики по тогглам съедались
@@ -404,7 +404,7 @@ end)
 -- ═══ WINDOW ═══
 local Window = Fluent:CreateWindow({
     Title = "Crows Hub",
-    SubTitle = "Remastered MM2 ver. 1.3.3.2 by crowshubdev",
+    SubTitle = "Remastered MM2 ver. 1.3.3.3 by crowshubdev",
     TabWidth = 150,
     Size = UDim2.fromOffset(560, 420),
     Theme = "Dark",
@@ -1958,7 +1958,7 @@ do -- ═══ [CWH SCOPE] G3: Silent Aim v3 + Wallbang — техн. обёр�
 local SA3 = { On = false, Target = "Murderer", Predict = true, Range = 500,
               AimPart = "Torso", Wallbang = false, AutoShoot = false, Interval = 1.5, Last = 0,
               Spoof = false, Smart = true, Magic = false,
-              MagicStyle = "Смесь", BodyMode = "Торс", Center = false,
+              MagicStyle = "Смесь", BodyMode = "Как Aim Part", Center = false,
               Multi = "Выкл", MultiDelay = 3.2,
               OriginMode = "Возле жертвы (магия)", NoInnocent = false, NoGun = true,
               Ballistic = true, BulletSpeed = 300,
@@ -2058,70 +2058,109 @@ local function pickSA()
     return best
 end
 
--- точка прицела (с предсказанием по скорости цели)
+-- точка прицела v4 (перехват из shitaro-new + центр массы из нового Pulse)
 local function sa3AimPos(targetPlayer)
     local t = targetPlayer or pickSA()
     local c = t and t.Character
     if not c then return nil end
     local hum = getHum(c)
     if not (hum and hum.Health > 0) then return nil end
-    local part = (SA3.AimPart == "Head" and c:FindFirstChild("Head")) or c:FindFirstChild("UpperTorso")
-        or c:FindFirstChild("Torso") or c:FindFirstChild("HumanoidRootPart")
     local my = getHRP(getChar(LocalPlayer))
-    if not (part and my) then return nil end
-    if (part.Position - my.Position).Magnitude > SA3.Range then return nil end
-    local pos = part.Position
-    -- [v1.17] анти-миники: целься в центр хитбокса модели — мелкие скины пробиваются
-    if SA3.Center then
+    if not my then return nil end
+    -- [v1.22] v4: ТОЛЬКО крупные части. В v3 рандом-пул из 11 частей содержал
+    -- 8 конечностей — отсюда «мисает / еле попадает / чаще в руку».
+    -- Конечности (кисти, стопы, нижние руки/ноги) больше не рассматриваются
+    local head = c:FindFirstChild("Head")
+    local torso = c:FindFirstChild("UpperTorso") or c:FindFirstChild("Torso")
+    local lower = c:FindFirstChild("LowerTorso")
+    local root = c:FindFirstChild("HumanoidRootPart")
+    local base = torso or root
+    if not base then return nil end
+    if (base.Position - my.Position).Magnitude > SA3.Range then return nil end
+    -- [v1.22] перехват-цикл (shitaro-new resolve): пуля летит в точку, где
+    -- цель БУДЕТ в момент прилёта: t = дист/скорость пули → предикт → пересчёт t
+    local function predictAt(p0)
+        local pos = p0
+        local spd = math.max(50, SA3.BulletSpeed or 300)
+        local dt = (p0 - my.Position).Magnitude / spd
+        for _ = 1, 3 do
+            if SA3.Predict then
+                local v = root and root.AssemblyLinearVelocity or Vector3.zero
+                if SA3.Smart and Vector3.new(v.X, 0, v.Z).Magnitude < 2 then
+                    pos = p0 -- стоит на месте — точно в выбранную зону
+                elseif SA3.V4 then
+                    -- [v1.13] смесь V4-истории и мгновенной скорости —
+                    -- резкая смена направления отрабатывает быстрее
+                    pos = pred4Pos(t, p0, dt):Lerp(p0 + v * dt, 0.35)
+                else
+                    pos = p0 + v * dt
+                end
+                -- анти-джамперы: цель в воздухе — предикт с гравитацией
+                if SA3.Ballistic and math.abs(v.Y) > 4 then
+                    local g = workspace.Gravity
+                    pos = Vector3.new(pos.X + v.X * dt, pos.Y + v.Y * dt - 0.5 * g * dt * dt, pos.Z + v.Z * dt)
+                end
+            end
+            local nd = (pos - my.Position).Magnitude / spd
+            if math.abs(nd - dt) < 0.01 then break end
+            dt = nd
+        end
+        return pos
+    end
+    -- [v1.22] взвешенный рандом зоны: торс 45% / голова 20% / низ торса 15% /
+    -- верх ног 12% / верх рук 8% — непредсказуемо, но только крупные хитбоксы
+    local weighted = {
+        { torso, 45 },
+        { head, 20 },
+        { lower or root, 15 },
+        { c:FindFirstChild("LeftUpperLeg") or c:FindFirstChild("Left Leg"), 6 },
+        { c:FindFirstChild("RightUpperLeg") or c:FindFirstChild("Right Leg"), 6 },
+        { c:FindFirstChild("LeftUpperArm") or c:FindFirstChild("Left Arm"), 4 },
+        { c:FindFirstChild("RightUpperArm") or c:FindFirstChild("Right Arm"), 4 },
+    }
+    local function weightedPick()
+        local pool, total = {}, 0
+        for _, w in ipairs(weighted) do
+            if w[1] and w[1].Parent then pool[#pool + 1] = w total = total + w[2] end
+        end
+        if total <= 0 then return base.Position end
+        local roll = math.random() * total
+        for _, w in ipairs(pool) do
+            roll = roll - w[2]
+            if roll <= 0 then return w[1].Position end
+        end
+        return base.Position
+    end
+    -- выбор зоны: Случайная зона > центр хитбокса > Aim Part
+    local desired
+    if SA3.BodyMode == "Случайная зона (взвешенно)" then
+        desired = weightedPick()
+    elseif SA3.Center then
         pcall(function()
             local cf = c:GetBoundingBox()
-            if cf then pos = cf.Position end
+            if cf then desired = cf.Position end
         end)
     end
-    -- [v1.17] magic bullet сам выбирает часть тела: торс/голова/руки/ноги
-    if SA3.Magic and SA3.BodyMode == "Случайная часть" then
-        local names = { "UpperTorso", "Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
-            "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg" }
-        local pool = {}
-        for _, nm in ipairs(names) do
-            local pp = c:FindFirstChild(nm)
-            if pp and pp:IsA("BasePart") then pool[#pool + 1] = pp end
-        end
-        if #pool > 0 then pos = pool[math.random(1, #pool)].Position end
+    if not desired then
+        local ap = (SA3.AimPart == "Head" and head) or base
+        desired = ap and ap.Position or base.Position
     end
-    if SA3.Predict then
-        local root = getHRP(c)
-        if root then
-            local ping = 0
-            pcall(function() ping = LocalPlayer:GetNetworkPing() or 0 end)
-            if ping > 1 then ping = ping / 1000 end
-            local dt = ping + (SA3.V4Lead or 0.05)
-            local vel = root.AssemblyLinearVelocity or Vector3.zero
-            -- [v1.11] умный предикт: стоит (<2 st/s) → точно в AimPart (торс/голова),
-            -- идёт → перехват по вектору скорости (пуля летит «с изгибом-упреждением»,
-            -- но долетает и попадает — как просил)
-            if SA3.Smart and Vector3.new(vel.X, 0, vel.Z).Magnitude < 2 then
-                pos = part.Position
-            elseif SA3.V4 then
-                -- [v1.13] правка предикта: смесь V4-истории и мгновенной скорости —
-                -- резкая смена направления отрабатывает быстрее; точка всё равно
-                -- клампится внутри pred4Pos (6 студов, не «улетает»)
-                local p4 = pred4Pos(t, pos, dt)
-                pos = p4:Lerp(pos + vel * dt, 0.35)
-            else
-                pos = pos + vel * dt
-            end
-            -- [v1.17] анти-джамперы: цель в воздухе → предикт с гравитацией,
-            -- бесконечные прыжки больше не уводят пулю мимо
-            if SA3.Ballistic and math.abs(vel.Y) > 4 then
-                local g = workspace.Gravity
-                local spd = math.max(50, SA3.BulletSpeed or 300)
-                local dt2 = (pos - my.Position).Magnitude / spd
-                local py = pos.Y + vel.Y * dt2 - 0.5 * g * dt2 * dt2
-                pos = Vector3.new(pos.X + vel.X * dt2, py, pos.Z + vel.Z * dt2)
-            end
+    -- [v1.22] перебор кандидатов с проверкой видимости (shitaro-new):
+    -- пуля летит ОТ НАС (origin «От меня»/«Смесь») — стена на линии = промах.
+    -- Спускаемся по кандидатам голова→торс→низ торса, берём первый видимый
+    if SA3.OriginMode ~= "Возле жертвы (магия)" then
+        local cands = { desired, base.Position }
+        if head then cands[#cands + 1] = head.Position end
+        if lower then cands[#cands + 1] = lower.Position end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { getChar(LocalPlayer), c }
+        for _, cpos in ipairs(cands) do
+            local hit = workspace:Raycast(my.Position, cpos - my.Position, params)
+            if not hit then desired = cpos break end
         end
     end
+    local pos = predictAt(desired)
     return pos
 end
 
@@ -2397,7 +2436,7 @@ end)
 -- (ветка SA3.Spoof/Wallbang в sa3FireShot, origin по вектору скорости — spoofPlan
 -- из нового Pulse). Auto Shoot выше продолжает работать.
 
-Tabs.Combat:AddSection("Silent Aim v3 (Pulse)")
+Tabs.Combat:AddSection("Silent Aim v4 (Shitaro + Pulse)")
 Tabs.Combat:AddToggle("SA3On", { Title = "Enable Silent Aim", Default = false })
     :OnChanged(function(v)
         SA3.On = v
@@ -2478,9 +2517,9 @@ Tabs.Combat:AddDropdown("SA3MagicStyle", {
     Callback = function(v) SA3.MagicStyle = v end
 })
 Tabs.Combat:AddDropdown("SA3BodyMode", {
-    Title = "Magic Bullet: куда попадать",
-    Description = "Торс — как раньше; Случайная часть — скрипт сам выбирает торс/голову/руки/ноги",
-    Values = { "Торс", "Случайная часть" }, Default = "Торс",
+    Title = "🎯 Куда попадать (v4)",
+    Description = "[v1.22] Как Aim Part — всегда в выбранную часть (точнее всего). Случайная зона — взвешенно: торс 45%, голова 20%, низ торса 15%, ноги 12%, руки 8% — непредсказуемо, но ТОЛЬКО крупные части (в v3 рандом брал руки/ноги с шансом 73% — из-за этого мисал и еле попадал). Работает всегда, не только в Magic",
+    Values = { "Как Aim Part", "Случайная зона (взвешенно)" }, Default = "Как Aim Part",
     Callback = function(v) SA3.BodyMode = v end
 })
 Tabs.Combat:AddToggle("SA3Center", {
@@ -2629,7 +2668,7 @@ task.spawn(function()
 end)
 
 end -- [CWH SCOPE] G3
-print("[CWH] INIT G3/9 OK (Silent Aim v3)")
+print("[CWH] INIT G3/9 OK (Silent Aim v4)")
 do -- ═══ [CWH SCOPE] G3b: ВСТРОЕННЫЙ MP3-ХИТСАУНД — техн. обёртка (лимит 200 регистров Luau) ═══
 -- [v1.4] Твой звук (hitsound_431f0.mp3, 0.9 сек) зашит прямо в скрипт как base64 —
 -- никаких ссылок и хостинга. При старте: декод → writefile("cwh_hitsound.mp3") в папку
@@ -9888,5 +9927,5 @@ do
     end)
 end
 
-Notify("Crows Hub", "Remastered загружен!", "v1.21 | SkidFling из Overdrive | обход мардера из Pulse | твин-замедление | Телепорт: поза/глубина | Фаст: полёт 35 | Clutch: ТП в момент броска | скин на все тулы | снег v2 | ESP | VFX", 15)
+Notify("Crows Hub", "Remastered загружен!", "v1.22 | Silent Aim v4 (Шитаро+Пульс) | SkidFling из Overdrive | обход мардера | Телепорт: поза/глубина | Фаст: полёт 35 | Clutch | скин на все тулы | снег v2 | ESP | VFX", 15)
 print("[CWH] ✔ ИНИЦИАЛИЗАЦИЯ ЗАВЕРШЕНА — все функции готовы. Если меню есть, строка есть, а функции не работают — включи тоггл ещё раз и напиши, ЧТО в F9 красным")
